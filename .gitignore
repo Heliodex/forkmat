@@ -1,2 +1,3 @@
 *.gofmt
 /gofmt-bin
+/gofmt/gofmt

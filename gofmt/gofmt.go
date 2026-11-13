@@ -38,6 +38,7 @@ var (
 	simplifyAST = flag.Bool("s", false, "simplify code")
 	doDiff = flag.Bool("d", false, "display diffs instead of rewriting files")
 	allErrors = flag.Bool("e", false, "report all errors (not just the first 10 on different lines)")
+	strict = flag.Bool("strict", false, "lay out code from the AST alone, ignoring the source's line breaks (see go/printer/strict.go)")
 
 	// debugging
 	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to this file")
@@ -47,10 +48,12 @@ var (
 )
 
 // Keep these in sync with go/format/format.go.
-const (
-	tabWidth = 8
-	printerMode = printer.UseSpaces | printer.TabIndent | printerNormalizeNumbers
+const tabWidth = 8
 
+// printerMode may gain printer.StrictLayout from the -strict flag.
+var printerMode = printer.UseSpaces | printer.TabIndent | printerNormalizeNumbers
+
+const (
 	// printerNormalizeNumbers means to canonicalize number literal prefixes
 	// and exponents while printing. See https://golang.org/doc/go1.13#gofmt.
 	//
@@ -389,6 +392,10 @@ func gofmtMain(s *sequencer) {
 	flag.Parse()
 	counter.Inc("gofmt/invocations")
 	counter.CountFlags("gofmt/flag:", *flag.CommandLine)
+
+	if *strict {
+		printerMode |= printer.StrictLayout
+	}
 
 	if *cpuprofile != "" {
 		fdSem <- true

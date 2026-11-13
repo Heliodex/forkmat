@@ -1,0 +1,96 @@
+package p
+
+import (
+	"fmt"
+	"os"
+)
+
+// The source's breaks inside expressions, lists and selectors are ignored.
+func foo() {
+    foo :=
+        "bar"
+    x := []int{
+        1, 2, 3}
+    y := []int{1,
+        2}
+    z := 1 +
+        2
+    fmt.Println(
+        "a",
+        "b",
+    )
+    w := os.
+        Args
+    _, _, _, _ = foo, x, y, z
+}
+
+// Blank lines: block statements and returns get one on either side; calls do not.
+func blanks(a, b int) int {
+    fmt.Println(a)
+    if a > b {
+        a = b
+    }
+    fmt.Println(b)
+    for i := 0; i < 3; i++ {
+        b += i
+    }
+
+
+
+    var (
+        c = 1
+        d = 2
+    )
+    var e = 3
+    e++
+    return a + b + c + d + e
+}
+
+func blankAfterGroup() {
+    var (
+        p = 1
+    )
+    if p > 0 {
+    }
+    q := p
+    switch q {
+    case 1:
+        fmt.Println(q)
+        q++
+    default:
+    }
+    select {
+    }
+    {
+        q--
+    }
+}
+
+func emptyBody() {
+}
+
+func params(a int,
+    b int) (c int, err error) {
+
+    return a + b, nil
+}
+
+type Small struct{ A int }
+
+type Big struct {
+    A int
+    B string
+}
+
+type Iface interface {
+    M()
+    N(x int) int
+}
+
+var v = 1
+var u = 2
+func noBlankBetweenVars() {}
+func multi() {
+    x := 1
+    _ = x
+}

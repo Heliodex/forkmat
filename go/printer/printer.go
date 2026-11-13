@@ -1293,6 +1293,12 @@ const (
 	TabIndent // use tabs for indentation independent of UseSpaces
 	UseSpaces // use spaces instead of tabs for alignment
 	SourcePos // emit //line directives to preserve original source positions
+
+	// StrictLayout ignores the line structure of the source when deciding
+	// where to break lines, and lays code out from the AST alone. Comments
+	// and the number of blank lines around them still follow the source.
+	// See strict.go for the rules.
+	StrictLayout Mode = 1 << 29
 )
 
 // The mode below is not included in printer's public API because

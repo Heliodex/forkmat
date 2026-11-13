@@ -37,6 +37,7 @@ const (
 	normNumber
 	idempotent
 	allowTypeParams
+	strictLayout
 )
 
 // format parses src, prints the corresponding AST, verifies the resulting
@@ -62,6 +63,9 @@ func format(src []byte, mode checkMode) ([]byte, error) {
 	}
 	if mode&normNumber != 0 {
 		cfg.Mode |= normalizeNumbers
+	}
+	if mode&strictLayout != 0 {
+		cfg.Mode |= StrictLayout
 	}
 
 	// print AST
@@ -180,6 +184,7 @@ var data = []entry{
 	{"expressions.input", "expressions.raw", rawFormat | idempotent},
 	{"declarations.input", "declarations.golden", 0},
 	{"statements.input", "statements.golden", 0},
+	{"strict.input", "strict.golden", strictLayout | idempotent},
 	{"slow.input", "slow.golden", idempotent},
 	{"complit.input", "complit.x", export},
 	{"go2numbers.input", "go2numbers.golden", idempotent},

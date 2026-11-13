@@ -12,7 +12,7 @@ var (
 		// contains filtered or unexported fields
 	}
 	V3 = T{
-		F1:	"hello",
+		F1: "hello",
 		F2: T2{
 			A: "world",
 			// contains filtered or unexported fields
@@ -30,8 +30,8 @@ var (
 
 	// Mixed-mode declarations
 	V8 = T{
-		F1:	"hello",
-		F3:	"world",
+		F1: "hello",
+		F3: "world",
 		// contains filtered or unexported fields
 	}
 	V9 = T{
@@ -39,9 +39,9 @@ var (
 		// contains filtered or unexported fields
 	}
 	V10 = T{
-		F1:	"hello",
+		F1: "hello",
 
-		F4:	"world",
+		F4: "world",
 		// contains filtered or unexported fields
 	}
 
@@ -54,9 +54,9 @@ var (
 		// contains filtered or unexported fields
 	}
 	V12 = T{
-		F1:	make(chan int),
+		F1: make(chan int),
 
-		F3:	make(map[int]string),
+		F3: make(map[int]string),
 		// contains filtered or unexported fields
 	}
 )

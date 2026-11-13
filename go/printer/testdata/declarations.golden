@@ -603,7 +603,7 @@ var (
 
 func _() {
 	var privateKey2 = &Block{Type: "RSA PRIVATE KEY",
-		Headers:	map[string]string{},
+		Headers: map[string]string{},
 		Bytes: []uint8{0x30, 0x82, 0x1, 0x3a, 0x2, 0x1, 0x0, 0x2,
 			0x41, 0x0, 0xb2, 0x99, 0xf, 0x49, 0xc4, 0x7d, 0xfa, 0x8c,
 			0xd4, 0x0, 0xae, 0x6a, 0x4d, 0x1b, 0x8a, 0x3b, 0x6a, 0x13,
@@ -616,41 +616,41 @@ func _() {
 	var Universe = Scope{
 		Names: map[string]*Ident{
 			// basic types
-			"bool":		nil,
-			"byte":		nil,
-			"int8":		nil,
-			"int16":	nil,
-			"int32":	nil,
-			"int64":	nil,
-			"uint8":	nil,
-			"uint16":	nil,
-			"uint32":	nil,
-			"uint64":	nil,
-			"float32":	nil,
-			"float64":	nil,
-			"string":	nil,
+			"bool": nil,
+			"byte": nil,
+			"int8": nil,
+			"int16": nil,
+			"int32": nil,
+			"int64": nil,
+			"uint8": nil,
+			"uint16": nil,
+			"uint32": nil,
+			"uint64": nil,
+			"float32": nil,
+			"float64": nil,
+			"string": nil,
 
 			// convenience types
-			"int":		nil,
-			"uint":		nil,
-			"uintptr":	nil,
-			"float":	nil,
+			"int": nil,
+			"uint": nil,
+			"uintptr": nil,
+			"float": nil,
 
 			// constants
-			"false":	nil,
-			"true":		nil,
-			"iota":		nil,
-			"nil":		nil,
+			"false": nil,
+			"true": nil,
+			"iota": nil,
+			"nil": nil,
 
 			// functions
-			"cap":		nil,
-			"len":		nil,
-			"new":		nil,
-			"make":		nil,
-			"panic":	nil,
-			"panicln":	nil,
-			"print":	nil,
-			"println":	nil,
+			"cap": nil,
+			"len": nil,
+			"new": nil,
+			"make": nil,
+			"panic": nil,
+			"panicln": nil,
+			"print": nil,
+			"println": nil,
 		},
 	}
 }
@@ -658,77 +658,77 @@ func _() {
 // alignment of map composite entries
 var _ = map[int]int{
 	// small key sizes: always align even if size ratios are large
-	a:			a,
-	abcdefghabcdefgh:	a,
-	ab:			a,
-	abc:			a,
-	abcdefgabcdefg:		a,
-	abcd:			a,
-	abcde:			a,
-	abcdef:			a,
+	a: a,
+	abcdefghabcdefgh: a,
+	ab: a,
+	abc: a,
+	abcdefgabcdefg: a,
+	abcd: a,
+	abcde: a,
+	abcdef: a,
 
 	// mixed key sizes: align when key sizes change within accepted ratio
-	abcdefgh:		a,
-	abcdefghabcdefg:	a,
-	abcdefghij:		a,
-	abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij:	a, // outlier - do not align with previous line
-	abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij:		a, // align with previous line
+	abcdefgh: a,
+	abcdefghabcdefg: a,
+	abcdefghij: a,
+	abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij: a, // outlier - do not align with previous line
+	abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij: a, // align with previous line
 
-	ab:	a, // do not align with previous line
-	abcde:	a, // align with previous line
+	ab: a, // do not align with previous line
+	abcde: a, // align with previous line
 }
 
 // alignment of map composite entries: test cases from issue 3965
 // aligned
 var _ = T1{
-	a:			x,
-	b:			y,
-	cccccccccccccccccccc:	z,
+	a: x,
+	b: y,
+	cccccccccccccccccccc: z,
 }
 
 // not aligned
 var _ = T2{
-	a:			x,
-	b:			y,
-	ccccccccccccccccccccc:	z,
+	a: x,
+	b: y,
+	ccccccccccccccccccccc: z,
 }
 
 // aligned
 var _ = T3{
-	aaaaaaaaaaaaaaaaaaaa:	x,
-	b:			y,
-	c:			z,
+	aaaaaaaaaaaaaaaaaaaa: x,
+	b: y,
+	c: z,
 }
 
 // not aligned
 var _ = T4{
-	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:	x,
-	b:						y,
-	c:						z,
+	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: x,
+	b: y,
+	c: z,
 }
 
 // no alignment of map composite entries if they are not the first entry on a line
 var _ = T{0: 0} // not aligned
 var _ = T{0: 0, // not aligned
-	1:	1, // aligned
-	22:	22, // aligned
-	333:	333, 1234: 12, 12345: 0, // first on line aligned
+	1: 1, // aligned
+	22: 22, // aligned
+	333: 333, 1234: 12, 12345: 0, // first on line aligned
 }
 
 // test cases form issue 8685
 // not aligned
 var _ = map[int]string{1: "spring", 2: "summer",
-	3:	"autumn", 4: "winter"}
+	3: "autumn", 4: "winter"}
 
 // not aligned
 var _ = map[string]string{"a": "spring", "b": "summer",
-	"c":	"autumn", "d": "winter"}
+	"c": "autumn", "d": "winter"}
 
 // aligned
 var _ = map[string]string{"a": "spring",
-	"b":	"summer",
-	"c":	"autumn",
-	"d":	"winter"}
+	"b": "summer",
+	"c": "autumn",
+	"d": "winter"}
 
 func _() {
 	var _ = T{

@@ -270,13 +270,13 @@ func (p *printer) exprList(prev0 token.Pos, list []ast.Expr, depth int, mode exp
 
 		if len(list) > 1 && isPair && size > 0 && needsLinebreak {
 			// We have a key:value expression that fits onto one line
-			// and it's not on the same line as the prior expression:
-			// Use a column for the key such that consecutive entries
-			// can align if possible.
+			// and it's not on the same line as the prior expression.
+			// No column is used for the key, so print it like any other
+			// key:value expression: key, colon, blank, value.
 			// (needsLinebreak is set if we started a new line before)
 			p.expr(pair.Key)
 			p.setPos(pair.Colon)
-			p.print(token.COLON, vtab)
+			p.print(token.COLON, blank)
 			p.expr(pair.Value)
 		} else {
 			p.expr0(x, depth)

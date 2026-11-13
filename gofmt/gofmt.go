@@ -110,8 +110,8 @@ func newSequencer(maxWeight int64, out, err io.Writer) *sequencer {
 	prev <- &reporterState{out: out, err: err}
 	return &sequencer{
 		maxWeight: maxWeight,
-		sem:       sem,
-		prev:      prev,
+		sem: sem,
+		prev: prev,
 	}
 }
 

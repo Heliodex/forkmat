@@ -33,46 +33,46 @@ type Baz struct {
 func newFoo() *Foo {
 	return &Foo{bar: &Bar{baz: &Baz{
 		entries: map[int]interface{}{
-			42:	&Foo{},
-			21:	&Bar{},
-			11:	&Baz{whatever: "it's just a test"}}}},
+			42: &Foo{},
+			21: &Bar{},
+			11: &Baz{whatever: "it's just a test"}}}},
 		bang: &Bar{foo: []*Foo{
 			&Foo{bar: &Bar{baz: &Baz{
 				entries: map[int]interface{}{
-					43:	&Foo{},
-					22:	&Bar{},
-					13:	&Baz{whatever: "this is nuts"}}}},
+					43: &Foo{},
+					22: &Bar{},
+					13: &Baz{whatever: "this is nuts"}}}},
 				bang: &Bar{foo: []*Foo{
 					&Foo{bar: &Bar{baz: &Baz{
 						entries: map[int]interface{}{
-							61:	&Foo{},
-							71:	&Bar{},
-							11:	&Baz{whatever: "no, it's Go"}}}},
+							61: &Foo{},
+							71: &Bar{},
+							11: &Baz{whatever: "no, it's Go"}}}},
 						bang: &Bar{foo: []*Foo{
 							&Foo{bar: &Bar{baz: &Baz{
 								entries: map[int]interface{}{
-									0:	&Foo{},
-									-2:	&Bar{},
-									-11:	&Baz{whatever: "we need to go deeper"}}}},
+									0: &Foo{},
+									-2: &Bar{},
+									-11: &Baz{whatever: "we need to go deeper"}}}},
 								bang: &Bar{foo: []*Foo{
 									&Foo{bar: &Bar{baz: &Baz{
 										entries: map[int]interface{}{
-											-2:	&Foo{},
-											-5:	&Bar{},
-											-7:	&Baz{whatever: "are you serious?"}}}},
-										bang:	&Bar{foo: []*Foo{}}},
+											-2: &Foo{},
+											-5: &Bar{},
+											-7: &Baz{whatever: "are you serious?"}}}},
+										bang: &Bar{foo: []*Foo{}}},
 									&Foo{bar: &Bar{baz: &Baz{
 										entries: map[int]interface{}{
-											-100:	&Foo{},
-											50:	&Bar{},
-											20:	&Baz{whatever: "na, not really ..."}}}},
-										bang:	&Bar{foo: []*Foo{}}}}}}}}},
+											-100: &Foo{},
+											50: &Bar{},
+											20: &Baz{whatever: "na, not really ..."}}}},
+										bang: &Bar{foo: []*Foo{}}}}}}}}},
 					&Foo{bar: &Bar{baz: &Baz{
 						entries: map[int]interface{}{
-							2:	&Foo{},
-							1:	&Bar{},
-							-1:	&Baz{whatever: "... it's just a test."}}}},
-						bang:	&Bar{foo: []*Foo{}}}}}}}}}
+							2: &Foo{},
+							1: &Bar{},
+							-1: &Baz{whatever: "... it's just a test."}}}},
+						bang: &Bar{foo: []*Foo{}}}}}}}}}
 }
 
 func TestElaborate(t *testing.T) {

@@ -651,7 +651,7 @@ func TestChanType(t *testing.T) {
 		Op: token.ARROW,
 		X: &ast.CallExpr{
 			Fun: &ast.ChanType{
-				Dir:   ast.RECV,
+				Dir: ast.RECV,
 				Value: &ast.Ident{Name: "int"},
 			},
 			Args: []ast.Expr{&ast.Ident{Name: "nil"}},
@@ -876,7 +876,7 @@ func TestSourcePosNewline(t *testing.T) {
 	}
 
 	cfg := &Config{
-		Mode:     SourcePos, // emit line comments
+		Mode: SourcePos, // emit line comments
 		Tabwidth: 8,
 	}
 	var buf bytes.Buffer

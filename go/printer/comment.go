@@ -70,7 +70,7 @@ func formatDocComment(list []*ast.Comment) []*ast.Comment {
 	if kind == "/*" {
 		c := &ast.Comment{
 			Slash: slash,
-			Text:  "/*\n" + text + "*/",
+			Text: "/*\n" + text + "*/",
 		}
 		return []*ast.Comment{c}
 	}
@@ -89,18 +89,18 @@ func formatDocComment(list []*ast.Comment) []*ast.Comment {
 		}
 		out = append(out, &ast.Comment{
 			Slash: slash,
-			Text:  line,
+			Text: line,
 		})
 	}
 	if len(directives) > 0 {
 		out = append(out, &ast.Comment{
 			Slash: slash,
-			Text:  "//",
+			Text: "//",
 		})
 		for _, c := range directives {
 			out = append(out, &ast.Comment{
 				Slash: slash,
-				Text:  c.Text,
+				Text: c.Text,
 			})
 		}
 	}

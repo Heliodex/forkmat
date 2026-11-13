@@ -161,3 +161,21 @@ func goDefer(mu *mutex) {
     defer cleanup()
     go run3()
 }
+
+// Consecutive fields of the same type share one type.
+type Point struct {
+    x int
+    y int
+    z, w int
+    name string
+    tagged int `json:"t"`
+    other  int
+    left int // comment
+    right int
+    p *int
+    q *int
+}
+
+func merged(a int, b int, c string, d int, e int) (x int, y int) {
+    return a, b
+}

@@ -1,6 +1,7 @@
 package printer
 
 import (
+	"bytes"
 	"go/ast"
 	"go/token"
 	"sort"
@@ -376,4 +377,53 @@ func strictOperand(e ast.Expr, prec1 int) ast.Expr {
 		return e
 	}
 	return inner
+}
+
+// strictFields returns the fields of a parameter or struct list as they print
+// under StrictLayout. Consecutive named fields of the same type are merged into
+// one field with several names: x int, y int becomes x, y int. Fields with a
+// tag or a comment, or with a comment between them, are not merged.
+func (p *printer) strictFields(list []*ast.Field) []*ast.Field {
+	if !p.strict() || len(list) < 2 {
+		return list
+	}
+	out := make([]*ast.Field, 0, len(list))
+	for _, f := range list {
+		if n := len(out); n > 0 && p.mergeable(out[n-1], f) {
+			prev := out[n-1]
+			out[n-1] = &ast.Field{
+				Doc: prev.Doc,
+				Names: append(append([]*ast.Ident{}, prev.Names...), f.Names...),
+				Type: prev.Type,
+				Comment: f.Comment,
+			}
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// mergeable reports whether field cur can join the names of prev.
+func (p *printer) mergeable(prev, cur *ast.Field) bool {
+	if len(prev.Names) == 0 || len(cur.Names) == 0 ||
+		prev.Tag != nil || cur.Tag != nil ||
+		prev.Comment != nil || cur.Comment != nil || cur.Doc != nil {
+		return false
+	}
+	return !p.commentIn(prev.End(), cur.Pos()) && p.sameType(prev.Type, cur.Type)
+}
+
+// sameType reports whether a and b print the same type, with no comment in
+// either.
+func (p *printer) sameType(a, b ast.Expr) bool {
+	if p.commentIn(a.Pos(), a.End()) || p.commentIn(b.Pos(), b.End()) {
+		return false
+	}
+	cfg := p.sizeConfig()
+	var sa, sb bytes.Buffer
+	if cfg.fprint(&sa, p.fset, a, p.nodeSizes) != nil || cfg.fprint(&sb, p.fset, b, p.nodeSizes) != nil {
+		return false
+	}
+	return sa.String() == sb.String()
 }

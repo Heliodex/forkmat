@@ -64,7 +64,7 @@ func blankAfterGroup() {
 
 func emptyBody() {}
 
-func params(a int, b int) (c int, err error) {
+func params(a, b int) (c int, err error) {
 	return a + b, nil
 }
 
@@ -167,4 +167,19 @@ func goDefer(mu *mutex) {
 
 	defer cleanup()
 	go run3()
+}
+
+// Consecutive fields of the same type share one type.
+type Point struct {
+	x, y, z, w int
+	name string
+	tagged int `json:"t"`
+	other int
+	left int // comment
+	right int
+	p, q *int
+}
+
+func merged(a, b int, c string, d, e int) (x, y int) {
+	return a, b
 }

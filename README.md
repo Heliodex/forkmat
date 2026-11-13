@@ -207,6 +207,10 @@ The rules:
 - Composite literals are one line if they fit in 100 characters and hold no
   comments; otherwise each element is on its own line with a trailing comma.
 - Binary expressions and selector chains are never broken.
+- Consecutive named struct fields and parameters of the same type share one
+  type: `x int, y int` prints as `x, y int`, and `struct{ x int; y int }` as
+  `struct{ x, y int }`. Fields with a tag or a comment are not merged. Interface
+  methods are never merged.
 - Struct and interface bodies are one line only with a single simple field or
   method.
 - Statements are one per line. A blank line goes before and after a block

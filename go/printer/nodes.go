@@ -337,10 +337,11 @@ func (p *printer) parameters(fields *ast.FieldList, mode paramMode) {
 	}
 	p.setPos(fields.Opening)
 	p.print(openTok)
-	if len(fields.List) > 0 {
+	list := p.strictFields(fields.List)
+	if len(list) > 0 {
 		prevLine := p.lineFor(fields.Opening)
 		ws := indent
-		for i, par := range fields.List {
+		for i, par := range list {
 			// determine par begin and end line (may be different
 			// if there are multiple parameter names for this par
 			// or the type is on a separate line)
@@ -385,7 +386,7 @@ func (p *printer) parameters(fields *ast.FieldList, mode paramMode) {
 		if closing := p.lineFor(fields.Closing); !p.strict() && 0 < prevLine && prevLine < closing {
 			p.print(token.COMMA)
 			p.linebreak(closing, 0, ignore, true)
-		} else if mode == typeTParam && fields.NumFields() == 1 && combinesWithName(stripParensAlways(fields.List[0].Type)) {
+		} else if mode == typeTParam && fields.NumFields() == 1 && combinesWithName(stripParensAlways(list[0].Type)) {
 			// A type parameter list [P T] where the name P and the type expression T syntactically
 			// combine to another valid (value) expression requires a trailing comma, as in [P *T,]
 			// (or an enclosing interface as in [P interface(*T)]), so that the type parameter list
@@ -497,7 +498,11 @@ func (p *printer) setLineComment(text string) {
 
 func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) {
 	lbrace := fields.Opening
+	// interface methods are never merged: M() and N() are different methods
 	list := fields.List
+	if isStruct {
+		list = p.strictFields(fields.List)
+	}
 	rbrace := fields.Closing
 	hasComments := isIncomplete || p.commentBefore(p.posFor(rbrace))
 	// Under StrictLayout the source does not decide: a body is one line only

@@ -863,7 +863,7 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 		// See the comment in funcDecl about how the header size is computed.
 		startCol := p.out.Column - len("func")
 		p.signature(x.Type)
-		p.funcBody(p.distanceFrom(x.Type.Pos(), startCol), blank, x.Body)
+		p.funcBody(p.distanceFrom(x.Type.Pos(), startCol), blank, x.Body, false)
 
 	case *ast.ParenExpr:
 		if _, hasParens := x.X.(*ast.ParenExpr); hasParens {
@@ -1822,7 +1822,11 @@ func (p *printer) bodySize(b *ast.BlockStmt, maxSize int) int {
 // the block is printed on the current line, without line breaks, spaced from the header
 // by sep. Otherwise the block's opening "{" is printed on the current line, followed by
 // lines for the block's statements and its closing "}".
-func (p *printer) funcBody(headerSize int, sep whiteSpace, b *ast.BlockStmt) {
+//
+// A function declaration (isDecl) whose body is nothing but a return statement
+// is always spelled out over multiple lines: collapsing it hides the returned
+// expressions in the declaration line.
+func (p *printer) funcBody(headerSize int, sep whiteSpace, b *ast.BlockStmt, isDecl bool) {
 	if b == nil {
 		return
 	}
@@ -1834,7 +1838,14 @@ func (p *printer) funcBody(headerSize int, sep whiteSpace, b *ast.BlockStmt) {
 	p.level = 0
 
 	const maxSize = 100
-	if headerSize+p.bodySize(b, maxSize) <= maxSize {
+	oneLine := headerSize+p.bodySize(b, maxSize) <= maxSize
+	if isDecl && len(b.List) == 1 {
+		// A lone return statement always gets its own line(s).
+		if _, ok := b.List[0].(*ast.ReturnStmt); ok {
+			oneLine = false
+		}
+	}
+	if oneLine {
 		p.print(sep)
 		p.setPos(b.Lbrace)
 		p.print(token.LBRACE)
@@ -1886,7 +1897,7 @@ func (p *printer) funcDecl(d *ast.FuncDecl) {
 	p.signature(d.Type)
 	// A blank before the body keeps consecutive one-line functions from
 	// having their { padded into a column.
-	p.funcBody(p.distanceFrom(d.Pos(), startCol), blank, d.Body)
+	p.funcBody(p.distanceFrom(d.Pos(), startCol), blank, d.Body, true)
 }
 
 func (p *printer) decl(decl ast.Decl) {

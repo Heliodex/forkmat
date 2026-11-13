@@ -522,7 +522,7 @@ type T struct {
 var decls = []string{
 	`import "fmt"`,
 	"const pi = 3.1415\nconst e = 2.71828\n\nvar x = pi",
-	"func sum(x, y int) int { return x + y }",
+	"func sum(x, y int) int {\n\treturn x + y\n}",
 }
 
 func TestDeclLists(t *testing.T) {

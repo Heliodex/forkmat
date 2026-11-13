@@ -120,6 +120,28 @@ Revert with `git diff`-level surgery on those hunks, or by pointing `gofmt/`
 back at the standard `go/printer` (see above) — the goldens then need
 regenerating as well.
 
+### A function that only returns is never one line
+
+A function declaration whose body is a single `return` statement is always
+spread over multiple lines, so the returned expressions never get crammed into
+the declaration line:
+
+```go
+// before (standard gofmt)
+func f() int { return 1 }
+
+// after (this tree)
+func f() int {
+	return 1
+}
+```
+
+Function *literals* still collapse when short — `var f = func() int { return 1 }`
+and inline callbacks such as `sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })`
+keep their one-line form — as do declarations whose body is some other single
+statement (`func f() { println(1) }`). The check is in `funcBody`
+(`go/printer/nodes.go`), which takes an `isDecl` flag from its two callers.
+
 ## What differs from upstream
 
 Only import paths, so that code outside the Go tree can reach packages that

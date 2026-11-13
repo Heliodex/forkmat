@@ -118,7 +118,7 @@ func runTest(t *testing.T, in, out string) {
 	if got := buf.Bytes(); !bytes.Equal(got, expected) {
 		if *update {
 			if in != out {
-				if err := os.WriteFile(out, got, 0666); err != nil {
+				if err := os.WriteFile(out, got, 0o666); err != nil {
 					t.Error(err)
 				}
 				return
@@ -129,7 +129,7 @@ func runTest(t *testing.T, in, out string) {
 
 		t.Errorf("(gofmt %s) != %s (see %s.gofmt)\n%s", in, out, in,
 			diff.Diff("expected", expected, "got", got))
-		if err := os.WriteFile(in+".gofmt", got, 0666); err != nil {
+		if err := os.WriteFile(in+".gofmt", got, 0o666); err != nil {
 			t.Error(err)
 		}
 	}
@@ -236,7 +236,7 @@ func TestBackupFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	name, err := backupFile(filepath.Join(dir, "foo.go"), []byte("  package main"), 0644)
+	name, err := backupFile(filepath.Join(dir, "foo.go"), []byte("  package main"), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1073,6 +1073,7 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 
 // normalizedNumber rewrites base prefixes and exponents
 // of numbers to use lower-case letters (0X123 to 0x123 and 1.2E3 to 1.2e3),
+// spells octal literals with an explicit 0o prefix (0765 to 0o765),
 // and removes leading 0's from integer imaginary literals (0765i to 765i).
 // It leaves hexadecimal digits alone.
 //
@@ -1096,6 +1097,14 @@ func normalizedNumber(lit *ast.BasicLit) *ast.BasicLit {
 		// 0-prefix octal, decimal int, or float (possibly with 'i' suffix)
 		if i := strings.LastIndexByte(x, 'E'); i >= 0 {
 			x = x[:i] + "e" + x[i+1:]
+			break
+		}
+		// Spell octal literals with an explicit 0o prefix. Only plain
+		// integers qualify: leading zeros in an imaginary literal are
+		// decimal (imaginary_lit admits decimal_digits), so 0777i is the
+		// decimal 777i and must not become 0o777i.
+		if lit.Kind == token.INT && isLegacyOctal(x) {
+			x = "0o" + x[1:]
 			break
 		}
 		// remove leading 0's from integer (but not floating-point) imaginary literals
@@ -1129,6 +1138,22 @@ func normalizedNumber(lit *ast.BasicLit) *ast.BasicLit {
 	}
 
 	return &ast.BasicLit{ValuePos: lit.ValuePos, Kind: lit.Kind, Value: x}
+}
+
+// isLegacyOctal reports whether x is an integer literal in the old
+// leading-zero octal notation, such as 0777 or 0_777. A lone 0 is not
+// legacy octal, and neither are the decimal or floating-point literals
+// that merely start with a zero (0.5, 0e3, 0123.5).
+func isLegacyOctal(x string) bool {
+	if len(x) < 2 || x[0] != '0' {
+		return false
+	}
+	for i := 1; i < len(x); i++ {
+		if c := x[i]; (c < '0' || c > '7') && c != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *printer) possibleSelectorExpr(expr ast.Expr, prec1, depth int) bool {

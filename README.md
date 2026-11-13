@@ -100,6 +100,22 @@ printer preserves comment text verbatim, so the tabwriter sees it as a cell.
 One-line structs such as `struct{ A int }` are unchanged, since they were never
 column-aligned.
 
+### Octal literals print as `0o…`
+
+The old leading-zero spelling is rewritten to the `0o` form while numbers are
+normalised, so `0777` prints as `0o777`, `0_123` as `0o_123` and `00` as `0o0`.
+Decimal, hexadecimal, binary and floating-point literals are untouched, as is a
+lone `0`.
+
+Imaginary literals are deliberately left alone: the grammar is
+`imaginary_lit = (decimal_digits | int_lit | float_lit) "i"`, so `0777i` is the
+*decimal* 777i, not octal 511i — rewriting it to `0o777i` would change its
+value. The existing normalisation still trims its leading zeros (`0777i` →
+`777i`). `0o777i`, being explicit, is valid and preserved.
+
+This lives in `normalizedNumber` (`go/printer/nodes.go`), i.e. it applies when
+the `normalizeNumbers` mode bit is set — always true for gofmt and `go/format`.
+
 Revert with `git diff`-level surgery on those hunks, or by pointing `gofmt/`
 back at the standard `go/printer` (see above) — the goldens then need
 regenerating as well.

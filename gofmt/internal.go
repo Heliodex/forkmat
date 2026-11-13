@@ -11,9 +11,9 @@ package main
 
 import (
 	"bytes"
+	"forkmat/go/printer"
 	"go/ast"
 	"go/parser"
-	"go/printer"
 	"go/token"
 	"strings"
 )

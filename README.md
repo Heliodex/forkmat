@@ -17,10 +17,22 @@ gofmt/                 the command, verbatim from src/cmd/gofmt
   simplify.go          -s simplifications (a[b:len(a)] -> a[b:], range, composite literals, empty decls)
   doc.go               package docs / usage text
   testdata/            .input/.golden pairs used by the tests
+go/printer/            src/go/printer — the layout engine, and gofmt builds against it
+  printer.go           Config/Mode, output buffering, whitespace, comments glue
+  nodes.go             per-node layout: decls, stmts, exprs, struct tags, number normalisation
+  comment.go           comment placement and reflow
+  gobuild.go           //go:build line formatting
+  testdata/            printer golden tests (go test ./go/printer)
 internal/diff/         std src/internal/diff, needed by -d
 internal/{cfg,goarch,platform,testenv}/   std internals, needed by long_test.go
 internal/telemetry/counter/               no-op stand-in for cmd/internal/telemetry/counter
 ```
+
+`gofmt` imports `forkmat/go/printer`, so edits to `go/printer` take effect on the
+next build. Everything else is still the standard library (`go/ast`, `go/token`,
+`go/parser`, `go/scanner`, `text/tabwriter`), so the vendored copy sits on top of
+the same AST you already have. To go back to the standard printer, change the
+three `forkmat/go/printer` imports in `gofmt/` back to `go/printer`.
 
 ## Build, run, test
 
@@ -47,6 +59,8 @@ used to be resolved as `std`/`cmd` internals:
 | `internal/testenv` | `forkmat/internal/testenv` |
 | `internal/cfg`, `internal/goarch`, `internal/platform` | `forkmat/internal/...` |
 | `cmd/internal/telemetry/counter` | `forkmat/internal/telemetry/counter` (no-op shim) |
+| `go/printer` (in `gofmt/`) | `forkmat/go/printer` (the vendored copy) |
+| `internal/diff` (in `go/printer/printer_test.go`) | `forkmat/internal/diff` |
 
 Nothing else is edited; the files were then run through the built gofmt itself,
 which only re-sorted those import blocks. `internal/diff/diff_test.go` was
@@ -54,13 +68,15 @@ dropped (it needs std `internal/txtar` and does not cover gofmt).
 
 ## Where the formatting actually happens
 
-This command is mostly plumbing. The rules you are probably after live in the
-standard library, in your GOROOT (`go env GOROOT`):
+The rules you are probably after are now mostly in this tree:
 
-- `src/go/printer` — layout: tabs vs spaces (`printer.Config`), line breaks,
+- `go/printer` — layout: tabs vs spaces (`printer.Config`), line breaks,
   alignment via `text/tabwriter`, comment placement, number literal
   normalisation. `printerNormalizeNumbers = 1 << 30` in `gofmt.go` is a mode
   bit defined in `go/printer` for `go/format` and gofmt only.
+
+Still in your GOROOT (`go env GOROOT`):
+
 - `src/go/ast` — `SortImports`, used to keep import blocks grouped and sorted.
 - `src/go/parser` — parser modes; `initParserMode()` turns on comments and
   skips object resolution.
@@ -82,11 +98,19 @@ The pipeline in `gofmt/internal.go`:
   handy to know before adding prints.
 - `reporter` collects the first 10 distinct error lines unless `-e` is given;
   it also decides the exit code (2 for usage, 1 for failed files).
-- `writeFile` writes via a temp file and backsup the original; `-w` on a
+- `writeFile` writes via a temp file and backs up the original; `-w` on a
   symlink or read-only tree can surprise you, so point it at scratch copies.
 - Golden-file tests: `gofmt/testdata/*.input` with matching `*.golden`. To probe
   a printing rule, add a case there and run `go test ./gofmt -run TestRewrite`
   or the full package.
+- Same idea in `go/printer/testdata/`, exercised by `go test ./go/printer`;
+  `go test ./go/printer -run TestFiles -update` rewrites the `.golden` files
+  from current behaviour, which is the quickest way to see what a printer tweak
+  changed.
+- The printer's knobs are `Config.Mode`: `RawFormat`, `TabIndent`, `UseSpaces`,
+  `SourcePos`, plus the unexported `normalizeNumbers` (1 << 30) that gofmt and
+  `go/format` pass numerically. `Config.Indent` and `Tabwidth` control the rest;
+  gofmt uses `Tabwidth: 8`, `Indent: 0`.
 
 ## Licence
 

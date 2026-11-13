@@ -737,23 +737,23 @@ func _() {
 }
 
 // formatting of function results
-func _() func()				{}
-func _() func(int)			{ return nil }
-func _() func(int) int			{ return nil }
-func _() func(int) func(int) func()	{ return nil }
+func _() func() {}
+func _() func(int) { return nil }
+func _() func(int) int { return nil }
+func _() func(int) func(int) func() { return nil }
 
 // formatting of consecutive single-line functions
-func _()	{}
-func _()	{}
-func _()	{}
+func _() {}
+func _() {}
+func _() {}
 
-func _()	{} // an empty line before this function
-func _()	{}
-func _()	{}
+func _() {} // an empty line before this function
+func _() {}
+func _() {}
 
-func _()		{ f(1, 2, 3) }
-func _(x int) int	{ y := x; return y + 1 }
-func _() int		{ type T struct{}; var x T; return x }
+func _() { f(1, 2, 3) }
+func _(x int) int { y := x; return y + 1 }
+func _() int { type T struct{}; var x T; return x }
 
 // these must remain multi-line since they are multi-line in the source
 func _() {
@@ -770,7 +770,7 @@ func _() int {
 }
 
 // making function declarations safe for new semicolon rules
-func _()	{ /* single-line function because of "short-ish" comment */ }
+func _() { /* single-line function because of "short-ish" comment */ }
 func _() { /* multi-line function because of "long-ish" comment - much more comment text is following here */ /* and more */
 }
 
@@ -779,7 +779,7 @@ func _() {
 }
 
 // test case for issue #19544
-func _()	{}
+func _() {}
 func _longer_name_() { // this comment must not force the {} from above to alignment
 	// multiple lines
 }

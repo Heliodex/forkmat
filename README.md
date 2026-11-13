@@ -64,6 +64,8 @@ padding. What is single-spaced now:
 - keys in multi-line composite literals (`Foo: "foo"`, `"key": 1`)
 - `=` and the type column in grouped type declarations
   (`type ( A = int; LongName = string )`)
+- the `{` of consecutive one-line functions
+  (`func a()    { println(1) }`)
 
 ```go
 // before (standard gofmt)
@@ -90,7 +92,11 @@ Files touched:
 | `gofmt/*.go`, `go/printer/*.go` | mechanically reformatted by the new binary, so the tree stays self-consistent |
 | `gofmt/testdata/*.golden`, `go/printer/testdata/*.golden`, `*.x`, `*.raw`, `*.norm` | regenerated (`go test ... -update`) to match |
 
-Still aligned at this point: the `{` of consecutive one-line functions.
+Nothing is padded into a column now. `text/tabwriter` still runs — it is what
+implements `TabIndent` indentation and the `UseSpaces`/`RawFormat` modes — but
+the printer emits no `vtab` separators and no bare tabs between tokens any
+more. The one way to still get a column is a literal tab inside a comment: the
+printer preserves comment text verbatim, so the tabwriter sees it as a cell.
 One-line structs such as `struct{ A int }` are unchanged, since they were never
 column-aligned.
 

@@ -1859,7 +1859,9 @@ func (p *printer) funcDecl(d *ast.FuncDecl) {
 	}
 	p.expr(d.Name)
 	p.signature(d.Type)
-	p.funcBody(p.distanceFrom(d.Pos(), startCol), vtab, d.Body)
+	// A blank before the body keeps consecutive one-line functions from
+	// having their { padded into a column.
+	p.funcBody(p.distanceFrom(d.Pos(), startCol), blank, d.Body)
 }
 
 func (p *printer) decl(decl ast.Decl) {

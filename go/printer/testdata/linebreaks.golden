@@ -238,7 +238,7 @@ func _() {
 }
 
 // Respect line breaks in function declarations.
-func _(x T)	{}
+func _(x T) {}
 func _(x T,
 	y T) {
 }

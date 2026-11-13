@@ -4,7 +4,7 @@
 
 package generics
 
-func _[A, B any](a A, b B) int	{}
+func _[A, B any](a A, b B) int {}
 func _[T any](x, y T) T
 
 type T[P any] struct{}
@@ -36,8 +36,8 @@ func _() {
 }
 
 // type constraint literals with elided interfaces
-func _[P ~int, Q int | string]()	{}
-func _[P struct{ f int }, Q *P]()	{}
+func _[P ~int, Q int | string]() {}
+func _[P struct{ f int }, Q *P]() {}
 
 // various potentially ambiguous type parameter lists (issue #49482)
 type _[P *T,] struct{}
@@ -86,24 +86,24 @@ type _ [P*T | <-T | T]byte
 
 // equivalent test cases for potentially ambiguous type parameter lists, except
 // for function declarations there is no ambiguity (issue #51548)
-func _[P *T]()		{}
-func _[P *T, _ any]()	{}
-func _[P *T]()		{}
-func _[P *T, _ any]()	{}
-func _[P T]()		{}
-func _[P T, _ any]()	{}
+func _[P *T]() {}
+func _[P *T, _ any]() {}
+func _[P *T]() {}
+func _[P *T, _ any]() {}
+func _[P T]() {}
+func _[P T, _ any]() {}
 
-func _[P *struct{}]()	{}
-func _[P *struct{}]()	{}
-func _[P []int]()	{}
+func _[P *struct{}]() {}
+func _[P *struct{}]() {}
+func _[P []int]() {}
 
-func _[P T]()	{}
-func _[P T]()	{}
-func _[P **T]()	{}
-func _[P *T]()	{}
-func _[P *T]()	{}
-func _[P **T]()	{}
-func _[P *T]()	{}
+func _[P T]() {}
+func _[P T]() {}
+func _[P **T]() {}
+func _[P *T]() {}
+func _[P *T]() {}
+func _[P **T]() {}
+func _[P *T]() {}
 
 func _[
 	P *T,

@@ -586,9 +586,9 @@ func addState(s []state, inst instr, match []int) {
 	}
 }
 
-func (self *T) foo(x int) *T	{ return self }
+func (self *T) foo(x int) *T { return self }
 
-func _()	{ module.Func1().Func2() }
+func _() { module.Func1().Func2() }
 
 func _() {
 	_ = new(T).

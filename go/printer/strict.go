@@ -99,7 +99,6 @@ func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode, 
 		return
 	}
 
-
 	ws := indent
 	if mode&noIndent != 0 {
 		ws = ignore

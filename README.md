@@ -62,6 +62,8 @@ padding. What is single-spaced now:
 - trailing comments after any line of code: import specs, statements, call
   arguments, interface methods, composite literal elements
 - keys in multi-line composite literals (`Foo: "foo"`, `"key": 1`)
+- `=` and the type column in grouped type declarations
+  (`type ( A = int; LongName = string )`)
 
 ```go
 // before (standard gofmt)
@@ -88,8 +90,7 @@ Files touched:
 | `gofmt/*.go`, `go/printer/*.go` | mechanically reformatted by the new binary, so the tree stays self-consistent |
 | `gofmt/testdata/*.golden`, `go/printer/testdata/*.golden`, `*.x`, `*.raw`, `*.norm` | regenerated (`go test ... -update`) to match |
 
-Still aligned at this point: `=` in grouped type declarations, and the `{` of
-consecutive one-line functions.
+Still aligned at this point: the `{` of consecutive one-line functions.
 One-line structs such as `struct{ A int }` are unchanged, since they were never
 column-aligned.
 

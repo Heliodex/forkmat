@@ -238,13 +238,13 @@ const (
 )
 
 type (
-	_	int
-	_	struct{}
+	_ int
+	_ struct{}
 
-	_	interface{}
+	_ interface{}
 
 	// a comment
-	_	map[string]int
+	_ map[string]int
 )
 
 var (
@@ -423,16 +423,16 @@ var (
 
 func _() {
 	type (
-		xxxxxx	int
-		x	float
-		xxx	string
-		xxxxx	[]x
-		xx	struct{}
-		xxxxxxx	struct {
+		xxxxxx int
+		x float
+		xxx string
+		xxxxx []x
+		xx struct{}
+		xxxxxxx struct {
 			_, _ int
 			_ float
 		}
-		xxxx	chan<- string
+		xxxx chan<- string
 	)
 }
 
@@ -999,10 +999,10 @@ type c1 = C
 type c2 = struct{ x int }
 type c3 = p.C
 type (
-	s	struct{}
-	a	= A
-	b	= A
-	c	= foo
-	d	= interface{}
-	ddd	= p.Foo
+	s struct{}
+	a = A
+	b = A
+	c = foo
+	d = interface{}
+	ddd = p.Foo
 )

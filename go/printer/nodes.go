@@ -1647,11 +1647,9 @@ func (p *printer) spec(spec ast.Spec, n int, doIndent bool) {
 		if s.TypeParams != nil {
 			p.parameters(s.TypeParams, typeTParam)
 		}
-		if n == 1 {
-			p.print(blank)
-		} else {
-			p.print(vtab)
-		}
+		// No type column: a single blank keeps consecutive specs in a
+		// type declaration group from being padded into alignment.
+		p.print(blank)
 		if s.Assign.IsValid() {
 			p.print(token.ASSIGN, blank)
 		}

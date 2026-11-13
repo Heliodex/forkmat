@@ -228,7 +228,9 @@ The rules:
 What still follows the source:
 
 - Comments, and the blank lines around them. A comment is kept on the line the
-  source put it on.
+  source put it on. The exception is a block's first and last items: a comment
+  right after `{` or right before `}` takes no blank line, and nor does a
+  closing `}` after a comment.
 - Blank lines between import groups. `gofmt` sorts within each group, and the
   groups come from those blank lines, so they are kept.
 - Lines with several statements in the source (`a; b`) are split, and a

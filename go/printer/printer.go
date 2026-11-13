@@ -457,6 +457,12 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 			n = 1
 		}
 
+		if p.strict() && (p.afterOpenBrace() || tok == token.RBRACE) {
+			// under StrictLayout a comment that opens or closes a block sits
+			// right after the brace, with no blank line
+			n = 1
+		}
+
 		if n > 0 {
 			// use formfeeds to break columns before a comment;
 			// this is analogous to using formfeeds to separate
@@ -1004,7 +1010,9 @@ func (p *printer) print(args ...any) {
 		// intersperse extra newlines if present in the source and
 		// if they don't cause extra semicolons (don't do this in
 		// flush as it will cause extra newlines at the end of a file)
-		if !p.impliedSemi {
+		// Under StrictLayout a closing brace gets no blank lines from the source
+		// after a comment: the block's own line break is the only one.
+		if !p.impliedSemi && !(p.strict() && data == "}") {
 			n := nlimit(next.Line - p.pos.Line)
 			// don't exceed maxNewlines if we already wrote one
 			if wroteNewline && n == maxNewlines {

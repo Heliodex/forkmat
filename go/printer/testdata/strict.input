@@ -179,3 +179,33 @@ type Point struct {
 func merged(a int, b int, c string, d int, e int) (x int, y int) {
     return a, b
 }
+
+// Blank lines at the start and end of a block are removed; comments at either
+// end sit next to the brace.
+func edges() {
+
+	// start
+	x := 1
+	_ = x
+	// end
+
+}
+
+func edges2() {
+	x := 1
+
+	// end
+
+}
+
+type Edge struct {
+
+	A int // a
+
+}
+
+var edgeLit = T{
+
+	A: 1,
+
+}

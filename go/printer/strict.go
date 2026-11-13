@@ -427,3 +427,17 @@ func (p *printer) sameType(a, b ast.Expr) bool {
 	}
 	return sa.String() == sb.String()
 }
+
+// afterOpenBrace reports whether the last token written, ignoring white space,
+// is an opening brace. The printer's lastTok does not serve here: white space
+// clears it.
+func (p *printer) afterOpenBrace() bool {
+	for i := len(p.output) - 1; i >= 0; i-- {
+		switch p.output[i] {
+		case ' ', '\t', '\n', '\f', '\v', '\r':
+			continue
+		}
+		return p.output[i] == '{'
+	}
+	return false
+}

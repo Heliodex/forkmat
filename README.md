@@ -50,61 +50,50 @@ input. `cmd/gofmt` is byte-identical between go1.27.2 and go1.27.4.
 
 ## Local changes
 
-### No column alignment for struct fields or `var`/`const` specs
+### gofmt's column alignment is removed
 
-`go/printer` no longer column-aligns the things gofmt normally pads into
-columns: struct fields, and the specs of a `const`/`var` group.
+Standard gofmt pads structurally similar consecutive lines into columns using
+`text/tabwriter` (via the `vtab` separators the printer emits, and the tabs
+`writeCommentPrefix` writes before a trailing comment). This tree removes that
+padding. What is single-spaced now:
+
+- struct fields, their tags, and their trailing comments
+- the specs of a `const`/`var` group: names, type, `=`, values, trailing comments
+- trailing comments after any line of code: import specs, statements, call
+  arguments, interface methods, composite literal elements
 
 ```go
 // before (standard gofmt)
-type Server struct {
-	Name        string
-	Addr        string   `json:"addr"`
-	TLSConfig   *Config  `json:"tls,omitempty"`
-	IdleTimeout Duration // zero means no timeout
-}
-
-var (
-	DefaultMaxHeaderBytes            = 1 << 20 // 1 MB
-	DefaultMaxHeaderBytes2       int = 1 << 20
-)
+type Server struct {                 var (
+	Name        string                   x                 = 1 // one
+	Addr        string   `json:"addr"`   longerName int    = 2
+	IdleTimeout Duration // zero         w          string
+}                                    )
 
 // after (this tree)
-type Server struct {
-	Name string
-	Addr string `json:"addr"`
-	TLSConfig *Config `json:"tls,omitempty"`
-	IdleTimeout Duration // zero means no timeout
-}
-
-var (
-	DefaultMaxHeaderBytes = 1 << 20 // 1 MB
-	DefaultMaxHeaderBytes2 int = 1 << 20
-)
+type Server struct {                 var (
+	Name string                          x = 1 // one
+	Addr string `json:"addr"`            longerName int = 2
+	IdleTimeout Duration // zero         w string
+}                                    )
 ```
-
-Trailing comments on fields and specs get a single blank too, instead of being
-pushed out to a comment column.
-
-What is unchanged: composite literal keys (`Key: value` columns), interface
-method comments, `=` alignment in grouped type declarations
-(`type ( A = B; C D )`), and one-line structs such as `struct{ A int }`.
 
 Files touched:
 
 | file | change |
 | --- | --- |
 | `go/printer/nodes.go` | struct fields use a blank separator and `extraTabs` is gone; `valueSpec` uses blanks and drops `keepType`; `keepTypeColumn` (64 lines) deleted |
-| `go/printer/printer.go` | new `noCommentAlign` state; `writeCommentPrefix` uses a blank instead of a tab while it is set |
+| `go/printer/printer.go` | `writeCommentPrefix` always writes a blank, never a tab |
 | `gofmt/*.go`, `go/printer/*.go` | mechanically reformatted by the new binary, so the tree stays self-consistent |
-| `gofmt/testdata/tabs.golden`, `go/printer/testdata/*.golden`, `*.x`, `*.raw`, `*.norm` | regenerated (`-update`) to match |
+| `gofmt/testdata/*.golden`, `go/printer/testdata/*.golden`, `*.x`, `*.raw`, `*.norm` | regenerated (`go test ... -update`) to match |
 
-Both constructs set and restore `noCommentAlign` around the region they print,
-because a trailing comment is only flushed when the next token (or the closing
-brace/paren) is printed.
+Still aligned at this point: composite literal keys (`Key: value` columns), `=`
+in grouped type declarations, and the `{` of consecutive one-line functions.
+One-line structs such as `struct{ A int }` are unchanged, since they were never
+column-aligned.
 
-Revert with `git diff`-level surgery on those hunks, or by pointing
-`gofmt/` back at the standard `go/printer` (see above) — the goldens then need
+Revert with `git diff`-level surgery on those hunks, or by pointing `gofmt/`
+back at the standard `go/printer` (see above) — the goldens then need
 regenerating as well.
 
 ## What differs from upstream

@@ -79,28 +79,28 @@ func main() {
 
 func issue5623() {
 L:
-	_ = yyyyyyyyyyyyyyyy			// comment - should be aligned
-	_ = xxxxxxxxxxxxxxxxxxxxxxxxxxxx	/* comment */
+	_ = yyyyyyyyyyyyyyyy // comment - should be aligned
+	_ = xxxxxxxxxxxxxxxxxxxxxxxxxxxx /* comment */
 
-	_ = yyyyyyyyyyyyyyyy			/* comment - should be aligned */
-	_ = xxxxxxxxxxxxxxxxxxxxxxxxxxxx	// comment
+	_ = yyyyyyyyyyyyyyyy /* comment - should be aligned */
+	_ = xxxxxxxxxxxxxxxxxxxxxxxxxxxx // comment
 
 LLLLLLL:
-	_ = yyyyyyyyyyyyyyyy			// comment - should be aligned
-	_ = xxxxxxxxxxxxxxxxxxxxxxxxxxxx	// comment
+	_ = yyyyyyyyyyyyyyyy // comment - should be aligned
+	_ = xxxxxxxxxxxxxxxxxxxxxxxxxxxx // comment
 
 LL:
 LLLLL:
-	_ = xxxxxxxxxxxxxxxxxxxxxxxxxxxx	/* comment */
-	_ = yyyyyyyyyyyyyyyy			/* comment - should be aligned */
+	_ = xxxxxxxxxxxxxxxxxxxxxxxxxxxx /* comment */
+	_ = yyyyyyyyyyyyyyyy /* comment - should be aligned */
 
-	_ = xxxxxxxxxxxxxxxxxxxxxxxxxxxx	// comment
-	_ = yyyyyyyyyyyyyyyy			// comment - should be aligned
+	_ = xxxxxxxxxxxxxxxxxxxxxxxxxxxx // comment
+	_ = yyyyyyyyyyyyyyyy // comment - should be aligned
 
 	// test case from issue
 label:
-	mask := uint64(1)<<c - 1		// Allocation mask
-	used := atomic.LoadUint64(&h.used)	// Current allocations
+	mask := uint64(1)<<c - 1 // Allocation mask
+	used := atomic.LoadUint64(&h.used) // Current allocations
 }
 
 // Test cases for issue 18782
@@ -117,11 +117,11 @@ var _ = T{ /* a */ 0}
 
 var _ = T{ /* a */ /* b */ 0}
 
-var _ = T{	/* a */	/* b */
+var _ = T{ /* a */ /* b */
 	/* c */ 0,
 }
 
-var _ = T{	/* a */	/* b */
+var _ = T{ /* a */ /* b */
 	/* c */
 	/* d */ 0,
 }
@@ -135,11 +135,11 @@ var _ = T{ /* a */ {}}
 
 var _ = T{ /* a */ /* b */ {}}
 
-var _ = T{	/* a */	/* b */
+var _ = T{ /* a */ /* b */
 	/* c */ {},
 }
 
-var _ = T{	/* a */	/* b */
+var _ = T{ /* a */ /* b */
 	/* c */
 	/* d */ {},
 }

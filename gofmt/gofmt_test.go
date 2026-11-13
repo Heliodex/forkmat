@@ -34,7 +34,7 @@ func gofmtFlags(filename string, maxLines int) string {
 	// initialize scanner
 	var s scanner.Scanner
 	s.Init(f)
-	s.Error = func(*scanner.Scanner, string) {}       // ignore errors
+	s.Error = func(*scanner.Scanner, string) {} // ignore errors
 	s.Mode = scanner.GoTokens &^ scanner.SkipComments // want comments
 
 	// look for //gofmt comment
@@ -210,7 +210,7 @@ func TestDiff(t *testing.T) {
 
 // Test case for issue 3961.
 func TestCRLF(t *testing.T) {
-	const input = "testdata/crlf.input"   // must contain CR/LF's
+	const input = "testdata/crlf.input" // must contain CR/LF's
 	const golden = "testdata/crlf.golden" // must not contain any CR's
 
 	data, err := os.ReadFile(input)

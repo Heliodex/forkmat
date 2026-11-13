@@ -227,7 +227,7 @@ func (p *printer) exprList(prev0 token.Pos, list []ast.Expr, depth int, mode exp
 			if count == 0 || prevSize <= smallSize && size <= smallSize {
 				useFF = false
 			} else {
-				const r = 2.5                                // threshold
+				const r = 2.5 // threshold
 				geomean := exp2ish(log2sum / float64(count)) // count > 0
 				ratio := float64(size) / geomean
 				useFF = r*ratio <= 1 || r <= ratio
@@ -549,12 +549,6 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 	}
 
 	if isStruct {
-
-		// Turn off column alignment for trailing comments until this field
-		// list is done; the last comment may only be flushed at RBRACE below.
-		savedNoCommentAlign := p.noCommentAlign
-		p.noCommentAlign = true
-		defer func() { p.noCommentAlign = savedNoCommentAlign }()
 
 		// Fields are separated by a single blank rather than by a vtab cell,
 		// so field names, types and tags are not column-aligned. There are no
@@ -1682,12 +1676,7 @@ func (p *printer) genDecl(d *ast.GenDecl) {
 			p.print(indent, formfeed)
 			if n > 1 && (d.Tok == token.CONST || d.Tok == token.VAR) {
 				// Two or more grouped const/var declarations: no alignment,
-				// so specs are printed one after another. Turn off comment
-				// columns until RPAREN, where the last comment may flush.
-				savedNoCommentAlign := p.noCommentAlign
-				p.noCommentAlign = true
-				defer func() { p.noCommentAlign = savedNoCommentAlign }()
-
+				// so specs are printed one after another.
 				var line int
 				for i, s := range d.Specs {
 					if i > 0 {

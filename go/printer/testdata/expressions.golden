@@ -242,7 +242,7 @@ func f(x int, args ...int) {
 	f(2, args[0])
 
 	// make sure syntactically legal code remains syntactically legal
-	f(3, 42 ...)	// a blank must remain between 42 and ...
+	f(3, 42 ...) // a blank must remain between 42 and ...
 	f(4, 42....)
 	f(5, 42....)
 	f(6, 42.0...)
@@ -252,7 +252,7 @@ func f(x int, args ...int) {
 	f(10, 42e0...)
 	f(11, 42e0...)
 
-	_ = 42 .x	// a blank must remain between 42 and .x
+	_ = 42 .x // a blank must remain between 42 and .x
 	_ = 42..x
 	_ = 42..x
 	_ = 42.0.x
@@ -304,9 +304,9 @@ func _() {
 
 func _() {
 	// do not modify literals
-	_ = "tab1	tab2	tab3	end"	// string contains 3 tabs
-	_ = "tab1 tab2 tab3 end"	// same string with 3 blanks - may be unaligned because editors see tabs in strings
-	_ = ""				// this comment should be aligned with the one on the previous line
+	_ = "tab1	tab2	tab3	end" // string contains 3 tabs
+	_ = "tab1 tab2 tab3 end" // same string with 3 blanks - may be unaligned because editors see tabs in strings
+	_ = "" // this comment should be aligned with the one on the previous line
 	_ = ``
 	_ = `
 `
@@ -330,11 +330,11 @@ bar`
 	`foo
 bar`
 
-	var _ =	// comment
+	var _ = // comment
 	``
-	var _ =	// comment
+	var _ = // comment
 	`foo`
-	var _ =	// comment
+	var _ = // comment
 	// the next line should remain indented
 	`foo
 bar`
@@ -344,11 +344,11 @@ bar`
 	var _ = /* comment */ `foo
 bar`
 
-	var _ =	/* comment */
+	var _ = /* comment */
 	``
-	var _ =	/* comment */
+	var _ = /* comment */
 	`foo`
-	var _ =	/* comment */
+	var _ = /* comment */
 	// the next line should remain indented
 	`foo
 bar`
@@ -490,8 +490,8 @@ func _() {
 		b < a
 	_ = "933262154439441526816992388562667004907159682643816214685929" +
 		"638952175999932299156089414639761565182862536979208272237582" +
-		"51185210916864000000000000000000000000"	// 100!
-	_ = "170141183460469231731687303715884105727"	// prime
+		"51185210916864000000000000000000000000" // 100!
+	_ = "170141183460469231731687303715884105727" // prime
 }
 
 // Alignment after overlong lines
@@ -506,13 +506,13 @@ const (
 
 // Correct placement of operators and comments in multi-line expressions
 func _() {
-	_ = a +	// comment
-		b +	// comment
+	_ = a + // comment
+		b + // comment
 		c
 	_ = "a" +
-		"b" +	// comment
+		"b" + // comment
 		"c"
-	_ = "ba0408" + "7265717569726564"	// field 71, encoding 2, string "required"
+	_ = "ba0408" + "7265717569726564" // field 71, encoding 2, string "required"
 }
 
 // Correct placement of terminating comma/closing parentheses in multi-line calls.
@@ -526,32 +526,32 @@ func _() {
 	)
 	f(1,
 		2,
-		3)	// comment
+		3) // comment
 	f(1,
 		2,
-		3,	// comment
+		3, // comment
 	)
 	f(1,
 		2,
-		3)	// comment
+		3) // comment
 	f(1,
 		2,
-		3,	// comment
+		3, // comment
 	)
 }
 
 // Align comments in multi-line lists of single-line expressions.
 var txpix = [NCOL]draw.Color{
-	draw.Yellow,		// yellow
-	draw.Cyan,		// cyan
-	draw.Green,		// lime green
-	draw.GreyBlue,		// slate
-	draw.Red,		/* red */
-	draw.GreyGreen,		/* olive green */
-	draw.Blue,		/* blue */
-	draw.Color(0xFF55AAFF),	/* pink */
-	draw.Color(0xFFAAFFFF),	/* lavender */
-	draw.Color(0xBB005DFF),	/* maroon */
+	draw.Yellow, // yellow
+	draw.Cyan, // cyan
+	draw.Green, // lime green
+	draw.GreyBlue, // slate
+	draw.Red, /* red */
+	draw.GreyGreen, /* olive green */
+	draw.Blue, /* blue */
+	draw.Color(0xFF55AAFF), /* pink */
+	draw.Color(0xFFAAFFFF), /* lavender */
+	draw.Color(0xBB005DFF), /* maroon */
 }
 
 func same(t, u *Time) bool {
@@ -579,8 +579,8 @@ func (p *parser) charClass() {
 func addState(s []state, inst instr, match []int) {
 	// handle comments correctly in multi-line expressions
 	for i := 0; i < l; i++ {
-		if s[i].inst.index() == index &&	// same instruction
-			s[i].match[0] < pos {	// earlier match already going; leftmost wins
+		if s[i].inst.index() == index && // same instruction
+			s[i].match[0] < pos { // earlier match already going; leftmost wins
 			return s
 		}
 	}
@@ -598,7 +598,7 @@ func _() {
 
 	_ = new(T).
 		foo(1).
-		foo(2).	// inline comments
+		foo(2). // inline comments
 		foo(3)
 
 	_ = new(T).foo(1).foo(2).foo(3)

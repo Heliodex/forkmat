@@ -132,15 +132,15 @@ func _() {
 	if true {
 	}
 	if true {
-	}	// no semicolon printed
+	} // no semicolon printed
 	if expr {
 	}
 	if expr {
-	}	// no semicolon printed
+	} // no semicolon printed
 	if expr {
-	}	// no parens printed
+	} // no parens printed
 	if expr {
-	}	// no semicolon and parens printed
+	} // no semicolon and parens printed
 	if x := expr; true {
 		use(x)
 	}
@@ -154,15 +154,15 @@ func _() {
 	switch {
 	}
 	switch {
-	}	// no semicolon printed
+	} // no semicolon printed
 	switch expr {
 	}
 	switch expr {
-	}	// no semicolon printed
+	} // no semicolon printed
 	switch expr {
-	}	// no parens printed
+	} // no parens printed
 	switch expr {
-	}	// no semicolon and parens printed
+	} // no semicolon and parens printed
 	switch x := expr; {
 	default:
 		use(
@@ -182,13 +182,13 @@ func _() {
 	switch x := 0; x {
 	case 1:
 		use(x)
-		use(x)	// followed by an empty line
+		use(x) // followed by an empty line
 
-	case 2:	// followed by an empty line
+	case 2: // followed by an empty line
 
-		use(x)	// followed by an empty line
+		use(x) // followed by an empty line
 
-	case 3:	// no empty lines
+	case 3: // no empty lines
 		use(x)
 		use(x)
 	}
@@ -196,7 +196,7 @@ func _() {
 	switch x {
 	case 0:
 		use(x)
-	case 1:	// this comment should have no effect on the previous or next line
+	case 1: // this comment should have no effect on the previous or next line
 		use(x)
 	}
 
@@ -232,9 +232,9 @@ func _() {
 	select {}
 	select { /* this comment should not be tab-aligned because the closing } is on the same line */
 	}
-	select {	/* this comment should be tab-aligned */
+	select { /* this comment should be tab-aligned */
 	}
-	select {	// this comment should be tab-aligned
+	select { // this comment should be tab-aligned
 	}
 	select {
 	case <-c:
@@ -248,16 +248,16 @@ func _() {
 	for expr {
 	}
 	for expr {
-	}	// no parens printed
+	} // no parens printed
 	for {
-	}	// no semicolons printed
+	} // no semicolons printed
 	for x := expr; ; {
 		use(x)
 	}
 	for expr {
-	}	// no semicolons printed
+	} // no semicolons printed
 	for expr {
-	}	// no semicolons and parens printed
+	} // no semicolons and parens printed
 	for ; ; expr = false {
 	}
 	for x := expr; expr; {
@@ -276,7 +276,7 @@ func _() {
 	}
 	for x := range []int{} {
 		use(x)
-	}	// no parens printed
+	} // no parens printed
 }
 
 // Formatting of for-statement headers for multi-line for-loops.
@@ -286,16 +286,16 @@ func _() {
 	for expr {
 	}
 	for expr {
-	}	// no parens printed
+	} // no parens printed
 	for {
-	}	// no semicolons printed
+	} // no semicolons printed
 	for x := expr; ; {
 		use(x)
 	}
 	for expr {
-	}	// no semicolons printed
+	} // no semicolons printed
 	for expr {
-	}	// no semicolons and parens printed
+	} // no semicolons and parens printed
 	for ; ; expr = false {
 	}
 	for x := expr; expr; {
@@ -317,7 +317,7 @@ func _() {
 	}
 	for x := range []int{} {
 		use(x)
-	}	// no parens printed
+	} // no parens printed
 }
 
 // Formatting of selected short single- and multi-line statements.
@@ -325,10 +325,10 @@ func _() {
 	if cond {
 	}
 	if cond {
-	}	// multiple lines
+	} // multiple lines
 	if cond {
 	} else {
-	}	// else clause always requires multiple lines
+	} // else clause always requires multiple lines
 
 	for {
 	}
@@ -339,7 +339,7 @@ func _() {
 	}
 	for i := 0; i < len(a); 1++ {
 		a[i] = i
-	}	// multiple lines
+	} // multiple lines
 
 	for range a {
 	}
@@ -354,7 +354,7 @@ func _() {
 	}
 	for i := range a {
 		a[i] = i
-	}	// multiple lines
+	} // multiple lines
 
 	go func() {
 		for {
@@ -499,19 +499,19 @@ L:
 
 func _() {
 	// this comment should be indented
-L:	// no semicolon needed
+L: // no semicolon needed
 }
 
 func _() {
 	switch 0 {
 	case 0:
 	L0:
-		;	// semicolon required
+		; // semicolon required
 	case 1:
 	L1:
-		;	// semicolon required
+		; // semicolon required
 	default:
-	L2:	// no semicolon needed
+	L2: // no semicolon needed
 	}
 }
 
@@ -563,7 +563,7 @@ func _() {
 	if true {
 		_ = 0
 	}
-	_ = 0	// the indentation here should not be affected by the long label name
+	_ = 0 // the indentation here should not be affected by the long label name
 AnOverlongLabel:
 	_ = 0
 
@@ -589,7 +589,7 @@ func _() {
 	for {
 		goto L
 	}
-L:	// A comment on the same line as the label, followed by a single empty line.
+L: // A comment on the same line as the label, followed by a single empty line.
 	// Known bug: There may be more than one empty line before MoreCode()
 	//            (see go/printer/nodes.go, func linebreak).
 

@@ -34,15 +34,15 @@ type I0 interface {
 // The I1 interface; some methods are not exported.
 type I1 interface {
 	I0
-	F(x float) float	// exported methods
+	F(x float) float // exported methods
 	// contains filtered or unexported methods
 }
 
 // The I2 interface; all methods are exported.
 type I2 interface {
 	I0
-	F(x float) float	// exported method
-	G(x float) float	// exported method
+	F(x float) float // exported method
+	G(x float) float // exported method
 }
 
 // The S3 struct; all comments except for the last one must appear in the export.

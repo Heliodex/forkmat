@@ -62,7 +62,6 @@ type printer struct {
 	level int // level == 0: outside composite literal; level > 0: inside composite literal
 	mode pmode // current printer mode
 	endAlignment bool // if set, terminate alignment immediately
-	noCommentAlign bool // if set, separate trailing comments with a blank instead of a column
 	impliedSemi bool // if set, a linebreak implies a semicolon
 	lastTok token.Token // last token printed (token.ILLEGAL if it's whitespace)
 	prevOpen token.Token // previous non-brace "open" token (, [, or token.ILLEGAL
@@ -386,17 +385,10 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 			}
 			p.writeWhitespace(j)
 		}
-		// make sure there is at least one separator
+		// make sure there is at least one separator; use a blank rather than
+		// a tab so trailing comments are not pushed into an aligned column
 		if !hasSep {
-			sep := byte('\t')
-			if pos.Line == next.Line || p.noCommentAlign {
-				// next item is on the same line as the comment
-				// (which must be a /*-style comment): separate
-				// with a blank instead of a tab; likewise when
-				// alignment is off for the current construct
-				sep = ' '
-			}
-			p.writeByte(sep, 1)
+			p.writeByte(' ', 1)
 		}
 
 	} else {

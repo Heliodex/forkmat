@@ -52,7 +52,7 @@ func format(src []byte, mode checkMode) ([]byte, error) {
 	// filter exports if necessary
 	if mode&export != 0 {
 		ast.FileExports(f) // ignore result
-		f.Comments = nil   // don't print comments that are not in AST
+		f.Comments = nil // don't print comments that are not in AST
 	}
 
 	// determine printer configuration
@@ -738,7 +738,7 @@ type bar int // comment2
 }`
 
 		bar = `// leading comment
-type bar int	// comment2
+type bar int // comment2
 `
 	)
 
@@ -782,7 +782,7 @@ func TestIssue11151(t *testing.T) {
 	var buf bytes.Buffer
 	Fprint(&buf, fset, f)
 	got := buf.String()
-	const want = "package p\t/*/1*\r/2*\r/3*+/4*/\n" // \r following opening /* should be stripped
+	const want = "package p /*/1*\r/2*\r/3*+/4*/\n" // \r following opening /* should be stripped
 	if got != want {
 		t.Errorf("\ngot : %q\nwant: %q", got, want)
 	}

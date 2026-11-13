@@ -48,24 +48,24 @@ import _ "fmt"
 import _ "fmt"
 import _ "fmt"
 
-import "foo"	// a comment
-import "bar"	// a comment
+import "foo" // a comment
+import "bar" // a comment
 
 import (
 	_ "foo"
 	// a comment
 	"bar"
-	"foo"	// a comment
-	"bar"	// a comment
+	"foo" // a comment
+	"bar" // a comment
 )
 
 // comments + renames
 import (
-	"unrenamed"	// a comment
+	"unrenamed" // a comment
 	renamed "renameMe"
-	. "io"		/* a comment */
-	_ "io/ioutil"	// a comment
-	"io"		// testing alignment
+	. "io" /* a comment */
+	_ "io/ioutil" // a comment
+	"io" // testing alignment
 	. "os"
 	// a comment
 )
@@ -74,7 +74,7 @@ import (
 import (
 	. "fmt"
 	"io"
-	"malloc"	// for the malloc count test only
+	"malloc" // for the malloc count test only
 	"math"
 	"strings"
 	"testing"
@@ -83,31 +83,31 @@ import (
 // more import examples
 import (
 	"xxx"
-	"much_longer_name"	// comment
-	"short_name"		// comment
+	"much_longer_name" // comment
+	"short_name" // comment
 )
 
 import (
 	_ "xxx"
-	"much_longer_name"	// comment
+	"much_longer_name" // comment
 )
 
 import (
 	mymath "math"
-	"/foo/bar/long_package_path"	// a comment
+	"/foo/bar/long_package_path" // a comment
 )
 
 import (
-	"package_a"	// comment
+	"package_a" // comment
 	"package_b"
-	my_better_c "package_c"	// comment
-	"package_d"		// comment
-	my_e "package_e"	// comment
+	my_better_c "package_c" // comment
+	"package_d" // comment
+	my_e "package_e" // comment
 
-	"package_a"	// comment
+	"package_a" // comment
 	"package_bb"
-	"package_ccc"	// comment
-	"package_dddd"	// comment
+	"package_ccc" // comment
+	"package_dddd" // comment
 )
 
 // print import paths as double-quoted strings
@@ -130,11 +130,11 @@ type T1 struct{}
 
 // T2 comment
 type T2 struct {
-}	// should be a two-line struct
+} // should be a two-line struct
 
 // T3 comment
 type T2 struct {
-}	// should be a two-line struct
+} // should be a two-line struct
 
 // printing of constant literals
 const (
@@ -554,11 +554,11 @@ type _ interface {
 	fffffg()
 }
 
-type _ interface {	// this comment must not change indentation
-	EI				// here's a comment
-	f()				// no blank between identifier and ()
-	fffff()				// no blank between identifier and ()
-	gggggggggggg(x, y, z int)	// hurray
+type _ interface { // this comment must not change indentation
+	EI // here's a comment
+	f() // no blank between identifier and ()
+	fffff() // no blank between identifier and ()
+	gggggggggggg(x, y, z int) // hurray
 }
 
 // formatting of variable declarations
@@ -579,10 +579,10 @@ func _() {
 }
 
 // formatting of multi-line variable declarations
-var a1, b1, c1 int	// all on one line
+var a1, b1, c1 int // all on one line
 
 var a2, b2,
-	c2 int	// this line should be indented
+	c2 int // this line should be indented
 
 var (
 	a3, b3,
@@ -671,11 +671,11 @@ var _ = map[int]int{
 	abcdefgh:		a,
 	abcdefghabcdefg:	a,
 	abcdefghij:		a,
-	abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij:	a,	// outlier - do not align with previous line
-	abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij:		a,	// align with previous line
+	abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij:	a, // outlier - do not align with previous line
+	abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij:		a, // align with previous line
 
-	ab:	a,	// do not align with previous line
-	abcde:	a,	// align with previous line
+	ab:	a, // do not align with previous line
+	abcde:	a, // align with previous line
 }
 
 // alignment of map composite entries: test cases from issue 3965
@@ -708,11 +708,11 @@ var _ = T4{
 }
 
 // no alignment of map composite entries if they are not the first entry on a line
-var _ = T{0: 0}	// not aligned
-var _ = T{0: 0,	// not aligned
-	1:	1,				// aligned
-	22:	22,				// aligned
-	333:	333, 1234: 12, 12345: 0,	// first on line aligned
+var _ = T{0: 0} // not aligned
+var _ = T{0: 0, // not aligned
+	1:	1, // aligned
+	22:	22, // aligned
+	333:	333, 1234: 12, 12345: 0, // first on line aligned
 }
 
 // test cases form issue 8685
@@ -732,7 +732,7 @@ var _ = map[string]string{"a": "spring",
 
 func _() {
 	var _ = T{
-		a,	// must introduce trailing comma
+		a, // must introduce trailing comma
 	}
 }
 
@@ -747,7 +747,7 @@ func _()	{}
 func _()	{}
 func _()	{}
 
-func _()	{}	// an empty line before this function
+func _()	{} // an empty line before this function
 func _()	{}
 func _()	{}
 
@@ -780,7 +780,7 @@ func _() {
 
 // test case for issue #19544
 func _()	{}
-func _longer_name_() {	// this comment must not force the {} from above to alignment
+func _longer_name_() { // this comment must not force the {} from above to alignment
 	// multiple lines
 }
 
@@ -815,24 +815,24 @@ func _(x bool,
 func _(x,
 	y bool) {
 }
-func _(bool,	// comment
+func _(bool, // comment
 	int) {
 }
-func _(x bool,	// comment
+func _(x bool, // comment
 	y int) {
 }
-func _(x,	// comment
+func _(x, // comment
 	y bool) {
 }
-func _(bool,	// comment
+func _(bool, // comment
 	// comment
 	int) {
 }
-func _(x bool,	// comment
+func _(x bool, // comment
 	// comment
 	y int) {
 }
-func _(x,	// comment
+func _(x, // comment
 	// comment
 	y bool) {
 }
@@ -848,16 +848,16 @@ func _(x,
 	// comment
 	y bool) {
 }
-func _(x,	// comment
-	y,	// comment
+func _(x, // comment
+	y, // comment
 	z bool) {
 }
-func _(x,	// comment
-	y,	// comment
+func _(x, // comment
+	y, // comment
 	z bool) {
 }
-func _(x int,	// comment
-	y float,	// comment
+func _(x int, // comment
+	y float, // comment
 	z bool) {
 }
 
@@ -973,24 +973,24 @@ func _(...interface{})
 func _(...interface {
 	m()
 	n()
-})	// no extra comma between } and )
+}) // no extra comma between } and )
 
 func (t *T) _(...interface{})
 func (t *T) _(...interface {
 	m()
 	n()
-})	// no extra comma between } and )
+}) // no extra comma between } and )
 
 func _(interface{})
 func _(interface {
 	m()
-})	// no extra comma between } and )
+}) // no extra comma between } and )
 
 func _(struct{})
 func _(struct {
 	x int
 	y int
-})	// no extra comma between } and )
+}) // no extra comma between } and )
 
 // alias declarations
 

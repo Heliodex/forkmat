@@ -47,7 +47,7 @@ import (
 	// a block with comments
 	"errors"
 	"fmt" // for Printf
-	"io"  // for Reader
+	"io" // for Reader
 	"log" // for Fatal
 	"math"
 )
@@ -82,7 +82,7 @@ import (
 import (
 	"errors"
 	"fmt" // for Printf
-	"io"  // for Reader
+	"io" // for Reader
 	"log" // for Fatal
 	"math"
 
@@ -101,13 +101,13 @@ import (
 	"fmt" // for Printf
 
 	"errors"
-	"io"  // for Reader
+	"io" // for Reader
 	"log" // for Fatal
 	"math"
 
 	"errors"
 	"fmt" // for Printf
-	"io"  // for Reader
+	"io" // for Reader
 	"log" // for Fatal
 	"math"
 )
@@ -117,7 +117,7 @@ import (
 	a "A" // aA
 	b "A" // bA1
 	b "A" // bA2
-	"B"   // B
+	"B" // B
 	. "B" // .B
 	_ "B" // _b
 	"C"
@@ -141,7 +141,7 @@ import (
 	"fmt"
 	/* comment */ io1 "io"
 	/* comment */ io2 "io" // hello
-	"math"                 /* right side */
+	"math" /* right side */
 	// end
 )
 
@@ -149,14 +149,14 @@ import (
 	"errors" // for New
 	"fmt"
 	/* comment */ io1 "io" /* before */ // after
-	io2 "io"               // another
+	io2 "io" // another
 	// end
 )
 
 import (
 	"errors" // for New
 	/* left */ "fmt" /* right */
-	"log"            // for Fatal
+	"log" // for Fatal
 	/* left */ "math" /* right */
 )
 

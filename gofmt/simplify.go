@@ -122,7 +122,7 @@ func (s simplifier) simplifyLiteral(typ reflect.Value, astType, x ast.Expr, px *
 			if inner, ok := addr.X.(*ast.CompositeLit); ok {
 				if match(nil, reflect.ValueOf(ptr.X), reflect.ValueOf(inner.Type)) {
 					inner.Type = nil // drop T
-					*px = inner      // drop &
+					*px = inner // drop &
 				}
 			}
 		}

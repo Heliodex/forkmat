@@ -389,7 +389,9 @@ bar`
 func _() {
 	// one-line function literals (body is on a single line)
 	_ = func() {}
-	_ = func() int { return 0 }
+	_ = func() int {
+		return 0
+	}
 	_ = func(x, y int) bool { m := (x + y) / 2; return m < 0 }
 
 	// multi-line function literals (body is not on one line)

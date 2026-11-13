@@ -142,7 +142,9 @@ func (s *sequencer) Add(weight int64, f func(*reporter) error) {
 	if err := s.sem.Acquire(context.TODO(), weight); err != nil {
 		// Change the task from "execute f" to "report err".
 		weight = 0
-		f = func(*reporter) error { return err }
+		f = func(*reporter) error {
+			return err
+		}
 	}
 
 	r := &reporter{prev: s.prev}
@@ -163,7 +165,9 @@ func (s *sequencer) Add(weight int64, f func(*reporter) error) {
 // AddReport prints an error to s after the output of any previously-added
 // tasks, causing the final exit code to be nonzero.
 func (s *sequencer) AddReport(err error) {
-	s.Add(0, func(*reporter) error { return err })
+	s.Add(0, func(*reporter) error {
+		return err
+	})
 }
 
 // GetExitCode waits for all previously-added tasks to complete, then returns an

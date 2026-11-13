@@ -122,25 +122,31 @@ regenerating as well.
 
 ### A function that only returns is never one line
 
-A function declaration whose body is a single `return` statement is always
-spread over multiple lines, so the returned expressions never get crammed into
-the declaration line:
+Any function body that is a single `return` statement — declaration or literal
+— is always spread over multiple lines, so the returned expressions never get
+crammed into the header line:
 
 ```go
 // before (standard gofmt)
 func f() int { return 1 }
+var g = func() int { return 1 }
+sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
 
 // after (this tree)
 func f() int {
 	return 1
 }
+var g = func() int {
+	return 1
+}
+sort.Slice(s, func(i, j int) bool {
+	return s[i] < s[j]
+})
 ```
 
-Function *literals* still collapse when short — `var f = func() int { return 1 }`
-and inline callbacks such as `sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })`
-keep their one-line form — as do declarations whose body is some other single
-statement (`func f() { println(1) }`). The check is in `funcBody`
-(`go/printer/nodes.go`), which takes an `isDecl` flag from its two callers.
+Bodies with any other single statement still collapse when they fit, e.g.
+`func f() { println(1) }` or `func(x, y int) bool { m := x + y; return m < 0 }`
+(two statements). The check is in `funcBody` (`go/printer/nodes.go`).
 
 ## What differs from upstream
 

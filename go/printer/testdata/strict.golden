@@ -89,3 +89,41 @@ func multi() {
 	x := 1
 	_ = x
 }
+
+// Comments between the tokens of a list break it; a comment inside an
+// element does not.
+func comments(a, b int) (int, int) {
+	x := f( // lead
+		a,
+		b,
+	)
+	y := g(
+		"a", // first
+		"b",
+	) // second
+	z := []int{
+		1, // one
+		2,
+	}
+	_, _ = y, z
+
+	return a, // c
+		b
+}
+
+// A body holding only a comment is printed over several lines.
+func commentOnly() {
+	// nothing here
+}
+
+var _ = []struct {
+	in []byte
+	out T
+}{
+	{[]byte{1}, T{time.Date(2010, 0o1, 0o2, 0o3, 0o4, 0o5, 0, time.FixedZone("", 6*60*60+7*60))}},
+}
+
+type Commented interface {
+	// M is documented.
+	M()
+}

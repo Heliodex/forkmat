@@ -212,6 +212,11 @@ The rules:
 - Statements are one per line. A blank line goes before and after a block
   statement (`if`, `for`, `range`, `switch`, `select`, a bare block), a
   `return`, and a grouped `var` declaration, but not next to a call statement.
+  A run of `go` or `defer` statements is set off by blank lines from the
+  statements around it, but its members are not separated from each other.
+- Parentheses are dropped where operator precedence already groups the
+  expression (`(a * b) + c` prints as `a*b + c`). Types, composite and function
+  literals, and unary `<-` and `~` keep theirs.
 - Top-level declarations get a blank line when the token changes, when the next
   one has a doc comment, or when either spans several lines.
 - A function body holding a statement is always multi-line.

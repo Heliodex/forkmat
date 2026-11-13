@@ -84,6 +84,9 @@ type printer struct {
 	// The list of all source comments, in order of appearance.
 	comments []*ast.CommentGroup // may be nil
 	useNodeComments bool // if not set, ignore lead and line comments of nodes
+	// allComments holds the comments of the file or node being printed, as
+	// given to printNode. Unlike comments, setComment never changes it.
+	allComments []*ast.CommentGroup
 
 	// Information about p.comments[p.cindex]; set up by nextComment.
 	commentInfo
@@ -1127,9 +1130,11 @@ func (p *printer) printNode(node any) error {
 		if i < j {
 			p.comments = comments[i:j]
 		}
+		p.allComments = comments
 	} else if n, ok := node.(*ast.File); ok {
 		// use ast.File comments, if any
 		p.comments = n.Comments
+		p.allComments = n.Comments
 	}
 
 	// if there are no comments, use node comments

@@ -35,6 +35,28 @@ func (p *printer) strict() bool {
 	return p.Mode&StrictLayout != 0
 }
 
+// measured returns what to print to measure n. Under StrictLayout that is n
+// with the comments inside it: a comment can force line breaks, so a node
+// without its comments would be measured too small. Without StrictLayout it
+// is n itself, so the default layout is unchanged.
+func (p *printer) measured(n ast.Node) any {
+	if !p.strict() {
+		return n
+	}
+	cs := p.allComments
+	i := sort.Search(len(cs), func(i int) bool {
+		return cs[i].Pos() >= n.Pos()
+	})
+	j := i
+	for j < len(cs) && cs[j].Pos() < n.End() {
+		j++
+	}
+	if i == j {
+		return n
+	}
+	return &CommentedNode{Node: n, Comments: cs[i:j]}
+}
+
 // sizeConfig is the configuration nodes are printed with to measure them.
 // Sizes are cached per node (p.nodeSizes), so every measurement must use the
 // same configuration. Under StrictLayout the measured text is that of the
@@ -135,10 +157,11 @@ func (p *printer) commentIn(from, to token.Pos) bool {
 	if !from.IsValid() || !to.IsValid() || to <= from {
 		return false
 	}
-	i := sort.Search(len(p.comments), func(i int) bool {
-		return p.comments[i].Pos() >= from
+	cs := p.allComments
+	i := sort.Search(len(cs), func(i int) bool {
+		return cs[i].Pos() >= from
 	})
-	return i < len(p.comments) && p.comments[i].Pos() < to
+	return i < len(cs) && cs[i].Pos() < to
 }
 
 // strictFitsOneLine reports whether a composite literal is printed on one
@@ -207,6 +230,9 @@ func (p *printer) blankLineBetween(prev, next ast.Stmt) bool {
 // multi-line type or call, and so on). It is decided by printing the node, so
 // that it follows the same rules as the output.
 func (p *printer) multiLineDecl(d ast.Decl) bool {
+	if d == nil {
+		return false // no previous declaration
+	}
 	return p.printsLines(d)
 }
 
@@ -215,7 +241,7 @@ func (p *printer) multiLineDecl(d ast.Decl) bool {
 func (p *printer) printsLines(n ast.Node) bool {
 	cfg := p.sizeConfig()
 	var counter sizeCounter
-	if err := cfg.fprint(&counter, p.fset, n, p.nodeSizes); err != nil {
+	if err := cfg.fprint(&counter, p.fset, p.measured(n), p.nodeSizes); err != nil {
 		return false
 	}
 	return counter.hasNewline

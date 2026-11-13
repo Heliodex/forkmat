@@ -87,10 +87,10 @@ Files touched:
 
 | file | change |
 | --- | --- |
-| `go/printer/nodes.go` | struct fields use a blank separator and `extraTabs` is gone; `valueSpec` uses blanks and drops `keepType`; `keepTypeColumn` (64 lines) deleted |
-| `go/printer/printer.go` | `writeCommentPrefix` always writes a blank, never a tab |
+| `go/printer/printer.go` | `writeCommentPrefix` always writes a blank, never a tab; the `noCommentAlign` state that used to gate this is gone |
+| `go/printer/nodes.go` | `fieldList` separates struct fields by a blank; `valueSpec` does the same for `const`/`var` specs, and `keepTypeColumn` (64 lines) plus `keepType`/`extraTabs` are deleted; `exprList` prints `key: value` with a blank; `spec` drops the TypeSpec column; `funcDecl` passes a blank before the body |
 | `gofmt/*.go`, `go/printer/*.go` | mechanically reformatted by the new binary, so the tree stays self-consistent |
-| `gofmt/testdata/*.golden`, `go/printer/testdata/*.golden`, `*.x`, `*.raw`, `*.norm` | regenerated (`go test ... -update`) to match |
+| `gofmt/testdata/*.golden`, `go/printer/testdata/*.golden`, `*.x`, `*.raw`, `*.norm` | regenerated (`go test ./go/printer -run TestFiles -update`, same for `gofmt`); three hardcoded `\t` expectations in `printer_test.go` updated |
 
 Nothing is padded into a column now. `text/tabwriter` still runs — it is what
 implements `TabIndent` indentation and the `UseSpaces`/`RawFormat` modes — but

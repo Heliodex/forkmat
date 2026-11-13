@@ -477,7 +477,9 @@ func writeFile(filename string, orig, formatted []byte, perm fs.FileMode) error 
 	}
 
 	fdSem <- true
-	defer func() { <-fdSem }()
+	defer func() {
+		<-fdSem
+	}()
 
 	fout, err := os.OpenFile(filename, os.O_WRONLY, perm)
 	if err != nil {
@@ -548,7 +550,9 @@ func writeFile(filename string, orig, formatted []byte, perm fs.FileMode) error 
 // the chosen file name.
 func backupFile(filename string, data []byte, perm fs.FileMode) (string, error) {
 	fdSem <- true
-	defer func() { <-fdSem }()
+	defer func() {
+		<-fdSem
+	}()
 
 	nextRandom := func() string {
 		return strconv.Itoa(rand.Int())

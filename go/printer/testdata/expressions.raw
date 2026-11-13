@@ -392,7 +392,10 @@ func _() {
 	_ = func() int {
 		return 0
 	}
-	_ = func(x, y int) bool { m := (x + y) / 2; return m < 0 }
+	_ = func(x, y int) bool {
+		m := (x + y) / 2
+		return m < 0
+	}
 
 	// multi-line function literals (body is not on one line)
 	_ = func() {
@@ -592,7 +595,9 @@ func (self *T) foo(x int) *T {
 	return self
 }
 
-func _() { module.Func1().Func2() }
+func _() {
+	module.Func1().Func2()
+}
 
 func _() {
 	_ = new(T).

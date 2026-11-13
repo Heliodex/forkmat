@@ -120,33 +120,35 @@ Revert with `git diff`-level surgery on those hunks, or by pointing `gofmt/`
 back at the standard `go/printer` (see above) — the goldens then need
 regenerating as well.
 
-### A function that only returns is never one line
+### Function bodies are never one line
 
-Any function body that is a single `return` statement — declaration or literal
-— is always spread over multiple lines, so the returned expressions never get
-crammed into the header line:
+Any function body holding a statement — declaration or literal, one statement
+or many — is printed over multiple lines. Only empty bodies stay on the header
+line:
 
 ```go
 // before (standard gofmt)
-func f() int { return 1 }
+func f() { println(1) }
+
 var g = func() int { return 1 }
-sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
 
 // after (this tree)
-func f() int {
-	return 1
+func f() {
+	println(1)
 }
+
 var g = func() int {
 	return 1
 }
-sort.Slice(s, func(i, j int) bool {
-	return s[i] < s[j]
-})
 ```
 
-Bodies with any other single statement still collapse when they fit, e.g.
-`func f() { println(1) }` or `func(x, y int) bool { m := x + y; return m < 0 }`
-(two statements). The check is in `funcBody` (`go/printer/nodes.go`).
+That covers callbacks too: `sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })`
+and `defer func() { <-fdSem }()` are spread out as well.
+
+`func f() {}` and `func f() { /* comment only */ }` keep their one-line form,
+since they hold no statements (a body whose only content is a line comment has
+to break anyway). The check is in `funcBody` (`go/printer/nodes.go`):
+`oneLine` requires `len(b.List) == 0`.
 
 ## What differs from upstream
 

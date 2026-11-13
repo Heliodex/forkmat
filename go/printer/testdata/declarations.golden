@@ -757,9 +757,18 @@ func _() {} // an empty line before this function
 func _() {}
 func _() {}
 
-func _() { f(1, 2, 3) }
-func _(x int) int { y := x; return y + 1 }
-func _() int { type T struct{}; var x T; return x }
+func _() {
+	f(1, 2, 3)
+}
+func _(x int) int {
+	y := x
+	return y + 1
+}
+func _() int {
+	type T struct{}
+	var x T
+	return x
+}
 
 // these must remain multi-line since they are multi-line in the source
 func _() {

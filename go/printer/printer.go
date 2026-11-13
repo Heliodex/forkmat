@@ -628,7 +628,9 @@ func (p *printer) writeComment(comment *ast.Comment) {
 	if strings.HasPrefix(text, linePrefix) && (!pos.IsValid() || pos.Column == 1) {
 		// Possibly a //-style line directive.
 		// Suspend indentation temporarily to keep line directive valid.
-		defer func(indent int) { p.indent = indent }(p.indent)
+		defer func(indent int) {
+			p.indent = indent
+		}(p.indent)
 		p.indent = 0
 	}
 

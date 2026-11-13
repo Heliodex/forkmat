@@ -15,5 +15,8 @@ func fn() {
 		}
 	}
 	_ = func() string {}
-	_ = func() { var ptr *string; println(ptr) }
+	_ = func() {
+		var ptr *string
+		println(ptr)
+	}
 }

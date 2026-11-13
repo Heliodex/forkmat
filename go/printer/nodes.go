@@ -1823,9 +1823,8 @@ func (p *printer) bodySize(b *ast.BlockStmt, maxSize int) int {
 // by sep. Otherwise the block's opening "{" is printed on the current line, followed by
 // lines for the block's statements and its closing "}".
 //
-// A body that is nothing but a return statement is always spelled out over
-// multiple lines: collapsing it hides the returned expressions on the
-// declaration or literal line.
+// In this tree the one-line form is reserved for empty bodies: as soon as the
+// block holds a statement, it is spelled out over multiple lines.
 func (p *printer) funcBody(headerSize int, sep whiteSpace, b *ast.BlockStmt) {
 	if b == nil {
 		return
@@ -1838,14 +1837,9 @@ func (p *printer) funcBody(headerSize int, sep whiteSpace, b *ast.BlockStmt) {
 	p.level = 0
 
 	const maxSize = 100
-	oneLine := headerSize+p.bodySize(b, maxSize) <= maxSize
-	if len(b.List) == 1 {
-		// A lone return statement always gets its own line(s), whether this
-		// is a declaration or a function literal.
-		if _, ok := b.List[0].(*ast.ReturnStmt); ok {
-			oneLine = false
-		}
-	}
+	// A body containing any statement at all is always printed over multiple
+	// lines; only an empty body may stay on the header line.
+	oneLine := len(b.List) == 0 && headerSize+p.bodySize(b, maxSize) <= maxSize
 	if oneLine {
 		p.print(sep)
 		p.setPos(b.Lbrace)

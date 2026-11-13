@@ -38,7 +38,9 @@ func TestPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	defer func() { *write = false }()
+	defer func() {
+		*write = false
+	}()
 	*write = true
 
 	initParserMode()

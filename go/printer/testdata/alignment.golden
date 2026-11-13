@@ -104,15 +104,15 @@ var fmtMap = map[string]string{
 }
 
 type Fmt struct {
-	abcdefghijklmnopqrstuvwx	string
-	abcdefghijklmnopqrstuvwxy	string
-	abcdefghijklmnopqrstuvwxyz	string
-	abcdefghijklmnopqrstuvwxyza	string
-	abcdefghijklmnopqrstuvwxyzab	string
-	abcdefghijklmnopqrstuvwxyzabc	string
-	abcde				string
-	abcdefghijklmnopqrstuvwxyzabcde	string
-	abcdefg				string
+	abcdefghijklmnopqrstuvwx string
+	abcdefghijklmnopqrstuvwxy string
+	abcdefghijklmnopqrstuvwxyz string
+	abcdefghijklmnopqrstuvwxyza string
+	abcdefghijklmnopqrstuvwxyzab string
+	abcdefghijklmnopqrstuvwxyzabc string
+	abcde string
+	abcdefghijklmnopqrstuvwxyzabcde string
+	abcdefg string
 }
 
 func main() {

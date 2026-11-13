@@ -550,16 +550,21 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 
 	if isStruct {
 
-		sep := vtab
-		if len(list) == 1 {
-			sep = blank
-		}
+		// Turn off column alignment for trailing comments until this field
+		// list is done; the last comment may only be flushed at RBRACE below.
+		savedNoFieldAlign := p.noFieldAlign
+		p.noFieldAlign = true
+		defer func() { p.noFieldAlign = savedNoFieldAlign }()
+
+		// Fields are separated by a single blank rather than by a vtab cell,
+		// so field names, types and tags are not column-aligned. There are no
+		// cells to reserve for a trailing comment either, so extraTabs is gone.
+		sep := blank
 		var line int
 		for i, f := range list {
 			if i > 0 {
 				p.linebreak(p.lineFor(f.Pos()), 1, ignore, p.linesFrom(line) > 0)
 			}
-			extraTabs := 0
 			p.setComment(f.Doc)
 			p.recordLine(&line)
 			if len(f.Names) > 0 {
@@ -567,26 +572,15 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 				p.identList(f.Names, false)
 				p.print(sep)
 				p.expr(f.Type)
-				extraTabs = 1
 			} else {
 				// anonymous field
 				p.expr(f.Type)
-				extraTabs = 2
 			}
 			if f.Tag != nil {
-				if len(f.Names) > 0 && sep == vtab {
-					p.print(sep)
-				}
 				p.print(sep)
 				p.expr(f.Tag)
-				extraTabs = 0
 			}
-			if f.Comment != nil {
-				for ; extraTabs > 0; extraTabs-- {
-					p.print(sep)
-				}
-				p.setComment(f.Comment)
-			}
+			p.setComment(f.Comment)
 		}
 		if isIncomplete {
 			if len(list) > 0 {
@@ -1797,7 +1791,7 @@ func (p *printer) genDecl(d *ast.GenDecl) {
 // as well as whether a newline character was seen.
 type sizeCounter struct {
 	hasNewline bool
-	size       int
+	size int
 }
 
 func (c *sizeCounter) Write(p []byte) (int, error) {

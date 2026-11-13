@@ -15,13 +15,13 @@ import (
 )
 
 type writerTestEntry struct {
-	header		*Header
-	contents	string
+	header *Header
+	contents string
 }
 
 type writerTest struct {
-	file	string	// filename of expected output
-	entries	[]*writerTestEntry
+	file string // filename of expected output
+	entries []*writerTestEntry
 }
 
 var writerTests = []*writerTest{
@@ -83,8 +83,8 @@ var writerTests = []*writerTest{
 }
 
 type untarTest struct {
-	file	string
-	headers	[]*Header
+	file string
+	headers []*Header
 }
 
 var untarTests = []*untarTest{

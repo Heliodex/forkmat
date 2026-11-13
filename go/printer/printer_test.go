@@ -165,7 +165,7 @@ func check(t *testing.T, source, golden string, mode checkMode) {
 
 type entry struct {
 	source, golden string
-	mode           checkMode
+	mode checkMode
 }
 
 // Use go test -update to create/update the respective golden files.
@@ -668,7 +668,7 @@ func TestChanType(t *testing.T) {
 
 type limitWriter struct {
 	remaining int
-	errCount  int
+	errCount int
 }
 
 func (l *limitWriter) Write(buf []byte) (n int, err error) {

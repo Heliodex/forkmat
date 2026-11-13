@@ -172,7 +172,7 @@ func TestRewrite(t *testing.T) {
 // expected exit code is set.
 func TestDiff(t *testing.T) {
 	tests := []struct {
-		in       string
+		in string
 		exitCode int
 	}{
 		{in: "testdata/exitcode.input", exitCode: 1},

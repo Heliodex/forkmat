@@ -48,6 +48,52 @@ go test ./gofmt            # upstream tests + golden files
 Checked against the installed `gofmt` (go1.27.2): identical output on the same
 input. `cmd/gofmt` is byte-identical between go1.27.2 and go1.27.4.
 
+## Local changes
+
+### Struct fields are not aligned
+
+`go/printer` no longer column-aligns struct fields: a field name, its type and
+its tag are separated by a single blank instead of a tabwriter cell.
+
+```go
+// before (standard gofmt)
+type Server struct {
+	Name        string
+	Addr        string   `json:"addr"`
+	TLSConfig   *Config  `json:"tls,omitempty"`
+	IdleTimeout Duration // zero means no timeout
+}
+
+// after (this tree)
+type Server struct {
+	Name string
+	Addr string `json:"addr"`
+	TLSConfig *Config `json:"tls,omitempty"`
+	IdleTimeout Duration // zero means no timeout
+}
+```
+
+Trailing comments on fields get a single blank too instead of being pushed out
+to a comment column (`go/printer/printer.go`, `writeCommentPrefix`).
+
+What is unchanged: `const`/`var` group alignment, `=` in value specs, composite
+literal keys (`Key: value` columns), interface method comments, and one-line
+structs such as `struct{ A int }`. The change is confined to `fieldList`'s
+struct branch in `go/printer/nodes.go`.
+
+Files touched:
+
+| file | change |
+| --- | --- |
+| `go/printer/nodes.go` | `sep := blank` for struct fields; `extraTabs` removed; new `p.noFieldAlign` set/restored around the field list |
+| `go/printer/printer.go` | new `noFieldAlign` state; `writeCommentPrefix` uses a blank instead of a tab while it is set |
+| `gofmt/*.go`, `go/printer/*.go` | mechanically reformatted by the new binary, so the tree stays self-consistent |
+| `gofmt/testdata/tabs.golden`, `go/printer/testdata/*.golden`, `*.x` | regenerated (`-update`) to match |
+
+Revert with `git diff`-level surgery on those two hunks, or by pointing
+`gofmt/` back at the standard `go/printer` (see above) — the goldens then need
+regenerating as well.
+
 ## What differs from upstream
 
 Only import paths, so that code outside the Go tree can reach packages that

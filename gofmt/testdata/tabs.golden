@@ -7,7 +7,7 @@
 package main
 
 var _ = []struct {
-	S       string
+	S string
 	Integer int
 }{
 	{

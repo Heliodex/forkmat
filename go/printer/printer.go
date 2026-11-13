@@ -45,10 +45,10 @@ const (
 )
 
 type commentInfo struct {
-	cindex         int               // index of the next comment
-	comment        *ast.CommentGroup // = printer.comments[cindex-1]; or nil
-	commentOffset  int               // = printer.posFor(printer.comments[cindex-1].List[0].Pos()).Offset; or infinity
-	commentNewline bool              // true if the comment group contains newlines
+	cindex int // index of the next comment
+	comment *ast.CommentGroup // = printer.comments[cindex-1]; or nil
+	commentOffset int // = printer.posFor(printer.comments[cindex-1].List[0].Pos()).Offset; or infinity
+	commentNewline bool // true if the comment group contains newlines
 }
 
 type printer struct {
@@ -57,17 +57,18 @@ type printer struct {
 	fset *token.FileSet
 
 	// Current state
-	output       []byte       // raw printer result
-	indent       int          // current indentation
-	level        int          // level == 0: outside composite literal; level > 0: inside composite literal
-	mode         pmode        // current printer mode
-	endAlignment bool         // if set, terminate alignment immediately
-	impliedSemi  bool         // if set, a linebreak implies a semicolon
-	lastTok      token.Token  // last token printed (token.ILLEGAL if it's whitespace)
-	prevOpen     token.Token  // previous non-brace "open" token (, [, or token.ILLEGAL
-	wsbuf        []whiteSpace // delayed white space
-	goBuild      []int        // start index of all //go:build comments in output
-	plusBuild    []int        // start index of all // +build comments in output
+	output []byte // raw printer result
+	indent int // current indentation
+	level int // level == 0: outside composite literal; level > 0: inside composite literal
+	mode pmode // current printer mode
+	endAlignment bool // if set, terminate alignment immediately
+	noFieldAlign bool // if set, do not column-align struct fields or their trailing comments
+	impliedSemi bool // if set, a linebreak implies a semicolon
+	lastTok token.Token // last token printed (token.ILLEGAL if it's whitespace)
+	prevOpen token.Token // previous non-brace "open" token (, [, or token.ILLEGAL
+	wsbuf []whiteSpace // delayed white space
+	goBuild []int // start index of all //go:build comments in output
+	plusBuild []int // start index of all // +build comments in output
 
 	// Positions
 	// The out position differs from the pos position when the result
@@ -75,15 +76,15 @@ type printer struct {
 	// white space). If there's a difference and SourcePos is set in
 	// ConfigMode, //line directives are used in the output to restore
 	// original source positions for a reader.
-	pos          token.Position // current position in AST (source) space
-	out          token.Position // current position in output space
-	last         token.Position // value of pos after calling writeString
-	linePtr      *int           // if set, record out.Line for the next token in *linePtr
-	sourcePosErr error          // if non-nil, the first error emitting a //line directive
+	pos token.Position // current position in AST (source) space
+	out token.Position // current position in output space
+	last token.Position // value of pos after calling writeString
+	linePtr *int // if set, record out.Line for the next token in *linePtr
+	sourcePosErr error // if non-nil, the first error emitting a //line directive
 
 	// The list of all source comments, in order of appearance.
-	comments        []*ast.CommentGroup // may be nil
-	useNodeComments bool                // if not set, ignore lead and line comments of nodes
+	comments []*ast.CommentGroup // may be nil
+	useNodeComments bool // if not set, ignore lead and line comments of nodes
 
 	// Information about p.comments[p.cindex]; set up by nextComment.
 	commentInfo
@@ -92,7 +93,7 @@ type printer struct {
 	nodeSizes map[ast.Node]int
 
 	// Cache of most recently computed line position.
-	cachedPos  token.Pos
+	cachedPos token.Pos
 	cachedLine int // line corresponding to cachedPos
 }
 
@@ -388,10 +389,11 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 		// make sure there is at least one separator
 		if !hasSep {
 			sep := byte('\t')
-			if pos.Line == next.Line {
+			if pos.Line == next.Line || p.noFieldAlign {
 				// next item is on the same line as the comment
 				// (which must be a /*-style comment): separate
-				// with a blank instead of a tab
+				// with a blank instead of a tab; likewise when
+				// alignment is off for the current construct
 				sep = ' '
 			}
 			p.writeByte(sep, 1)
@@ -1192,8 +1194,8 @@ unsupported:
 // through unchanged.
 type trimmer struct {
 	output io.Writer
-	state  int
-	space  []byte
+	state int
+	space []byte
 }
 
 // trimmer is implemented as a state machine.
@@ -1317,9 +1319,9 @@ const (
 
 // A Config node controls the output of Fprint.
 type Config struct {
-	Mode     Mode // default: 0
-	Tabwidth int  // default: 8
-	Indent   int  // default: 0 (all code is indented at least by this much)
+	Mode Mode // default: 0
+	Tabwidth int // default: 8
+	Indent int // default: 0 (all code is indented at least by this much)
 }
 
 var printerPool = sync.Pool{
@@ -1414,7 +1416,7 @@ func (cfg *Config) fprint(output io.Writer, fset *token.FileSet, node any, nodeS
 // A CommentedNode bundles an AST node and corresponding comments.
 // It may be provided as argument to any of the [Fprint] functions.
 type CommentedNode struct {
-	Node     any // *ast.File, or ast.Expr, ast.Decl, ast.Spec, or ast.Stmt
+	Node any // *ast.File, or ast.Expr, ast.Decl, ast.Spec, or ast.Stmt
 	Comments []*ast.CommentGroup
 }
 

@@ -98,8 +98,8 @@ func isGoFilename(name string) bool {
 // output in a deterministic order.
 type sequencer struct {
 	maxWeight int64
-	sem       *semaphore.Weighted   // weighted by input bytes (an approximate proxy for memory overhead)
-	prev      <-chan *reporterState // 1-buffered
+	sem *semaphore.Weighted // weighted by input bytes (an approximate proxy for memory overhead)
+	prev <-chan *reporterState // 1-buffered
 }
 
 // newSequencer returns a sequencer that allows concurrent tasks up to maxWeight
@@ -179,7 +179,7 @@ func (s *sequencer) GetExitCode() int {
 
 // A reporter reports output, warnings, and errors.
 type reporter struct {
-	prev  <-chan *reporterState
+	prev <-chan *reporterState
 	state *reporterState
 }
 

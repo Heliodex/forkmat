@@ -16,18 +16,18 @@ func TestTwoNilValues(t *testing.T) {
 }
 
 type Foo struct {
-	bar	*Bar
-	bang	*Bar
+	bar *Bar
+	bang *Bar
 }
 
 type Bar struct {
-	baz	*Baz
-	foo	[]*Foo
+	baz *Baz
+	foo []*Foo
 }
 
 type Baz struct {
-	entries		map[int]interface{}
-	whatever	string
+	entries map[int]interface{}
+	whatever string
 }
 
 func newFoo() *Foo {

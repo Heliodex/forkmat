@@ -12,15 +12,15 @@ type S0 struct {
 // The S1 struct; some fields are not exported.
 type S1 struct {
 	S0
-	A, B, C	float	// 3 exported fields
-	D	int	// 2 unexported fields
+	A, B, C float // 3 exported fields
+	D int // 2 unexported fields
 	// contains filtered or unexported fields
 }
 
 // The S2 struct; all fields are exported.
 type S2 struct {
 	S1
-	A, B, C	float	// 3 exported fields
+	A, B, C float // 3 exported fields
 }
 
 // The IZ interface; it is empty.
@@ -48,8 +48,8 @@ type I2 interface {
 // The S3 struct; all comments except for the last one must appear in the export.
 type S3 struct {
 	// lead comment for F1
-	F1	int	// line comment for F1
+	F1 int // line comment for F1
 	// lead comment for F2
-	F2	int	// line comment for F2
+	F2 int // line comment for F2
 	// contains filtered or unexported fields
 }

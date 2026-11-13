@@ -64,24 +64,41 @@ padding. What is single-spaced now:
 - keys in multi-line composite literals (`Foo: "foo"`, `"key": 1`)
 - `=` and the type column in grouped type declarations
   (`type ( A = int; LongName = string )`)
-- the `{` of consecutive one-line functions
-  (`func a()    { println(1) }`)
+- the `{` of consecutive empty one-line functions
+
+Before, with standard gofmt:
 
 ```go
-// before (standard gofmt)
-type Server struct {                 var (
-	Name        string                   x                 = 1 // one
-	Addr        string   `json:"addr"`   longerName int    = 2
-	IdleTimeout Duration // zero         w          string
-}                                    )
+type Server struct {
+	Name        string
+	Addr        string   `json:"addr"`
+	IdleTimeout Duration // zero means no timeout
+}
 
-// after (this tree)
-type Server struct {                 var (
-	Name string                          x = 1 // one
-	Addr string `json:"addr"`            longerName int = 2
-	IdleTimeout Duration // zero         w string
-}                                    )
+var (
+	x              = 1 // one
+	longerName int = 2
+)
 ```
+
+After, with this tree:
+
+```go
+type Server struct {
+	Name string
+	Addr string `json:"addr"`
+	IdleTimeout Duration // zero means no timeout
+}
+
+var (
+	x = 1 // one
+	longerName int = 2
+)
+```
+
+The point is not only tidiness: column padding only lines up in a monospaced
+font. In a variable-width font the extra blanks push text around without
+aligning anything, so single spaces keep the source looking the same everywhere.
 
 Files touched:
 
@@ -126,13 +143,17 @@ Any function body holding a statement — declaration or literal, one statement
 or many — is printed over multiple lines. Only empty bodies stay on the header
 line:
 
+Before, with standard gofmt:
+
 ```go
-// before (standard gofmt)
 func f() { println(1) }
 
 var g = func() int { return 1 }
+```
 
-// after (this tree)
+After, with this tree:
+
+```go
 func f() {
 	println(1)
 }

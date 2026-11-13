@@ -19,20 +19,20 @@ import (
 )
 
 const (
-	maxNewlines = 2     // max. number of newlines between source text
-	debug       = false // enable for debugging
-	infinity    = 1 << 30
+	maxNewlines = 2 // max. number of newlines between source text
+	debug = false // enable for debugging
+	infinity = 1 << 30
 )
 
 type whiteSpace byte
 
 const (
-	ignore   = whiteSpace(0)
-	blank    = whiteSpace(' ')
-	vtab     = whiteSpace('\v')
-	newline  = whiteSpace('\n')
+	ignore = whiteSpace(0)
+	blank = whiteSpace(' ')
+	vtab = whiteSpace('\v')
+	newline = whiteSpace('\n')
 	formfeed = whiteSpace('\f')
-	indent   = whiteSpace('>')
+	indent = whiteSpace('>')
 	unindent = whiteSpace('<')
 )
 
@@ -40,8 +40,8 @@ const (
 type pmode int
 
 const (
-	noExtraBlank     pmode = 1 << iota // disables extra blank after /*-style comment
-	noExtraLinebreak                   // disables extra line break after /*-style comment
+	noExtraBlank pmode = 1 << iota // disables extra blank after /*-style comment
+	noExtraLinebreak // disables extra line break after /*-style comment
 )
 
 type commentInfo struct {
@@ -62,7 +62,7 @@ type printer struct {
 	level int // level == 0: outside composite literal; level > 0: inside composite literal
 	mode pmode // current printer mode
 	endAlignment bool // if set, terminate alignment immediately
-	noFieldAlign bool // if set, do not column-align struct fields or their trailing comments
+	noCommentAlign bool // if set, separate trailing comments with a blank instead of a column
 	impliedSemi bool // if set, a linebreak implies a semicolon
 	lastTok token.Token // last token printed (token.ILLEGAL if it's whitespace)
 	prevOpen token.Token // previous non-brace "open" token (, [, or token.ILLEGAL
@@ -389,7 +389,7 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 		// make sure there is at least one separator
 		if !hasSep {
 			sep := byte('\t')
-			if pos.Line == next.Line || p.noFieldAlign {
+			if pos.Line == next.Line || p.noCommentAlign {
 				// next item is on the same line as the comment
 				// (which must be a /*-style comment): separate
 				// with a blank instead of a tab; likewise when
@@ -1201,9 +1201,9 @@ type trimmer struct {
 // trimmer is implemented as a state machine.
 // It can be in one of the following states:
 const (
-	inSpace  = iota // inside space
-	inEscape        // inside text bracketed by tabwriter.Escapes
-	inText          // inside text
+	inSpace = iota // inside space
+	inEscape // inside text bracketed by tabwriter.Escapes
+	inText // inside text
 )
 
 func (p *trimmer) resetSpace() {
@@ -1296,9 +1296,9 @@ type Mode uint
 
 const (
 	RawFormat Mode = 1 << iota // do not use a tabwriter; if set, UseSpaces is ignored
-	TabIndent                  // use tabs for indentation independent of UseSpaces
-	UseSpaces                  // use spaces instead of tabs for alignment
-	SourcePos                  // emit //line directives to preserve original source positions
+	TabIndent // use tabs for indentation independent of UseSpaces
+	UseSpaces // use spaces instead of tabs for alignment
+	SourcePos // emit //line directives to preserve original source positions
 )
 
 // The mode below is not included in printer's public API because

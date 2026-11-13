@@ -50,10 +50,10 @@ input. `cmd/gofmt` is byte-identical between go1.27.2 and go1.27.4.
 
 ## Local changes
 
-### Struct fields are not aligned
+### No column alignment for struct fields or `var`/`const` specs
 
-`go/printer` no longer column-aligns struct fields: a field name, its type and
-its tag are separated by a single blank instead of a tabwriter cell.
+`go/printer` no longer column-aligns the things gofmt normally pads into
+columns: struct fields, and the specs of a `const`/`var` group.
 
 ```go
 // before (standard gofmt)
@@ -64,6 +64,11 @@ type Server struct {
 	IdleTimeout Duration // zero means no timeout
 }
 
+var (
+	DefaultMaxHeaderBytes            = 1 << 20 // 1 MB
+	DefaultMaxHeaderBytes2       int = 1 << 20
+)
+
 // after (this tree)
 type Server struct {
 	Name string
@@ -71,26 +76,34 @@ type Server struct {
 	TLSConfig *Config `json:"tls,omitempty"`
 	IdleTimeout Duration // zero means no timeout
 }
+
+var (
+	DefaultMaxHeaderBytes = 1 << 20 // 1 MB
+	DefaultMaxHeaderBytes2 int = 1 << 20
+)
 ```
 
-Trailing comments on fields get a single blank too instead of being pushed out
-to a comment column (`go/printer/printer.go`, `writeCommentPrefix`).
+Trailing comments on fields and specs get a single blank too, instead of being
+pushed out to a comment column.
 
-What is unchanged: `const`/`var` group alignment, `=` in value specs, composite
-literal keys (`Key: value` columns), interface method comments, and one-line
-structs such as `struct{ A int }`. The change is confined to `fieldList`'s
-struct branch in `go/printer/nodes.go`.
+What is unchanged: composite literal keys (`Key: value` columns), interface
+method comments, `=` alignment in grouped type declarations
+(`type ( A = B; C D )`), and one-line structs such as `struct{ A int }`.
 
 Files touched:
 
 | file | change |
 | --- | --- |
-| `go/printer/nodes.go` | `sep := blank` for struct fields; `extraTabs` removed; new `p.noFieldAlign` set/restored around the field list |
-| `go/printer/printer.go` | new `noFieldAlign` state; `writeCommentPrefix` uses a blank instead of a tab while it is set |
+| `go/printer/nodes.go` | struct fields use a blank separator and `extraTabs` is gone; `valueSpec` uses blanks and drops `keepType`; `keepTypeColumn` (64 lines) deleted |
+| `go/printer/printer.go` | new `noCommentAlign` state; `writeCommentPrefix` uses a blank instead of a tab while it is set |
 | `gofmt/*.go`, `go/printer/*.go` | mechanically reformatted by the new binary, so the tree stays self-consistent |
-| `gofmt/testdata/tabs.golden`, `go/printer/testdata/*.golden`, `*.x` | regenerated (`-update`) to match |
+| `gofmt/testdata/tabs.golden`, `go/printer/testdata/*.golden`, `*.x`, `*.raw`, `*.norm` | regenerated (`-update`) to match |
 
-Revert with `git diff`-level surgery on those two hunks, or by pointing
+Both constructs set and restore `noCommentAlign` around the region they print,
+because a trailing comment is only flushed when the next token (or the closing
+brace/paren) is printed.
+
+Revert with `git diff`-level surgery on those hunks, or by pointing
 `gofmt/` back at the standard `go/printer` (see above) — the goldens then need
 regenerating as well.
 

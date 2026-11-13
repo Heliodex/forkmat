@@ -138,40 +138,40 @@ type T2 struct {
 
 // printing of constant literals
 const (
-	_	= "foobar"
-	_	= "a۰۱۸"
-	_	= "foo६४"
-	_	= "bar９８７６"
-	_	= 0
-	_	= 1
-	_	= 123456789012345678890
-	_	= 01234567
-	_	= 0xcafebabe
-	_	= 0.
-	_	= .0
-	_	= 3.14159265
-	_	= 1e0
-	_	= 1e+100
-	_	= 1e-100
-	_	= 2.71828e-1000
-	_	= 0i
-	_	= 1i
-	_	= 012345678901234567889i
-	_	= 123456789012345678890i
-	_	= 0.i
-	_	= .0i
-	_	= 3.14159265i
-	_	= 1e0i
-	_	= 1e+100i
-	_	= 1e-100i
-	_	= 2.71828e-1000i
-	_	= 'a'
-	_	= '\000'
-	_	= '\xFF'
-	_	= '\uff16'
-	_	= '\U0000ff16'
-	_	= `foobar`
-	_	= `foo
+	_ = "foobar"
+	_ = "a۰۱۸"
+	_ = "foo६४"
+	_ = "bar９８７６"
+	_ = 0
+	_ = 1
+	_ = 123456789012345678890
+	_ = 01234567
+	_ = 0xcafebabe
+	_ = 0.
+	_ = .0
+	_ = 3.14159265
+	_ = 1e0
+	_ = 1e+100
+	_ = 1e-100
+	_ = 2.71828e-1000
+	_ = 0i
+	_ = 1i
+	_ = 012345678901234567889i
+	_ = 123456789012345678890i
+	_ = 0.i
+	_ = .0i
+	_ = 3.14159265i
+	_ = 1e0i
+	_ = 1e+100i
+	_ = 1e-100i
+	_ = 2.71828e-1000i
+	_ = 'a'
+	_ = '\000'
+	_ = '\xFF'
+	_ = '\uff16'
+	_ = '\U0000ff16'
+	_ = `foobar`
+	_ = `foo
 ---
 ---
 bar`
@@ -223,12 +223,12 @@ func _() {
 
 // don't lose blank lines in grouped declarations
 const (
-	_	int	= 0
-	_	float	= 1
+	_ int = 0
+	_ float = 1
 
-	_	string	= "foo"
+	_ string = "foo"
 
-	_	= iota
+	_ = iota
 	_
 
 	// a comment
@@ -248,15 +248,15 @@ type (
 )
 
 var (
-	_	int	= 0
-	_	float	= 1
+	_ int = 0
+	_ float = 1
 
-	_	string	= "foo"
+	_ string = "foo"
 
-	_	bool
+	_ bool
 
 	// a comment
-	_	bool
+	_ bool
 )
 
 // don't lose blank lines in this struct
@@ -345,56 +345,56 @@ func _() {
 func _() {
 	// no entry has a type
 	const (
-		zzzzzz	= 1
-		z	= 2
-		zzz	= 3
+		zzzzzz = 1
+		z = 2
+		zzz = 3
 	)
 	// some entries have a type
 	const (
-		xxxxxx			= 1
-		x			= 2
-		xxx			= 3
-		yyyyyyyy	float	= iota
-		yyyy			= "bar"
+		xxxxxx = 1
+		x = 2
+		xxx = 3
+		yyyyyyyy float = iota
+		yyyy = "bar"
 		yyy
-		yy	= 2
+		yy = 2
 	)
 }
 
 func _() {
 	// no entry has a type
 	var (
-		zzzzzz	= 1
-		z	= 2
-		zzz	= 3
+		zzzzzz = 1
+		z = 2
+		zzz = 3
 	)
 	// no entry has a value
 	var (
-		_	int
-		_	float
-		_	string
+		_ int
+		_ float
+		_ string
 
-		_	int	// comment
-		_	float	// comment
-		_	string	// comment
+		_ int // comment
+		_ float // comment
+		_ string // comment
 	)
 	// some entries have a type
 	var (
-		xxxxxx		int
-		x		float
-		xxx		string
-		yyyyyyyy	int	= 1234
-		y		float	= 3.14
-		yyyy			= "bar"
-		yyy		string	= "foo"
+		xxxxxx int
+		x float
+		xxx string
+		yyyyyyyy int = 1234
+		y float = 3.14
+		yyyy = "bar"
+		yyy string = "foo"
 	)
 	// mixed entries - all comments should be aligned
 	var (
-		a, b, c			int
-		x			= 10
-		d			int			// comment
-		y				= 20		// comment
-		f, ff, fff, ffff	int	= 0, 1, 2, 3	// comment
+		a, b, c int
+		x = 10
+		d int // comment
+		y = 20 // comment
+		f, ff, fff, ffff int = 0, 1, 2, 3 // comment
 	)
 	// respect original line breaks
 	var _ = []T{
@@ -409,16 +409,16 @@ func _() {
 // use the formatted output rather than the input to decide when to align
 // (was issue 4505)
 const (
-	short		= 2 * (1 + 2)
-	aMuchLongerName	= 3
+	short = 2 * (1 + 2)
+	aMuchLongerName = 3
 )
 
 var (
-	short		= X{}
-	aMuchLongerName	= X{}
+	short = X{}
+	aMuchLongerName = X{}
 
-	x1	= X{}	// foo
-	x2	= X{}	// foo
+	x1 = X{} // foo
+	x2 = X{} // foo
 )
 
 func _() {
@@ -438,15 +438,15 @@ func _() {
 
 // alignment of "=" in consecutive lines (extended example from issue 1414)
 const (
-	umax	uint	= ^uint(0)		// maximum value for a uint
-	bpu		= 1 << (5 + umax>>63)	// bits per uint
+	umax uint = ^uint(0) // maximum value for a uint
+	bpu = 1 << (5 + umax>>63) // bits per uint
 	foo
-	bar	= -1
+	bar = -1
 )
 
 // typical enum
 const (
-	a	MyType	= iota
+	a MyType = iota
 	abcd
 	b
 	c
@@ -455,12 +455,12 @@ const (
 
 // excerpt from godoc.go
 var (
-	goroot		= flag.String("goroot", runtime.GOROOT(), "Go root directory")
-	testDir		= flag.String("testdir", "", "Go root subdirectory - for testing only (faster startups)")
-	pkgPath		= flag.String("path", "", "additional package directories (colon-separated)")
-	filter		= flag.String("filter", "", "filter file containing permitted package directory paths")
-	filterMin	= flag.Int("filter_minutes", 0, "filter file update interval in minutes; disabled if <= 0")
-	filterDelay	delayTime	// actual filter update interval in minutes; usually filterDelay == filterMin, but filterDelay may back off exponentially
+	goroot = flag.String("goroot", runtime.GOROOT(), "Go root directory")
+	testDir = flag.String("testdir", "", "Go root subdirectory - for testing only (faster startups)")
+	pkgPath = flag.String("path", "", "additional package directories (colon-separated)")
+	filter = flag.String("filter", "", "filter file containing permitted package directory paths")
+	filterMin = flag.Int("filter_minutes", 0, "filter file update interval in minutes; disabled if <= 0")
+	filterDelay delayTime // actual filter update interval in minutes; usually filterDelay == filterMin, but filterDelay may back off exponentially
 )
 
 // formatting of structs
@@ -568,13 +568,13 @@ func _() {
 		short, long string
 	}
 	var (
-		Sunday		= day{0, "SUN", "Sunday"}
-		Monday		= day{1, "MON", "Monday"}
-		Tuesday		= day{2, "TUE", "Tuesday"}
-		Wednesday	= day{3, "WED", "Wednesday"}
-		Thursday	= day{4, "THU", "Thursday"}
-		Friday		= day{5, "FRI", "Friday"}
-		Saturday	= day{6, "SAT", "Saturday"}
+		Sunday = day{0, "SUN", "Sunday"}
+		Monday = day{1, "MON", "Monday"}
+		Tuesday = day{2, "TUE", "Tuesday"}
+		Wednesday = day{3, "WED", "Wednesday"}
+		Thursday = day{4, "THU", "Thursday"}
+		Friday = day{5, "FRI", "Friday"}
+		Saturday = day{6, "SAT", "Saturday"}
 	)
 }
 
@@ -586,19 +586,19 @@ var a2, b2,
 
 var (
 	a3, b3,
-	c3, d3	int	// this line should be indented
-	a4, b4, c4	int	// this line should be indented
+	c3, d3 int // this line should be indented
+	a4, b4, c4 int // this line should be indented
 )
 
 // Test case from issue 3304: multi-line declarations must end
 // a formatting section and not influence indentation of the
 // next line.
 var (
-	minRefreshTimeSec	= flag.Int64("min_refresh_time_sec", 604800,
+	minRefreshTimeSec = flag.Int64("min_refresh_time_sec", 604800,
 		"minimum time window between two refreshes for a given user.")
-	x	= flag.Int64("refresh_user_rollout_percent", 100,
+	x = flag.Int64("refresh_user_rollout_percent", 100,
 		"temporary flag to ramp up the refresh user rpc")
-	aVeryLongVariableName	= stats.GetVarInt("refresh-user-count")
+	aVeryLongVariableName = stats.GetVarInt("refresh-user-count")
 )
 
 func _() {

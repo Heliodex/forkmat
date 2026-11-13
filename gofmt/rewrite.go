@@ -103,13 +103,13 @@ func set(x, y reflect.Value) {
 // Values/types for special cases.
 var (
 	objectPtrNil = reflect.ValueOf((*ast.Object)(nil))
-	scopePtrNil  = reflect.ValueOf((*ast.Scope)(nil))
+	scopePtrNil = reflect.ValueOf((*ast.Scope)(nil))
 
-	identType     = reflect.TypeFor[*ast.Ident]()
+	identType = reflect.TypeFor[*ast.Ident]()
 	objectPtrType = reflect.TypeFor[*ast.Object]()
-	positionType  = reflect.TypeFor[token.Pos]()
-	callExprType  = reflect.TypeFor[*ast.CallExpr]()
-	scopePtrType  = reflect.TypeFor[*ast.Scope]()
+	positionType = reflect.TypeFor[token.Pos]()
+	callExprType = reflect.TypeFor[*ast.CallExpr]()
+	scopePtrType = reflect.TypeFor[*ast.Scope]()
 )
 
 // apply replaces each AST field x in val with f(x), returning val.

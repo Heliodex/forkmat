@@ -32,12 +32,12 @@ import (
 
 var (
 	// main operation modes
-	list        = flag.Bool("l", false, "list files whose formatting differs from gofmt's")
-	write       = flag.Bool("w", false, "write result to (source) file instead of stdout")
+	list = flag.Bool("l", false, "list files whose formatting differs from gofmt's")
+	write = flag.Bool("w", false, "write result to (source) file instead of stdout")
 	rewriteRule = flag.String("r", "", "rewrite rule (e.g., 'a[b:len(a)] -> a[b:]')")
 	simplifyAST = flag.Bool("s", false, "simplify code")
-	doDiff      = flag.Bool("d", false, "display diffs instead of rewriting files")
-	allErrors   = flag.Bool("e", false, "report all errors (not just the first 10 on different lines)")
+	doDiff = flag.Bool("d", false, "display diffs instead of rewriting files")
+	allErrors = flag.Bool("e", false, "report all errors (not just the first 10 on different lines)")
 
 	// debugging
 	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to this file")
@@ -48,7 +48,7 @@ var (
 
 // Keep these in sync with go/format/format.go.
 const (
-	tabWidth    = 8
+	tabWidth = 8
 	printerMode = printer.UseSpaces | printer.TabIndent | printerNormalizeNumbers
 
 	// printerNormalizeNumbers means to canonicalize number literal prefixes
@@ -69,7 +69,7 @@ const (
 var fdSem = make(chan bool, 200)
 
 var (
-	rewrite    func(*token.FileSet, *ast.File) *ast.File
+	rewrite func(*token.FileSet, *ast.File) *ast.File
 	parserMode parser.Mode
 )
 
@@ -553,7 +553,7 @@ func backupFile(filename string, data []byte, perm fs.FileMode) (string, error) 
 	dir, base := filepath.Split(filename)
 	var (
 		bakname string
-		f       *os.File
+		f *os.File
 	)
 	for {
 		bakname = filepath.Join(dir, base+"."+nextRandom())

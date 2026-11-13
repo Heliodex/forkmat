@@ -94,7 +94,7 @@ type exprListMode uint
 
 const (
 	commaTerm exprListMode = 1 << iota // list is optionally terminated by a comma
-	noIndent                           // no extra indentation in multi-line lists
+	noIndent // no extra indentation in multi-line lists
 )
 
 // If indent is set, a multi-line identifier list is indented after the
@@ -552,9 +552,9 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 
 		// Turn off column alignment for trailing comments until this field
 		// list is done; the last comment may only be flushed at RBRACE below.
-		savedNoFieldAlign := p.noFieldAlign
-		p.noFieldAlign = true
-		defer func() { p.noFieldAlign = savedNoFieldAlign }()
+		savedNoCommentAlign := p.noCommentAlign
+		p.noCommentAlign = true
+		defer func() { p.noCommentAlign = savedNoCommentAlign }()
 
 		// Fields are separated by a single blank rather than by a vtab cell,
 		// so field names, types and tags are not column-aligned. There are no
@@ -1559,92 +1559,18 @@ func (p *printer) stmt(stmt ast.Stmt, nextIsRBrace bool) {
 // ----------------------------------------------------------------------------
 // Declarations
 
-// The keepTypeColumn function determines if the type column of a series of
-// consecutive const or var declarations must be kept, or if initialization
-// values (V) can be placed in the type column (T) instead. The i'th entry
-// in the result slice is true if the type column in spec[i] must be kept.
-//
-// For example, the declaration:
-//
-//		const (
-//			foobar int = 42 // comment
-//			x          = 7  // comment
-//			foo
-//	             bar = 991
-//		)
-//
-// leads to the type/values matrix below. A run of value columns (V) can
-// be moved into the type column if there is no type for any of the values
-// in that column (we only move entire columns so that they align properly).
-//
-//		matrix        formatted     result
-//	                   matrix
-//		T  V    ->    T  V     ->   true      there is a T and so the type
-//		-  V          -  V          true      column must be kept
-//		-  -          -  -          false
-//		-  V          V  -          false     V is moved into T column
-func keepTypeColumn(specs []ast.Spec) []bool {
-	m := make([]bool, len(specs))
-
-	populate := func(i, j int, keepType bool) {
-		if keepType {
-			for ; i < j; i++ {
-				m[i] = true
-			}
-		}
-	}
-
-	i0 := -1 // if i0 >= 0 we are in a run and i0 is the start of the run
-	var keepType bool
-	for i, s := range specs {
-		t := s.(*ast.ValueSpec)
-		if t.Values != nil {
-			if i0 < 0 {
-				// start of a run of ValueSpecs with non-nil Values
-				i0 = i
-				keepType = false
-			}
-		} else {
-			if i0 >= 0 {
-				// end of a run
-				populate(i0, i, keepType)
-				i0 = -1
-			}
-		}
-		if t.Type != nil {
-			keepType = true
-		}
-	}
-	if i0 >= 0 {
-		// end of a run
-		populate(i0, len(specs), keepType)
-	}
-
-	return m
-}
-
-func (p *printer) valueSpec(s *ast.ValueSpec, keepType bool) {
+func (p *printer) valueSpec(s *ast.ValueSpec) {
 	p.setComment(s.Doc)
 	p.identList(s.Names, false) // always present
-	extraTabs := 3
-	if s.Type != nil || keepType {
-		p.print(vtab)
-		extraTabs--
-	}
 	if s.Type != nil {
+		p.print(blank)
 		p.expr(s.Type)
 	}
 	if s.Values != nil {
-		p.print(vtab, token.ASSIGN, blank)
+		p.print(blank, token.ASSIGN, blank)
 		p.exprList(token.NoPos, s.Values, 1, 0, token.NoPos, false)
-		extraTabs--
 	}
-	if s.Comment != nil {
-		for ; extraTabs > 0; extraTabs-- {
-			p.print(vtab)
-		}
-		p.setComment(s.Comment)
-	}
+	p.setComment(s.Comment)
 }
 
 func sanitizeImportPath(lit *ast.BasicLit) *ast.BasicLit {
@@ -1755,16 +1681,20 @@ func (p *printer) genDecl(d *ast.GenDecl) {
 		if n := len(d.Specs); n > 0 {
 			p.print(indent, formfeed)
 			if n > 1 && (d.Tok == token.CONST || d.Tok == token.VAR) {
-				// two or more grouped const/var declarations:
-				// determine if the type column must be kept
-				keepType := keepTypeColumn(d.Specs)
+				// Two or more grouped const/var declarations: no alignment,
+				// so specs are printed one after another. Turn off comment
+				// columns until RPAREN, where the last comment may flush.
+				savedNoCommentAlign := p.noCommentAlign
+				p.noCommentAlign = true
+				defer func() { p.noCommentAlign = savedNoCommentAlign }()
+
 				var line int
 				for i, s := range d.Specs {
 					if i > 0 {
 						p.linebreak(p.lineFor(s.Pos()), 1, ignore, p.linesFrom(line) > 0)
 					}
 					p.recordLine(&line)
-					p.valueSpec(s.(*ast.ValueSpec), keepType[i])
+					p.valueSpec(s.(*ast.ValueSpec))
 				}
 			} else {
 				var line int

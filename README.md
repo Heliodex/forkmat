@@ -171,6 +171,63 @@ since they hold no statements (a body whose only content is a line comment has
 to break anyway). The check is in `funcBody` (`go/printer/nodes.go`):
 `oneLine` requires `len(b.List) == 0`.
 
+### `-strict`: lay code out from the AST
+
+`gofmt -strict` ignores the source's line breaks wherever the AST alone can
+decide the layout. It is off by default; the default output is unchanged. The
+rules are documented in `go/printer/strict.go`, and the mode is
+`printer.StrictLayout`.
+
+Before, with standard gofmt:
+
+```go
+func foo() {
+    foo :=
+        "bar"
+    fmt.Println(
+        "a",
+        "b",
+    )
+}
+```
+
+After, with `gofmt -strict`:
+
+```go
+func foo() {
+	foo := "bar"
+	fmt.Println("a", "b")
+}
+```
+
+The rules:
+
+- Lists (call arguments, right-hand sides, parameters, results) are one line.
+  A list is broken only if it holds a comment, with one element per line.
+- Composite literals are one line if they fit in 100 characters and hold no
+  comments; otherwise each element is on its own line with a trailing comma.
+- Binary expressions and selector chains are never broken.
+- Struct and interface bodies are one line only with a single simple field or
+  method.
+- Statements are one per line. A blank line goes before and after a block
+  statement (`if`, `for`, `range`, `switch`, `select`, a bare block), a
+  `return`, and a grouped `var` declaration, but not next to a call statement.
+- Top-level declarations get a blank line when the token changes, when the next
+  one has a doc comment, or when either spans several lines.
+- A function body holding a statement is always multi-line.
+
+What still follows the source:
+
+- Comments, and the blank lines around them. A comment is kept on the line the
+  source put it on.
+- Blank lines between import groups. `gofmt` sorts within each group, and the
+  groups come from those blank lines, so they are kept.
+- Lines with several statements in the source (`a; b`) are split, and a
+  trailing comment may move to a different node as a result.
+
+Not done yet: breaking long lines to a column width, redundant parentheses,
+and normalising string escapes.
+
 ## What differs from upstream
 
 Only import paths, so that code outside the Go tree can reach packages that

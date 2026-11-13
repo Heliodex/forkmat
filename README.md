@@ -227,6 +227,10 @@ The rules:
 - Adjacent single `var` declarations, at package level or in a block, are
   joined into one `var (...)` group. A comment (including a doc comment) or
   another statement between two of them keeps them apart.
+- Inside a function, a `var` with values and no type becomes `:=`:
+  `var x = y` is `x := y`, and `var a, b = 1, 2` is `a, b := 1, 2`. A `var`
+  with a type stays a declaration, and so does one whose names are all `_`,
+  since `:=` needs a new name. A group with a comment inside is left alone.
 
 What still follows the source:
 

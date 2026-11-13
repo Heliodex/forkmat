@@ -27,21 +27,16 @@ func blanks(a, b int) int {
 		b += i
 	}
 
-	var (
-		c = 1
-		d = 2
-	)
-
-	var e = 3
+	c := 1
+	d := 2
+	e := 3
 	e++
 
 	return a + b + c + d + e
 }
 
 func blankAfterGroup() {
-	var (
-		p = 1
-	)
+	p := 1
 
 	if p > 0 {
 	}
@@ -214,13 +209,33 @@ var (
 var third = 3
 
 func vars() {
-	var (
-		x = 1
-		y = 2
-	)
+	x := 1
+	y := 2
 	// a comment keeps these apart
 	var z = 3
 
-	var w = 4
+	w := 4
 	_, _, _, _ = x, y, z, w
 }
+
+// var declarations with values and no type become := assignments inside a
+// function; the others stay declarations.
+func shortVars() (int, error) {
+	x := 1
+	y, z := 2, shortVars2()
+
+	var (
+		_ = y
+		w int = 3
+	)
+
+	a := 4
+	var b int
+	c := 5
+	q, _ := g()
+	_, _, _, _, _ = x, z, w, a, c
+
+	return q, nil
+}
+
+var packageVar = 1

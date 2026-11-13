@@ -224,3 +224,22 @@ func vars() {
 	var w = 4
 	_, _, _, _ = x, y, z, w
 }
+
+// var declarations with values and no type become := assignments inside a
+// function; the others stay declarations.
+func shortVars() (int, error) {
+    var x = 1
+    var y, z = 2, shortVars2()
+    var _ = y
+    var w int = 3
+    var (
+        a = 4
+        b int
+        c = 5
+    )
+    var q, _ = g()
+    _, _, _, _, _ = x, z, w, a, c
+    return q, nil
+}
+
+var packageVar = 1

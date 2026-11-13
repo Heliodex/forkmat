@@ -534,3 +534,79 @@ func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
 	}
 	return out
 }
+
+// shortVarOK reports whether a var spec can be written as a := assignment: it
+// has no type, has values, has no comment, and declares at least one new name
+// (:= needs one, so var _ = x stays a declaration).
+func shortVarOK(vs *ast.ValueSpec) bool {
+	if vs.Type != nil || len(vs.Values) == 0 || vs.Doc != nil || vs.Comment != nil {
+		return false
+	}
+	for _, n := range vs.Names {
+		if n.Name != "_" {
+			return true
+		}
+	}
+	return false
+}
+
+// strictShortVars rewrites the var declarations of a block that qualify (see
+// shortVarOK) as := assignments. A group keeps its other specs as a declaration.
+func (p *printer) strictShortVars(list []ast.Stmt) []ast.Stmt {
+	var out []ast.Stmt
+	for _, s := range list {
+		ds, ok := s.(*ast.DeclStmt)
+		if !ok {
+			out = append(out, s)
+			continue
+		}
+		g, ok := ds.Decl.(*ast.GenDecl)
+		// a group with a comment inside is left alone: splitting it would
+		// move the comments
+		if !ok || g.Tok != token.VAR || g.Doc != nil || p.commentIn(g.Pos(), g.End()) {
+			out = append(out, s)
+			continue
+		}
+		converted := false
+		for _, sp := range g.Specs {
+			if vs := sp.(*ast.ValueSpec); shortVarOK(vs) {
+				converted = true
+			}
+		}
+		if !converted {
+			out = append(out, s)
+			continue
+		}
+		var pending []ast.Spec
+		flush := func() {
+			if len(pending) > 0 {
+				d := &ast.GenDecl{TokPos: g.TokPos, Tok: token.VAR, Specs: pending}
+				if len(pending) > 1 { // a lone declaration needs no parentheses
+					d.Lparen, d.Rparen = g.Lparen, g.Rparen
+				}
+				out = append(out, &ast.DeclStmt{Decl: d})
+				pending = nil
+			}
+		}
+		for _, sp := range g.Specs {
+			vs := sp.(*ast.ValueSpec)
+			if !shortVarOK(vs) {
+				pending = append(pending, sp)
+				continue
+			}
+			flush()
+			lhs := make([]ast.Expr, len(vs.Names))
+			for i, n := range vs.Names {
+				lhs[i] = n
+			}
+			out = append(out, &ast.AssignStmt{
+				Lhs: lhs,
+				TokPos: vs.Names[len(vs.Names)-1].End(),
+				Tok: token.DEFINE,
+				Rhs: vs.Values,
+			})
+		}
+		flush()
+	}
+	return out
+}

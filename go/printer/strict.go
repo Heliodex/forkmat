@@ -132,23 +132,56 @@ func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode, 
 // the closing token next0 (if known). Comments nested inside an element do not
 // count, since they are that element's business.
 func (p *printer) listHasComment(list []ast.Expr, prev0, next0 token.Pos) bool {
-	from := list[0].Pos()
+	// Each element is measured as it prints: a parenthesized element whose
+	// parentheses are dropped starts at its content.
+	first, _ := p.elemSpan(list[0])
+	from := first
 	if prev0.IsValid() {
 		from = prev0
 	}
-	if p.commentIn(from, list[0].Pos()) {
+	if p.commentIn(from, first) {
 		return true
 	}
 	for i := 1; i < len(list); i++ {
-		if p.commentIn(list[i-1].End(), list[i].Pos()) {
+		_, end := p.elemSpan(list[i-1])
+		start, _ := p.elemSpan(list[i])
+		if p.commentIn(end, start) {
 			return true
 		}
 	}
-	to := list[len(list)-1].End()
+	_, last := p.elemSpan(list[len(list)-1])
+	to := last
 	if next0.IsValid() {
 		to = next0
 	}
-	return p.commentIn(list[len(list)-1].End(), to)
+	return p.commentIn(last, to)
+}
+
+// elemSpan returns the source range of e as it prints under StrictLayout.
+func (p *printer) elemSpan(e ast.Expr) (token.Pos, token.Pos) {
+	return leftmostPos(e, token.LowestPrec), e.End()
+}
+
+// leftmostPos returns the position of the first token of e when it prints
+// under StrictLayout. That can differ from e.Pos(): if the parentheses around
+// the leftmost operand are dropped, the operand starts the expression.
+func leftmostPos(e ast.Expr, prec int) token.Pos {
+	e = strictOperand(e, prec)
+	switch x := e.(type) {
+	case *ast.BinaryExpr:
+		return leftmostPos(x.X, x.Op.Precedence())
+	case *ast.SelectorExpr:
+		return leftmostPos(x.X, token.HighestPrec)
+	case *ast.IndexExpr:
+		return leftmostPos(x.X, token.HighestPrec)
+	case *ast.SliceExpr:
+		return leftmostPos(x.X, token.HighestPrec)
+	case *ast.TypeAssertExpr:
+		return leftmostPos(x.X, token.HighestPrec)
+	case *ast.CallExpr:
+		return leftmostPos(x.Fun, token.HighestPrec)
+	}
+	return e.Pos()
 }
 
 // commentIn reports whether a comment starts in the source range [from, to).
@@ -218,10 +251,24 @@ func (p *printer) blankStmt(s ast.Stmt) bool {
 // blankLineBetween reports whether StrictLayout puts a blank line between two
 // adjacent statements.
 func (p *printer) blankLineBetween(prev, next ast.Stmt) bool {
+	// A run of go and defer statements is set off from the statements around
+	// it, but its members are not separated from each other.
+	if isGoOrDefer(prev) || isGoOrDefer(next) {
+		return !(isGoOrDefer(prev) && isGoOrDefer(next))
+	}
 	if isCallStmt(prev) || isCallStmt(next) {
 		return false
 	}
 	return p.blankStmt(prev) || p.blankStmt(next)
+}
+
+// isGoOrDefer reports whether s is a go or defer statement.
+func isGoOrDefer(s ast.Stmt) bool {
+	switch s.(type) {
+	case *ast.GoStmt, *ast.DeferStmt:
+		return true
+	}
+	return false
 }
 
 // multiLineDecl reports whether a declaration is printed over several lines
@@ -244,4 +291,89 @@ func (p *printer) printsLines(n ast.Node) bool {
 		return false
 	}
 	return counter.hasNewline
+}
+
+// strictParenExpr prints a parenthesized expression under StrictLayout. The
+// parentheses are dropped when the precedence of the context already groups
+// the expression (see needsParens), and any chain of parentheses collapses to
+// a single pair.
+func (p *printer) strictParenExpr(x *ast.ParenExpr, prec1, depth int) {
+	inner := x.X
+	for {
+		px, ok := inner.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		inner = px.X
+	}
+	if !needsParens(inner, prec1) {
+		p.expr1(inner, prec1, depth)
+		return
+	}
+	p.print(token.LPAREN)
+	p.expr0(inner, reduceDepth(depth))
+	p.setPos(x.Rparen)
+	p.print(token.RPAREN)
+}
+
+// needsParens reports whether x, printed where an operator of precedence prec1
+// binds, must keep parentheses. Primary expressions never need them. Types,
+// composite and function literals, and unary <- and ~ always keep theirs: for
+// those, dropping the parentheses could change how the code parses. A
+// parenthesized composite literal also keeps its parentheses wherever one
+// appears inside, so that a control clause still parses.
+func needsParens(x ast.Expr, prec1 int) bool {
+	if hasCompositeLit(x) {
+		return true
+	}
+	switch x := x.(type) {
+	case *ast.Ident, *ast.BasicLit, *ast.CallExpr, *ast.SelectorExpr,
+		*ast.IndexExpr, *ast.IndexListExpr, *ast.SliceExpr, *ast.TypeAssertExpr:
+		return false
+	case *ast.BinaryExpr:
+		return x.Op.Precedence() < prec1
+	case *ast.StarExpr:
+		return token.UnaryPrec < prec1
+	case *ast.UnaryExpr:
+		return x.Op == token.ARROW || x.Op == token.TILDE || token.UnaryPrec < prec1
+	}
+	return true
+}
+
+// hasCompositeLit reports whether x holds a composite literal that is not
+// enclosed in parentheses of its own.
+func hasCompositeLit(x ast.Expr) bool {
+	found := false
+	ast.Inspect(x, func(n ast.Node) bool {
+		switch n.(type) {
+		case *ast.ParenExpr:
+			return false
+		case *ast.CompositeLit:
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// strictOperand returns the operand e as it prints under StrictLayout when it
+// is an operand of an operator of precedence prec1: if its parentheses are
+// dropped, the parenthesized expression itself, otherwise e.
+func strictOperand(e ast.Expr, prec1 int) ast.Expr {
+	px, ok := e.(*ast.ParenExpr)
+	if !ok {
+		return e
+	}
+	inner := px.X
+	for {
+		ipx, ok := inner.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		inner = ipx.X
+	}
+	if needsParens(inner, prec1) {
+		return e
+	}
+	return inner
 }

@@ -128,3 +128,36 @@ type Commented interface {
     // M is documented.
     M()
 }
+
+// Parentheses are dropped where precedence already groups the expression.
+func parens(a, b, c int, p *int, ch chan int) int {
+    x := (a + b) * c
+    y := (a * b) + (c)
+    z := ((a))
+    w := -(a)
+    v := !(a == b)
+    u := (*p)
+    t := (*p) + (*(p))
+    s := (a + (b + c))
+    r := ((a + b) + c)
+    q := (<-ch)
+    f := (func() int { return a })()
+    e := (struct{}{})
+    if (a == b) {
+        return (x)
+    }
+    _, _, _, _, _, _, _, _, _ = y, z, w, v, u, t, s, r, e
+    return (f + q)
+}
+
+func goDefer(mu *mutex) {
+    mu.Lock()
+    defer mu.Unlock()
+    go run()
+    defer close()
+    go run2()
+    x := 1
+    _ = x
+    defer cleanup()
+    go run3()
+}

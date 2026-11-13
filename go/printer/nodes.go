@@ -642,7 +642,7 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 // ----------------------------------------------------------------------------
 // Expressions
 
-func walkBinary(e *ast.BinaryExpr) (has4, has5 bool, maxProblem int) {
+func walkBinary(e *ast.BinaryExpr, strict bool) (has4, has5 bool, maxProblem int) {
 	switch e.Op.Precedence() {
 	case 4:
 		has4 = true
@@ -650,27 +650,34 @@ func walkBinary(e *ast.BinaryExpr) (has4, has5 bool, maxProblem int) {
 		has5 = true
 	}
 
-	switch l := e.X.(type) {
+	x := e.X
+	y := e.Y
+	if strict {
+		x = strictOperand(x, e.Op.Precedence())
+		y = strictOperand(y, e.Op.Precedence()+1)
+	}
+
+	switch l := x.(type) {
 	case *ast.BinaryExpr:
 		if l.Op.Precedence() < e.Op.Precedence() {
 			// parens will be inserted.
 			// pretend this is an *ast.ParenExpr and do nothing.
 			break
 		}
-		h4, h5, mp := walkBinary(l)
+		h4, h5, mp := walkBinary(l, strict)
 		has4 = has4 || h4
 		has5 = has5 || h5
 		maxProblem = max(maxProblem, mp)
 	}
 
-	switch r := e.Y.(type) {
+	switch r := y.(type) {
 	case *ast.BinaryExpr:
 		if r.Op.Precedence() <= e.Op.Precedence() {
 			// parens will be inserted.
 			// pretend this is an *ast.ParenExpr and do nothing.
 			break
 		}
-		h4, h5, mp := walkBinary(r)
+		h4, h5, mp := walkBinary(r, strict)
 		has4 = has4 || h4
 		has5 = has5 || h5
 		maxProblem = max(maxProblem, mp)
@@ -691,8 +698,8 @@ func walkBinary(e *ast.BinaryExpr) (has4, has5 bool, maxProblem int) {
 	return
 }
 
-func cutoff(e *ast.BinaryExpr, depth int) int {
-	has4, has5, maxProblem := walkBinary(e)
+func cutoff(e *ast.BinaryExpr, depth int, strict bool) int {
+	has4, has5, maxProblem := walkBinary(e, strict)
 	if maxProblem > 0 {
 		return maxProblem + 1
 	}
@@ -775,7 +782,11 @@ func (p *printer) binaryExpr(x *ast.BinaryExpr, prec1, cutoff, depth int) {
 	printBlank := prec < cutoff
 
 	ws := indent
-	p.expr1(x.X, prec, depth+diffPrec(x.X, prec))
+	xOperand := x.X
+	if p.strict() {
+		xOperand = strictOperand(x.X, prec)
+	}
+	p.expr1(x.X, prec, depth+diffPrec(xOperand, prec))
 	if printBlank {
 		p.print(blank)
 	}
@@ -820,7 +831,7 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 			p.internalError("depth < 1:", depth)
 			depth = 1
 		}
-		p.binaryExpr(x, prec1, cutoff(x, depth), depth)
+		p.binaryExpr(x, prec1, cutoff(x, depth, p.strict()), depth)
 
 	case *ast.KeyValueExpr:
 		p.expr(x.Key)
@@ -834,12 +845,12 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 			// parenthesis needed
 			p.print(token.LPAREN)
 			p.print(token.MUL)
-			p.expr(x.X)
+			p.expr1(x.X, token.UnaryPrec, 1)
 			p.print(token.RPAREN)
 		} else {
 			// no parenthesis needed
 			p.print(token.MUL)
-			p.expr(x.X)
+			p.expr1(x.X, token.UnaryPrec, 1)
 		}
 
 	case *ast.UnaryExpr:
@@ -874,6 +885,10 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 		p.funcBody(p.distanceFrom(x.Type.Pos(), startCol), blank, x.Body)
 
 	case *ast.ParenExpr:
+		if p.strict() {
+			p.strictParenExpr(x, prec1, depth)
+			break
+		}
 		if _, hasParens := x.X.(*ast.ParenExpr); hasParens {
 			// don't print parentheses around an already parenthesized expression
 			// TODO(gri) consider making this more general and incorporate precedence levels
@@ -937,7 +952,7 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 			for _, x := range indices {
 				if x != nil {
 					indexCount++
-					if isBinary(x) {
+					if isBinary(x) || p.strict() && isBinary(strictOperand(x, token.LowestPrec)) {
 						hasBinaries = true
 					}
 				}

@@ -139,7 +139,7 @@ func (p *printer) exprList(prev0 token.Pos, list []ast.Expr, depth int, mode exp
 	}
 
 	if p.strict() && !isIncomplete {
-		p.strictExprList(list, depth, mode)
+		p.strictExprList(list, depth, mode, prev0, next0)
 		return
 	}
 
@@ -1230,7 +1230,7 @@ func (p *printer) stmtList(list []ast.Stmt, nindent int, nextIsRBrace bool) {
 					// one blank line before a statement that calls for one (see
 					// blankLineBetween), and no blank otherwise
 					gap := 1
-					if i > 0 && blankLineBetween(prev, s) {
+					if i > 0 && p.blankLineBetween(prev, s) {
 						gap = 2
 					}
 					p.linebreak(p.pos.Line+gap, 1, ignore, newSection)
@@ -1741,7 +1741,14 @@ func (p *printer) genDecl(d *ast.GenDecl) {
 				var line int
 				for i, s := range d.Specs {
 					if i > 0 {
-						p.linebreak(p.layoutLine(s.Pos(), 1), 1, ignore, p.linesFrom(line) > 0)
+						// Import groups are separated by blank lines in the source,
+						// and gofmt sorts within each group, so keep the source's
+						// blank lines here even under StrictLayout.
+						srcLine := p.lineFor(s.Pos())
+						if d.Tok != token.IMPORT {
+							srcLine = p.layoutLine(s.Pos(), 1)
+						}
+						p.linebreak(srcLine, 1, ignore, p.linesFrom(line) > 0)
 					}
 					p.recordLine(&line)
 					p.spec(s, n, false)
@@ -1797,7 +1804,7 @@ func (p *printer) nodeSize(n ast.Node, maxSize int) (size int) {
 	// nodeSize computation must be independent of particular
 	// style so that we always get the same decision; print
 	// in RawFormat
-	cfg := Config{Mode: RawFormat | p.Mode&StrictLayout}
+	cfg := p.sizeConfig()
 	var counter sizeCounter
 	if err := cfg.fprint(&counter, p.fset, n, p.nodeSizes); err != nil {
 		return
@@ -1824,6 +1831,10 @@ func (p *printer) numLines(n ast.Node) int {
 func (p *printer) bodySize(b *ast.BlockStmt, maxSize int) int {
 	pos1 := b.Pos()
 	pos2 := b.Rbrace
+	if p.strict() && p.commentIn(pos1, pos2) {
+		// a comment inside the braces needs lines of its own
+		return maxSize + 1
+	}
 	if !p.strict() && pos1.IsValid() && pos2.IsValid() && p.lineFor(pos1) != p.lineFor(pos2) {
 		// opening and closing brace are on different lines - don't make it a one-liner
 		return maxSize + 1

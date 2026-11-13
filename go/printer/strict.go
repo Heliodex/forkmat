@@ -3,6 +3,7 @@ package printer
 import (
 	"go/ast"
 	"go/token"
+	"sort"
 )
 
 // Rules for StrictLayout. The source's line breaks are never consulted, except
@@ -34,6 +35,17 @@ func (p *printer) strict() bool {
 	return p.Mode&StrictLayout != 0
 }
 
+// sizeConfig is the configuration nodes are printed with to measure them.
+// Sizes are cached per node (p.nodeSizes), so every measurement must use the
+// same configuration. Under StrictLayout the measured text is that of the
+// output, so number literals are spelled as they will be printed.
+func (p *printer) sizeConfig() Config {
+	if p.strict() {
+		return Config{Mode: RawFormat | StrictLayout | p.Mode&normalizeNumbers}
+	}
+	return Config{Mode: RawFormat}
+}
+
 // layoutLine returns the line argument for linebreak. Without StrictLayout it
 // is the source line of pos. With StrictLayout it is gap lines below the
 // current position, so that linebreak prints exactly gap newlines (gap is at
@@ -48,7 +60,13 @@ func (p *printer) layoutLine(pos token.Pos, gap int) int {
 // strictExprList prints an expression list under StrictLayout. Without the
 // strictBreak mode the list is printed on one line. With it, each element is
 // printed on its own line, and a trailing comma is added if commaTerm is set.
-func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode) {
+// A list with a comment in it is always broken, since a line comment cannot
+// share a line with the code after it.
+func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode, prev0, next0 token.Pos) {
+	if p.listHasComment(list, prev0, next0) {
+		mode |= strictBreak
+	}
+
 	if mode&strictBreak == 0 {
 		for i, x := range list {
 			if i > 0 {
@@ -59,6 +77,7 @@ func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode) 
 		return
 	}
 
+
 	ws := indent
 	if mode&noIndent != 0 {
 		ws = ignore
@@ -67,8 +86,12 @@ func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode) 
 		if i > 0 {
 			p.print(token.COMMA)
 		}
-		p.linebreak(p.pos.Line+1, 1, ws, i == 0)
-		ws = ignore
+		// Without an opening token there is no line break before the first
+		// element: after "return" a newline would end the statement.
+		if i > 0 || prev0.IsValid() {
+			p.linebreak(p.pos.Line+1, 1, ws, i == 0)
+			ws = ignore
+		}
 		p.expr0(x, depth)
 	}
 	if len(list) > 0 && mode&commaTerm != 0 {
@@ -77,7 +100,45 @@ func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode) 
 	if ws == ignore && mode&noIndent == 0 {
 		p.print(unindent)
 	}
-	p.print(formfeed)
+	if mode&commaTerm != 0 {
+		// the closing token starts a new line
+		p.print(formfeed)
+	}
+}
+
+// listHasComment reports whether a comment sits between the tokens of a list:
+// after the opening token prev0 (if known), between two elements, or before
+// the closing token next0 (if known). Comments nested inside an element do not
+// count, since they are that element's business.
+func (p *printer) listHasComment(list []ast.Expr, prev0, next0 token.Pos) bool {
+	from := list[0].Pos()
+	if prev0.IsValid() {
+		from = prev0
+	}
+	if p.commentIn(from, list[0].Pos()) {
+		return true
+	}
+	for i := 1; i < len(list); i++ {
+		if p.commentIn(list[i-1].End(), list[i].Pos()) {
+			return true
+		}
+	}
+	to := list[len(list)-1].End()
+	if next0.IsValid() {
+		to = next0
+	}
+	return p.commentIn(list[len(list)-1].End(), to)
+}
+
+// commentIn reports whether a comment starts in the source range [from, to).
+func (p *printer) commentIn(from, to token.Pos) bool {
+	if !from.IsValid() || !to.IsValid() || to <= from {
+		return false
+	}
+	i := sort.Search(len(p.comments), func(i int) bool {
+		return p.comments[i].Pos() >= from
+	})
+	return i < len(p.comments) && p.comments[i].Pos() < to
 }
 
 // strictFitsOneLine reports whether a composite literal is printed on one
@@ -118,65 +179,44 @@ func isCallStmt(s ast.Stmt) bool {
 	return ok
 }
 
-// isGroupedDecl reports whether d is printed in its parenthesized form.
-func isGroupedDecl(d *ast.GenDecl) bool {
-	return d.Lparen.IsValid() || len(d.Specs) != 1
-}
-
 // blankStmt reports whether s gets a blank line on either side under
 // StrictLayout (unless its neighbour is a call statement).
-func blankStmt(s ast.Stmt) bool {
+func (p *printer) blankStmt(s ast.Stmt) bool {
 	switch s := s.(type) {
 	case *ast.BlockStmt, *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt,
 		*ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.ReturnStmt:
 		return true
 	case *ast.DeclStmt:
 		d, ok := s.Decl.(*ast.GenDecl)
-		return ok && d.Tok == token.VAR && isGroupedDecl(d)
+		return ok && d.Tok == token.VAR && p.printsLines(d)
 	}
 	return false
 }
 
 // blankLineBetween reports whether StrictLayout puts a blank line between two
 // adjacent statements.
-func blankLineBetween(prev, next ast.Stmt) bool {
+func (p *printer) blankLineBetween(prev, next ast.Stmt) bool {
 	if isCallStmt(prev) || isCallStmt(next) {
 		return false
 	}
-	return blankStmt(prev) || blankStmt(next)
+	return p.blankStmt(prev) || p.blankStmt(next)
 }
 
-// multiLineDecl reports whether d is printed over several lines under
-// StrictLayout, regardless of the source: a grouped declaration, a function
-// with statements, or a type whose struct or interface body is multi-line.
+// multiLineDecl reports whether a declaration is printed over several lines
+// under StrictLayout (a grouped declaration, a function with statements, a
+// multi-line type or call, and so on). It is decided by printing the node, so
+// that it follows the same rules as the output.
 func (p *printer) multiLineDecl(d ast.Decl) bool {
-	switch d := d.(type) {
-	case *ast.FuncDecl:
-		return d.Body != nil && len(d.Body.List) > 0
-	case *ast.GenDecl:
-		if isGroupedDecl(d) {
-			return true
-		}
-		for _, s := range d.Specs {
-			if ts, ok := s.(*ast.TypeSpec); ok && p.multiLineType(ts.Type) {
-				return true
-			}
-		}
-	}
-	return false
+	return p.printsLines(d)
 }
 
-// multiLineType reports whether a struct or interface type is printed over
-// several lines under StrictLayout.
-func (p *printer) multiLineType(t ast.Expr) bool {
-	var fields *ast.FieldList
-	switch t := t.(type) {
-	case *ast.StructType:
-		fields = t.Fields
-	case *ast.InterfaceType:
-		fields = t.Methods
-	default:
+// printsLines reports whether n is printed over several lines under
+// StrictLayout. Unlike nodeSize it is not limited to a width.
+func (p *printer) printsLines(n ast.Node) bool {
+	cfg := p.sizeConfig()
+	var counter sizeCounter
+	if err := cfg.fprint(&counter, p.fset, n, p.nodeSizes); err != nil {
 		return false
 	}
-	return len(fields.List) > 0 && !p.isOneLineFieldList(fields.List)
+	return counter.hasNewline
 }

@@ -102,15 +102,27 @@ func set(x, y reflect.Value) {
 
 // Values/types for special cases.
 var (
-	objectPtrNil = reflect.ValueOf((*ast.Object)(nil))
-	scopePtrNil = reflect.ValueOf((*ast.Scope)(nil))
-
-	identType = reflect.TypeFor[*ast.Ident]()
-	objectPtrType = reflect.TypeFor[*ast.Object]()
+	identType    = reflect.TypeFor[*ast.Ident]()
 	positionType = reflect.TypeFor[token.Pos]()
 	callExprType = reflect.TypeFor[*ast.CallExpr]()
-	scopePtrType = reflect.TypeFor[*ast.Scope]()
+
+	// The types of ast.Ident.Obj and ast.File.Scope, reached through their
+	// fields so that the deprecated ast.Object and ast.Scope names are not used.
+	// Parsing skips object resolution, so these fields are always nil.
+	objectPtrType = fieldType[ast.Ident]("Obj")
+	scopePtrType  = fieldType[ast.File]("Scope")
+	objectPtrNil  = reflect.Zero(objectPtrType)
+	scopePtrNil   = reflect.Zero(scopePtrType)
 )
+
+// fieldType returns the type of the field called name in T.
+func fieldType[T any](name string) reflect.Type {
+	f, ok := reflect.TypeFor[T]().FieldByName(name)
+	if !ok {
+		panic("no field " + name)
+	}
+	return f.Type
+}
 
 // apply replaces each AST field x in val with f(x), returning val.
 // To avoid extra conversions, f operates on the reflect.Value form.
@@ -138,8 +150,7 @@ func apply(f func(reflect.Value) reflect.Value, val reflect.Value) reflect.Value
 			set(e, f(e))
 		}
 	case reflect.Struct:
-		for i := 0; i < v.NumField(); i++ {
-			e := v.Field(i)
+		for _, e := range v.Fields() {
 			set(e, f(e))
 		}
 	case reflect.Interface:
@@ -165,7 +176,7 @@ func match(m map[string]reflect.Value, pattern, val reflect.Value) bool {
 		name := pattern.Interface().(*ast.Ident).Name
 		if isWildcard(name) && val.IsValid() {
 			// wildcards only match valid (non-nil) expressions.
-			if _, ok := val.Interface().(ast.Expr); ok && !val.IsNil() {
+			if _, ok := reflect.TypeAssert[ast.Expr](val); ok && !val.IsNil() {
 				if old, ok := m[name]; ok {
 					return match(nil, old, val)
 				}

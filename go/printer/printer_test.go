@@ -83,15 +83,6 @@ func format(src []byte, mode checkMode) ([]byte, error) {
 	return res, nil
 }
 
-// lineAt returns the line in text starting at offset offs.
-func lineAt(text []byte, offs int) []byte {
-	i := offs
-	for i < len(text) && text[i] != '\n' {
-		i++
-	}
-	return text[offs:i]
-}
-
 // checkEqual compares a and b.
 func checkEqual(aname, bname string, a, b []byte) error {
 	if bytes.Equal(a, b) {
@@ -115,8 +106,8 @@ func runcheck(t *testing.T, source, golden string, mode checkMode) {
 
 	// update golden files if necessary
 	if *update {
-		if err := os.WriteFile(golden, res, 0o644); err != nil {
-			t.Error(err)
+		if werr := os.WriteFile(golden, res, 0o644); werr != nil {
+			t.Error(werr)
 		}
 		return
 	}
@@ -129,8 +120,8 @@ func runcheck(t *testing.T, source, golden string, mode checkMode) {
 	}
 
 	// formatted source and golden must be the same
-	if err := checkEqual(fmt.Sprintf("format(%v)", source), golden, res, gld); err != nil {
-		t.Error(err)
+	if cerr := checkEqual(fmt.Sprintf("format(%v)", source), golden, res, gld); cerr != nil {
+		t.Error(cerr)
 		return
 	}
 
@@ -224,15 +215,15 @@ func TestLineComments(t *testing.T) {
 	package main
 	`
 
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
+	lfset := token.NewFileSet()
+	f, err := parser.ParseFile(lfset, "", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		panic(err) // error in test
 	}
 
 	var buf bytes.Buffer
-	fset = token.NewFileSet() // use the wrong file set
-	Fprint(&buf, fset, f)
+	lfset = token.NewFileSet() // use the wrong file set
+	Fprint(&buf, lfset, f)
 
 	nlines := 0
 	for _, ch := range buf.Bytes() {
@@ -592,7 +583,7 @@ func TestBaseIndent(t *testing.T) {
 		panic(err) // error in test
 	}
 
-	for indent := 0; indent < 4; indent++ {
+	for indent := range 4 {
 		t.Run(fmt.Sprint(indent), func(t *testing.T) {
 			t.Parallel()
 			var buf bytes.Buffer
@@ -699,7 +690,7 @@ func TestWriteErrors(t *testing.T) {
 	if err != nil {
 		panic(err) // error in test
 	}
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		lw := &limitWriter{remaining: i}
 		err := (&Config{Mode: RawFormat}).Fprint(lw, fset, file)
 		if lw.errCount > 1 {
@@ -747,15 +738,15 @@ type bar int // comment2
 `
 	)
 
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "input.go", input, parser.ParseComments|parser.SkipObjectResolution)
+	lfset := token.NewFileSet()
+	f, err := parser.ParseFile(lfset, "input.go", input, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var buf bytes.Buffer
 
-	err = Fprint(&buf, fset, &CommentedNode{Node: f.Decls[0], Comments: f.Comments})
+	err = Fprint(&buf, lfset, &CommentedNode{Node: f.Decls[0], Comments: f.Comments})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -766,7 +757,7 @@ type bar int // comment2
 
 	buf.Reset()
 
-	err = Fprint(&buf, fset, &CommentedNode{Node: f.Decls[1], Comments: f.Comments})
+	err = Fprint(&buf, lfset, &CommentedNode{Node: f.Decls[1], Comments: f.Comments})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -778,14 +769,14 @@ type bar int // comment2
 
 func TestIssue11151(t *testing.T) {
 	const src = "package p\t/*\r/1\r*\r/2*\r\r\r\r/3*\r\r+\r\r/4*/\n"
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
+	lfset := token.NewFileSet()
+	f, err := parser.ParseFile(lfset, "", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var buf bytes.Buffer
-	Fprint(&buf, fset, f)
+	Fprint(&buf, lfset, f)
 	got := buf.String()
 	const want = "package p /*/1*\r/2*\r/3*+/4*/\n" // \r following opening /* should be stripped
 	if got != want {
@@ -793,7 +784,7 @@ func TestIssue11151(t *testing.T) {
 	}
 
 	// the resulting program must be valid
-	_, err = parser.ParseFile(fset, "", got, parser.SkipObjectResolution)
+	_, err = parser.ParseFile(lfset, "", got, parser.SkipObjectResolution)
 	if err != nil {
 		t.Errorf("%v\norig: %q\ngot : %q", err, src, got)
 	}
@@ -804,15 +795,15 @@ func TestIssue11151(t *testing.T) {
 func TestParenthesizedDecl(t *testing.T) {
 	// a package with multiple specs in a single declaration
 	const src = "package p; var ( a float64; b int )"
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "", src, parser.SkipObjectResolution)
+	lfset := token.NewFileSet()
+	f, err := parser.ParseFile(lfset, "", src, parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// print the original package
 	var buf bytes.Buffer
-	err = Fprint(&buf, fset, f)
+	err = Fprint(&buf, lfset, f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -823,7 +814,7 @@ func TestParenthesizedDecl(t *testing.T) {
 		f.Decls[i].(*ast.GenDecl).Lparen = token.NoPos
 	}
 	buf.Reset()
-	err = Fprint(&buf, fset, f)
+	err = Fprint(&buf, lfset, f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -844,8 +835,8 @@ func f() {
                 call(),
         }
 }`
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "", src, parser.SkipObjectResolution)
+	lfset := token.NewFileSet()
+	file, err := parser.ParseFile(lfset, "", src, parser.SkipObjectResolution)
 	if err != nil {
 		panic(err)
 	}
@@ -856,7 +847,7 @@ func f() {
 	ret.Results[0] = ret.Results[0].(*ast.CompositeLit).Elts[0]
 
 	var buf bytes.Buffer
-	if err := Fprint(&buf, fset, ret); err != nil {
+	if err := Fprint(&buf, lfset, ret); err != nil {
 		t.Fatal(err)
 	}
 	want := "return call()"
@@ -874,8 +865,8 @@ func TestSourcePosNewline(t *testing.T) {
 
 	fname := "foo\nbar/bar.go"
 	src := `package bar`
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, fname, src, parser.ParseComments|parser.AllErrors|parser.SkipObjectResolution)
+	lfset := token.NewFileSet()
+	f, err := parser.ParseFile(lfset, fname, src, parser.ParseComments|parser.AllErrors|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -885,7 +876,7 @@ func TestSourcePosNewline(t *testing.T) {
 		Tabwidth: 8,
 	}
 	var buf bytes.Buffer
-	if err := cfg.Fprint(&buf, fset, f); err == nil {
+	if err := cfg.Fprint(&buf, lfset, f); err == nil {
 		t.Errorf("Fprint did not error for source file path containing newline")
 	}
 	if buf.Len() != 0 {

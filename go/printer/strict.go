@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"go/ast"
 	"go/token"
+	"slices"
 	"sort"
 )
 
@@ -432,12 +433,12 @@ func (p *printer) sameType(a, b ast.Expr) bool {
 // is an opening brace. The printer's lastTok does not serve here: white space
 // clears it.
 func (p *printer) afterOpenBrace() bool {
-	for i := len(p.output) - 1; i >= 0; i-- {
-		switch p.output[i] {
+	for _, c := range slices.Backward(p.output) {
+		switch c {
 		case ' ', '\t', '\n', '\f', '\v', '\r':
 			continue
 		}
-		return p.output[i] == '{'
+		return c == '{'
 	}
 	return false
 }

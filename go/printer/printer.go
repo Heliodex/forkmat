@@ -45,58 +45,54 @@ const (
 )
 
 type commentInfo struct {
-	cindex int // index of the next comment
 	comment *ast.CommentGroup // = printer.comments[cindex-1]; or nil
+	cindex int // index of the next comment
 	commentOffset int // = printer.posFor(printer.comments[cindex-1].List[0].Pos()).Offset; or infinity
 	commentNewline bool // true if the comment group contains newlines
 }
 
 type printer struct {
-	// Configuration (does not change after initialization)
-	Config
-	fset *token.FileSet
-
-	// Current state
-	output []byte // raw printer result
-	indent int // current indentation
-	level int // level == 0: outside composite literal; level > 0: inside composite literal
-	mode pmode // current printer mode
-	endAlignment bool // if set, terminate alignment immediately
-	impliedSemi bool // if set, a linebreak implies a semicolon
-	lastTok token.Token // last token printed (token.ILLEGAL if it's whitespace)
-	prevOpen token.Token // previous non-brace "open" token (, [, or token.ILLEGAL
-	wsbuf []whiteSpace // delayed white space
-	goBuild []int // start index of all //go:build comments in output
-	plusBuild []int // start index of all // +build comments in output
-
 	// Positions
 	// The out position differs from the pos position when the result
 	// formatting differs from the source formatting (in the amount of
 	// white space). If there's a difference and SourcePos is set in
 	// ConfigMode, //line directives are used in the output to restore
 	// original source positions for a reader.
-	pos token.Position // current position in AST (source) space
-	out token.Position // current position in output space
-	last token.Position // value of pos after calling writeString
-	linePtr *int // if set, record out.Line for the next token in *linePtr
 	sourcePosErr error // if non-nil, the first error emitting a //line directive
-
-	// The list of all source comments, in order of appearance.
-	comments []*ast.CommentGroup // may be nil
-	useNodeComments bool // if not set, ignore lead and line comments of nodes
-	// allComments holds the comments of the file or node being printed, as
-	// given to printNode. Unlike comments, setComment never changes it.
-	allComments []*ast.CommentGroup
+	linePtr *int // if set, record out.Line for the next token in *linePtr
+	fset *token.FileSet // configuration: does not change after initialization
+	nodeSizes map[ast.Node]int // cache of already computed node sizes
 
 	// Information about p.comments[p.cindex]; set up by nextComment.
 	commentInfo
 
-	// Cache of already computed node sizes.
-	nodeSizes map[ast.Node]int
+	// The list of all source comments, in order of appearance.
+	comments []*ast.CommentGroup // may be nil
+	goBuild []int // start index of all //go:build comments in output
+	output []byte // raw printer result
+	allComments []*ast.CommentGroup // comments of the file or node being printed; setComment never changes it
+	plusBuild []int // start index of all // +build comments in output
+	wsbuf []whiteSpace // delayed white space
 
-	// Cache of most recently computed line position.
-	cachedPos token.Pos
+	// Positions (see above)
+	out token.Position // current position in output space
+	last token.Position // value of pos after calling writeString
+	pos token.Position // current position in AST (source) space
+
+	// Configuration (does not change after initialization)
+	Config
+
+	// Current state
+	mode pmode // current printer mode
+	level int // level == 0: outside composite literal; level > 0: inside composite literal
+	prevOpen token.Token // previous non-brace "open" token (, [, or token.ILLEGAL
+	lastTok token.Token // last token printed (token.ILLEGAL if it's whitespace)
+	indent int // current indentation
+	cachedPos token.Pos // Cache of most recently computed line position.
 	cachedLine int // line corresponding to cachedPos
+	endAlignment bool // if set, terminate alignment immediately
+	useNodeComments bool // if not set, ignore lead and line comments of nodes
+	impliedSemi bool // if set, a linebreak implies a semicolon
 }
 
 func (p *printer) internalError(msg ...any) {
@@ -221,7 +217,7 @@ func (p *printer) writeIndent() {
 	// use "hard" htabs - indentation columns
 	// must not be discarded by the tabwriter
 	n := p.Config.Indent + p.indent // include base indentation
-	for i := 0; i < n; i++ {
+	for range n {
 		p.output = append(p.output, '\t')
 	}
 
@@ -253,7 +249,7 @@ func (p *printer) writeByte(ch byte, n int) {
 		p.writeIndent()
 	}
 
-	for i := 0; i < n; i++ {
+	for range n {
 		p.output = append(p.output, ch)
 	}
 
@@ -437,10 +433,7 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 		// determine number of linebreaks before the comment
 		n := 0
 		if pos.IsValid() && p.last.IsValid() {
-			n = pos.Line - p.last.Line
-			if n < 0 { // should never happen
-				n = 0
-			}
+			n = max(pos.Line-p.last.Line, 0) // a negative count should never happen
 		}
 
 		// at the package scope level only (p.indent == 0),
@@ -1201,8 +1194,8 @@ unsupported:
 // through unchanged.
 type trimmer struct {
 	output io.Writer
-	state int
 	space []byte
+	state int
 }
 
 // trimmer is implemented as a state machine.

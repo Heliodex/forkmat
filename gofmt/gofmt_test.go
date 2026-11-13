@@ -71,7 +71,7 @@ func runTest(t *testing.T, in, out string) {
 		t.Error(err)
 		return
 	}
-	for _, flag := range strings.Split(gofmtFlags(in, 20), " ") {
+	for flag := range strings.SplitSeq(gofmtFlags(in, 20), " ") {
 		elts := strings.SplitN(flag, "=", 2)
 		name := elts[0]
 		value := ""

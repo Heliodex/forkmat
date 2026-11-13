@@ -18,6 +18,7 @@ import (
 	"forkmat/internal/cfg"
 	"forkmat/internal/goarch"
 	"forkmat/internal/platform"
+	"go/build"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -174,14 +175,14 @@ func GoToolPath(t testing.TB) string {
 	// Add all environment variables that affect the Go command to test metadata.
 	// Cached test results will be invalidate when these variables change.
 	// See golang.org/issue/32285.
-	for _, envVar := range strings.Fields(cfg.KnownEnv) {
+	for envVar := range strings.FieldsSeq(cfg.KnownEnv) {
 		os.Getenv(envVar)
 	}
 	return path
 }
 
 var findGOROOT = sync.OnceValues(func() (path string, err error) {
-	if path := runtime.GOROOT(); path != "" {
+	if path := build.Default.GOROOT; path != "" {
 		// If runtime.GOROOT() is non-empty, assume that it is valid.
 		//
 		// (It might not be: for example, the user may have explicitly set GOROOT

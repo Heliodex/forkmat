@@ -1817,8 +1817,8 @@ func (p *printer) nodeSize(n ast.Node, maxSize int) (size int) {
 	// recursively. For deep composite literal nests, this can
 	// lead to an exponential algorithm. Remember previous
 	// results to prune the recursion (was issue 1628).
-	if size, found := p.nodeSizes[n]; found {
-		return size
+	if cached, found := p.nodeSizes[n]; found {
+		return cached
 	}
 
 	size = maxSize + 1 // assume n doesn't fit

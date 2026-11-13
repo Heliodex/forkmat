@@ -15,6 +15,7 @@ import (
 	"forkmat/go/printer"
 	"forkmat/internal/testenv"
 	"go/ast"
+	"go/build"
 	"go/token"
 	"io"
 	"io/fs"
@@ -26,7 +27,7 @@ import (
 )
 
 var (
-	root = flag.String("root", runtime.GOROOT(), "test root directory")
+	root = flag.String("root", build.Default.GOROOT, "test root directory")
 	files = flag.String("files", "", "comma-separated list of files to test")
 	ngo = flag.Int("n", runtime.NumCPU(), "number of goroutines used")
 	verbose = flag.Bool("verbose", false, "verbose mode")
@@ -124,7 +125,7 @@ func genFilenames(t *testing.T, filenames chan<- string) {
 
 	// test Go files provided via -files, if any
 	if *files != "" {
-		for _, filename := range strings.Split(*files, ",") {
+		for filename := range strings.SplitSeq(*files, ",") {
 			fi, err := os.Stat(filename)
 			handleFile(filename, fs.FileInfoToDirEntry(fi), err)
 		}

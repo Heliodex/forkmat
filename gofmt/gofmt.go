@@ -100,9 +100,9 @@ func isGoFilename(name string) bool {
 // A sequencer performs concurrent tasks that may write output, but emits that
 // output in a deterministic order.
 type sequencer struct {
-	maxWeight int64
 	sem *semaphore.Weighted // weighted by input bytes (an approximate proxy for memory overhead)
 	prev <-chan *reporterState // 1-buffered
+	maxWeight int64
 }
 
 // newSequencer returns a sequencer that allows concurrent tasks up to maxWeight
@@ -287,8 +287,8 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 			}
 
 			perm := info.Mode().Perm()
-			if err := writeFile(filename, src, res, perm); err != nil {
-				return err
+			if werr := writeFile(filename, src, res, perm); werr != nil {
+				return werr
 			}
 		}
 		if *doDiff {

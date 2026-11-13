@@ -1231,6 +1231,9 @@ func (p *printer) expr(x ast.Expr) {
 // Extra line breaks between statements in the source are respected but at most one
 // empty line is printed between statements.
 func (p *printer) stmtList(list []ast.Stmt, nindent int, nextIsRBrace bool) {
+	if p.strict() {
+		list = p.strictGroupStmts(list)
+	}
 	if nindent > 0 {
 		p.print(indent)
 	}
@@ -1984,6 +1987,9 @@ func declToken(decl ast.Decl) (tok token.Token) {
 }
 
 func (p *printer) declList(list []ast.Decl) {
+	if p.strict() {
+		list = p.strictGroupDecls(list)
+	}
 	tok := token.ILLEGAL
 	var prevDecl ast.Decl
 	for _, d := range list {

@@ -224,6 +224,9 @@ The rules:
 - Top-level declarations get a blank line when the token changes, when the next
   one has a doc comment, or when either spans several lines.
 - A function body holding a statement is always multi-line.
+- Adjacent single `var` declarations, at package level or in a block, are
+  joined into one `var (...)` group. A comment (including a doc comment) or
+  another statement between two of them keeps them apart.
 
 What still follows the source:
 

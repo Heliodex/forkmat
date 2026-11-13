@@ -441,3 +441,96 @@ func (p *printer) afterOpenBrace() bool {
 	}
 	return false
 }
+
+// singleVar returns d if it is an ungrouped var declaration of one spec with
+// no comment, and nil otherwise.
+func singleVar(d *ast.GenDecl) *ast.GenDecl {
+	if d == nil || d.Tok != token.VAR || d.Lparen.IsValid() || len(d.Specs) != 1 || d.Doc != nil {
+		return nil
+	}
+	if vs := d.Specs[0].(*ast.ValueSpec); vs.Doc != nil || vs.Comment != nil {
+		return nil
+	}
+	return d
+}
+
+// groupVarDecls joins a run of single var declarations into one parenthesized
+// declaration.
+func groupVarDecls(run []*ast.GenDecl) *ast.GenDecl {
+	var specs []ast.Spec
+	for _, d := range run {
+		specs = append(specs, d.Specs...)
+	}
+	first, last := run[0], run[len(run)-1]
+	return &ast.GenDecl{
+		TokPos: first.TokPos,
+		Tok: token.VAR,
+		Lparen: first.TokPos,
+		Specs: specs,
+		Rparen: last.End(),
+	}
+}
+
+// strictGroupDecls groups each run of adjacent single var declarations at
+// package level into one var (...) declaration. A comment between two
+// declarations keeps them apart.
+func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
+	var out []ast.Decl
+	for i := 0; i < len(list); {
+		j := i + 1
+		var run []*ast.GenDecl
+		if d, ok := list[i].(*ast.GenDecl); ok && singleVar(d) != nil {
+			run = append(run, d)
+			for j < len(list) {
+				d, ok := list[j].(*ast.GenDecl)
+				if !ok || singleVar(d) == nil || p.commentIn(list[j-1].End(), list[j].Pos()) {
+					break
+				}
+				run = append(run, d)
+				j++
+			}
+		}
+		if len(run) > 1 {
+			out = append(out, groupVarDecls(run))
+		} else {
+			out = append(out, list[i])
+		}
+		i = j
+	}
+	return out
+}
+
+// strictGroupStmts is strictGroupDecls for the statements of a block.
+func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
+	varOf := func(s ast.Stmt) *ast.GenDecl {
+		if ds, ok := s.(*ast.DeclStmt); ok {
+			if d, ok := ds.Decl.(*ast.GenDecl); ok {
+				return singleVar(d)
+			}
+		}
+		return nil
+	}
+	var out []ast.Stmt
+	for i := 0; i < len(list); {
+		j := i + 1
+		var run []*ast.GenDecl
+		if d := varOf(list[i]); d != nil {
+			run = append(run, d)
+			for j < len(list) {
+				d := varOf(list[j])
+				if d == nil || p.commentIn(list[j-1].End(), list[j].Pos()) {
+					break
+				}
+				run = append(run, d)
+				j++
+			}
+		}
+		if len(run) > 1 {
+			out = append(out, &ast.DeclStmt{Decl: groupVarDecls(run)})
+		} else {
+			out = append(out, list[i])
+		}
+		i = j
+	}
+	return out
+}

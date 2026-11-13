@@ -209,3 +209,18 @@ var edgeLit = T{
 	A: 1,
 
 }
+
+var first = 1
+var second int
+
+// third has a comment above it, so it starts a new group.
+var third = 3
+
+func vars() {
+	var x = 1
+	var y = 2
+	// a comment keeps these apart
+	var z = 3
+	var w = 4
+	_, _, _, _ = x, y, z, w
+}

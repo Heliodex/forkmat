@@ -1,5 +1,21 @@
 package main
 
+// The reordering of -strict. It runs before printing, on the source text, in
+// passes that each reorder one kind of thing:
+//
+//   - types move up, after the imports, when the names they use are types,
+//     imports, or type parameters (see hoistTypes);
+//   - the const, var and type declarations of each run of consecutive ones are
+//     split into single declarations and sorted (see reorderSpecRuns);
+//   - each run of consecutive plain functions, and each run of methods, is sorted
+//     by name, methods by receiver type and then name (see reorderDecls);
+//   - each run of consecutive := statements with pure values is sorted by the
+//     names it declares (see reorderAssignRuns).
+//
+// In every run, a declaration comes after the declarations it refers to, and
+// otherwise in alphabetical order. A cycle keeps its source order. Declarations
+// and statements move with the comments that lead into them. A var whose value
+// calls a function is never moved (see pureExpr).
 import (
 	"go/ast"
 	"go/parser"
@@ -24,28 +40,6 @@ type (
 		src []byte
 		comments []*ast.CommentGroup
 	}
-
-	// This file implements the reordering of -strict. A declaration is moved below
-	// the declarations it depends on, so that dependencies come first. Two kinds of
-	// move are made, each as a pass over the source:
-	//
-	//   - the specs of a type group are reordered among themselves;
-	//   - in each run of consecutive declarations of one kind, a declaration is
-	//     moved below the ones it refers to. Runs are of plain functions, of const
-	//     declarations, of var declarations whose values are free of side effects,
-	//     and of type declarations. A group of const or var declarations is one
-	//     unit, since its specs depend on each other through iota or on order of
-	//     evaluation.
-	//
-	// Methods, init functions and body-less functions are never moved and end a
-	// run, as does any other kind of declaration. A var with a side-effecting
-	// initialiser is never moved either (see pureVars).
-	//
-	// A pass works on the source text. Each unit, with the comments that come before
-	// it on its own lines, is cut out as a segment; the segments are put back in the
-	// new order. Comments therefore travel with the declaration they lead into, and
-	// the rest of the file is left as it was. reorderSource runs the passes in turn,
-	// parsing the result again after each.
 
 	// unit is a declaration, or a spec of a type group, that is moved as a whole.
 	unit struct {

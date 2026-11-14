@@ -295,3 +295,17 @@ func mergeVars() {
     var k int
     _, _, _, _, _ = pc, top, n, m, k
 }
+
+// Sequential type declarations, at package level or in a block, share one
+// type (...) declaration. A var between them keeps them apart.
+
+type tA int
+type tB struct{ X int }
+var tv int
+type tC []string
+
+func localTypes() {
+    type lA int
+    type lB = int
+    _ = lA(lB(1))
+}

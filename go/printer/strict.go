@@ -495,21 +495,28 @@ func (p *printer) afterOpenBrace() bool {
 	return false
 }
 
-// singleVar returns d if it is an ungrouped var declaration of one spec with
-// no comment, and nil otherwise.
-func singleVar(d *ast.GenDecl) *ast.GenDecl {
-	if d == nil || d.Tok != token.VAR || d.Lparen.IsValid() || len(d.Specs) != 1 || d.Doc != nil {
+// singleDecl returns d if it is an ungrouped var or type declaration of one spec
+// with no comment, and nil otherwise.
+func singleDecl(d *ast.GenDecl) *ast.GenDecl {
+	if d == nil || (d.Tok != token.VAR && d.Tok != token.TYPE) || d.Lparen.IsValid() || len(d.Specs) != 1 || d.Doc != nil {
 		return nil
 	}
-	if vs := d.Specs[0].(*ast.ValueSpec); vs.Doc != nil || vs.Comment != nil {
-		return nil
+	switch s := d.Specs[0].(type) {
+	case *ast.ValueSpec:
+		if s.Doc != nil || s.Comment != nil {
+			return nil
+		}
+	case *ast.TypeSpec:
+		if s.Doc != nil || s.Comment != nil {
+			return nil
+		}
 	}
 	return d
 }
 
-// groupVarDecls joins a run of single var declarations into one parenthesized
-// declaration.
-func groupVarDecls(run []*ast.GenDecl) *ast.GenDecl {
+// groupDecls joins a run of single declarations of one token into one
+// parenthesized declaration.
+func groupDecls(run []*ast.GenDecl) *ast.GenDecl {
 	var specs []ast.Spec
 	for _, d := range run {
 		specs = append(specs, d.Specs...)
@@ -517,26 +524,26 @@ func groupVarDecls(run []*ast.GenDecl) *ast.GenDecl {
 	first, last := run[0], run[len(run)-1]
 	return &ast.GenDecl{
 		TokPos: first.TokPos,
-		Tok: token.VAR,
+		Tok:    first.Tok,
 		Lparen: first.TokPos,
-		Specs: specs,
+		Specs:  specs,
 		Rparen: last.End(),
 	}
 }
 
-// strictGroupDecls groups each run of adjacent single var declarations at
-// package level into one var (...) declaration. A comment between two
-// declarations keeps them apart.
+// strictGroupDecls groups each run of adjacent single var or type declarations
+// at package level into one var (...) or type (...) declaration. A run holds
+// one token only, and a comment between two declarations keeps them apart.
 func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
 	var out []ast.Decl
 	for i := 0; i < len(list); {
 		j := i + 1
 		var run []*ast.GenDecl
-		if d, ok := list[i].(*ast.GenDecl); ok && singleVar(d) != nil {
+		if d, ok := list[i].(*ast.GenDecl); ok && singleDecl(d) != nil {
 			run = append(run, d)
 			for j < len(list) {
 				d, ok := list[j].(*ast.GenDecl)
-				if !ok || singleVar(d) == nil || p.commentIn(list[j-1].End(), list[j].Pos()) {
+				if !ok || singleDecl(d) == nil || d.Tok != run[0].Tok || p.commentIn(list[j-1].End(), list[j].Pos()) {
 					break
 				}
 				run = append(run, d)
@@ -544,7 +551,7 @@ func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
 			}
 		}
 		if len(run) > 1 {
-			out = append(out, groupVarDecls(run))
+			out = append(out, groupDecls(run))
 		} else {
 			out = append(out, list[i])
 		}
@@ -560,10 +567,10 @@ func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
 
 // strictGroupStmts is strictGroupDecls for the statements of a block.
 func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
-	varOf := func(s ast.Stmt) *ast.GenDecl {
+	declOf := func(s ast.Stmt) *ast.GenDecl {
 		if ds, ok := s.(*ast.DeclStmt); ok {
 			if d, ok := ds.Decl.(*ast.GenDecl); ok {
-				return singleVar(d)
+				return singleDecl(d)
 			}
 		}
 		return nil
@@ -572,11 +579,11 @@ func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
 	for i := 0; i < len(list); {
 		j := i + 1
 		var run []*ast.GenDecl
-		if d := varOf(list[i]); d != nil {
+		if d := declOf(list[i]); d != nil {
 			run = append(run, d)
 			for j < len(list) {
-				d := varOf(list[j])
-				if d == nil || p.commentIn(list[j-1].End(), list[j].Pos()) {
+				d := declOf(list[j])
+				if d == nil || d.Tok != run[0].Tok || p.commentIn(list[j-1].End(), list[j].Pos()) {
 					break
 				}
 				run = append(run, d)
@@ -584,7 +591,7 @@ func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
 			}
 		}
 		if len(run) > 1 {
-			out = append(out, &ast.DeclStmt{Decl: groupVarDecls(run)})
+			out = append(out, &ast.DeclStmt{Decl: groupDecls(run)})
 		} else {
 			out = append(out, list[i])
 		}

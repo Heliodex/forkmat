@@ -1769,7 +1769,13 @@ func (p *printer) genDecl(d *ast.GenDecl) {
 						// blank lines here even under StrictLayout.
 						srcLine := p.lineFor(s.Pos())
 						if d.Tok != token.IMPORT {
-							srcLine = p.layoutLine(s.Pos(), 1)
+							// as at package level, a spec spanning several lines
+							// is set off from its neighbours by a blank line
+							gap := 1
+							if p.strict() && (p.printsLines(d.Specs[i-1]) || p.printsLines(s)) {
+								gap = 2
+							}
+							srcLine = p.layoutLine(s.Pos(), gap)
 						}
 						p.linebreak(srcLine, 1, ignore, p.linesFrom(line) > 0)
 					}

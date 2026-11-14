@@ -230,8 +230,11 @@ The rules:
 - Top-level declarations get a blank line when the token changes, when the next
   one has a doc comment, or when either spans several lines.
 - A function body holding a statement is always multi-line.
-- Adjacent single `var` declarations, at package level or in a block, are
-  joined into one `var (...)` group. A comment (including a doc comment) or
+- Adjacent single `type` declarations, at package level or in a block, are
+  joined into one `type (...)` group, and so are adjacent single `var`
+  declarations into one `var (...)` group. A group holds one keyword only, and
+  a spec that spans several lines is set off from its neighbours by a blank
+  line. A doc comment on a declaration keeps it apart. A comment (including a doc comment) or
   another statement between two of them keeps them apart.
 - Inside a function, a `var` with values and no type becomes `:=`:
   `var x = y` is `x := y`, and `var a, b = 1, 2` is `a, b := 1, 2`. A `var`

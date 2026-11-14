@@ -66,19 +66,21 @@ func params(a, b int) (c int, err error) {
 	return a + b, nil
 }
 
-type Small struct {
-	A int
-}
+type (
+	Small struct {
+		A int
+	}
 
-type Big struct {
-	A int
-	B string
-}
+	Big struct {
+		A int
+		B string
+	}
 
-type Iface interface {
-	M()
-	N(x int) int
-}
+	Iface interface {
+		M()
+		N(x int) int
+	}
+)
 
 var (
 	v = 1
@@ -309,4 +311,27 @@ func mergeVars() {
 	var k int
 
 	_, _, _, _, _ = pc, top, n, m, k
+}
+
+// Sequential type declarations, at package level or in a block, share one
+// type (...) declaration. A var between them keeps them apart.
+
+type (
+	tA int
+
+	tB struct {
+		X int
+	}
+)
+
+var tv int
+
+type tC []string
+
+func localTypes() {
+	type (
+		lA int
+		lB = int
+	)
+	_ = lA(lB(1))
 }

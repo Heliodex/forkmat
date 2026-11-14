@@ -48,6 +48,9 @@ go test ./gofmt            # upstream tests + golden files
 Checked against the installed `gofmt` (go1.27.2): identical output on the same
 input. `cmd/gofmt` is byte-identical between go1.27.2 and go1.27.4.
 
+`gofmt -all` enables `-strict`, `-unconvert`, `-flatten`, `-mergecases` and
+`-omitcases` together. Each of them is described below.
+
 ## Local changes
 
 ### gofmt's column alignment is removed

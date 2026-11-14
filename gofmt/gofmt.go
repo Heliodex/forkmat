@@ -65,6 +65,7 @@ var (
 	mergeCasesFlag = flag.Bool("mergecases", false, "merge adjacent switch cases with the same body into one case (see mergecases.go)")
 	flattenFlag = flag.Bool("flatten", false, "move the final else or default branch of a statement after it, when every other branch returns (see flatten.go)")
 	unconvertFlag = flag.Bool("unconvert", false, "remove conversions T(x) where x already has type T (see unconvert.go)")
+	allFlag = flag.Bool("all", false, "enable -strict, -unconvert, -flatten, -mergecases and -omitcases")
 	strict = flag.Bool("strict", false, "lay out code from the AST alone, ignoring the source's line breaks (see go/printer/strict.go)")
 
 	// debugging
@@ -582,6 +583,13 @@ func gofmtMain(s *sequencer) {
 	flag.Usage = usage
 
 	flag.Parse()
+	if *allFlag {
+		*strict = true
+		*unconvertFlag = true
+		*flattenFlag = true
+		*mergeCasesFlag = true
+		*omitCasesFlag = true
+	}
 	counter.Inc("gofmt/invocations")
 	counter.CountFlags("gofmt/flag:", *flag.CommandLine)
 	if *strict {

@@ -138,6 +138,44 @@ func TestHoistTypesAfterImports(t *testing.T) {
 	}
 }
 
+func TestHoistVars(t *testing.T) {
+	tests := []struct {
+		name, src string
+		want []string // the declarations, in order (see declOrder)
+	}{
+		{
+			name: "pure vars move above functions and join",
+			src: "package thing\n\nvar va = 1\n\nfunc c() int {\n\treturn 0\n}\n\nvar (\n\tvb = 2\n\tvc = 3\n)\n",
+			want: []string{"va", "vb", "vc", "c"},
+		},
+		{
+			name: "a pure var moves above a var it refers to, which is then first",
+			src: "package p\n\nfunc f() {}\n\nvar y = x + 1\n\nvar x = 1\n",
+			want: []string{"x", "y", "f"},
+		},
+		{
+			name: "a var with effects is not moved, nor is a var after it",
+			src: "package p\n\nfunc f() int { return 0 }\n\nvar a = f()\n\nvar b = 2\n",
+			want: []string{"f", "a", "b"},
+		},
+		{
+			name: "a pure var before a var with effects moves above it",
+			src: "package p\n\nfunc g() {}\n\nvar p = 1\n\nvar q = f()\n\nvar r = 2\n\nfunc f() int { return 0 }\n",
+			want: []string{"p", "f", "q", "r", "g"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := declOrder(t, reorderText(t, tt.src))
+
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("declaration order %v, want %v:\n%s", got, tt.want, reorderText(t, tt.src))
+			}
+		})
+	}
+}
+
 func TestReorderComments(t *testing.T) {
 	src := "package p\n\n// a is documented.\nfunc a() {\n\tb()\n}\n\n// b is documented.\nfunc b() {}\n"
 	want := "package p\n\n// b is documented.\nfunc b() {}\n\n// a is documented.\nfunc a() {\n\tb()\n}\n"

@@ -3,6 +3,7 @@ package main
 // The reordering of -strict. It runs before printing, on the source text, in passes that each reorder one kind of thing:
 //
 //   - types move up, after the imports, when the names they use are types, imports, or type parameters (see hoistTypes);
+//   - vars with pure values move up after them, as far as no var with effects is passed (see hoistVars);
 //   - the const, var and type declarations of each run of consecutive ones are split into single declarations and sorted (see reorderSpecRuns);
 //   - each run of consecutive plain functions, and each run of methods, is sorted by name, methods by receiver type and then name (see reorderDecls);
 //   - each run of consecutive := statements with pure values is sorted by the names it declares (see reorderAssignRuns).
@@ -485,37 +486,41 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 	var moved []int
 
 	for i := top; i < len(decls); i++ {
-		if !cand[i] || bad[i] {
-			continue
+		if cand[i] && !bad[i] && movable(l, decls, i) {
+			moved = append(moved, i)
 		}
-		// a declaration moves with its own lines: nothing may share them
-		if i > 0 && l.line(decls[i-1].End()) == l.line(declStart(decls[i])) {
-			continue
-		}
-
-		if i+1 < len(decls) && l.line(decls[i].End()) == l.line(declStart(decls[i+1])) {
-			continue
-		}
-
-		moved = append(moved, i)
 	}
 
+	return moveDecls(l, src, decls, P, moved)
+}
+
+// movable reports whether decls[i] can be cut out of the source alone: a declaration moves with its own lines, so nothing may share them.
+func movable(l layout, decls []ast.Decl, i int) bool {
+	if i > 0 && l.line(decls[i-1].End()) == l.line(declStart(decls[i])) {
+		return false
+	}
+
+	return i+1 >= len(decls) || l.line(decls[i].End()) != l.line(declStart(decls[i+1]))
+}
+
+// moveDecls returns src with the declarations decls[i], for each i in moved, cut out of their places and inserted at offset at, in source order. Each moves with the comments that lead into it.
+func moveDecls(l layout, src []byte, decls []ast.Decl, at int, moved []int) []byte {
 	if len(moved) == 0 {
 		return src
 	}
 
-	// the moved declarations go in at P; each is cut out of its place with the comments that lead into it
+	// the moved declarations go in at at; each is cut out of its place with the comments that lead into it
 	var text []byte
 
 	edits := []edit{
 		{
-			start: P,
-			end: P,
+			start: at,
+			end: at,
 		},
 	}
 
 	for _, i := range moved {
-		start := P
+		start := at
 
 		if i > 0 {
 			start = l.lineEnd(l.off(decls[i-1].End()))
@@ -532,6 +537,75 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 	edits[0].text = text
 
 	return applyEdits(src, edits)
+}
+
+// hoistVars is the pass that moves var declarations up to just after the imports, the types and the other vars already at the top of the file. Only a var whose values are pure (see pureVars) moves. A var whose values have effects keeps its place, and so does every var after it: initialisation runs those effects in declaration order, and a pure value may read a variable that such an initialiser changes. A pure var may still move above a var it refers to, since initialisation follows references. The moved vars are then joined into a block by the printer, and reorderSpecRuns sorts them by dependency.
+func hoistVars(fset *token.FileSet, file *ast.File, src []byte) []byte {
+	tf := fset.File(file.Pos())
+	if tf == nil {
+		return src
+	}
+
+	decls := file.Decls
+	l := layout{
+		tf: tf,
+		src: src,
+		comments: file.Comments,
+	}
+
+	// top is the end of the run at the top of the file that moved vars join: imports, types and pure vars
+	top := 0
+
+	for top < len(decls) && topRunDecl(decls[top]) {
+		top++
+	}
+
+	// P is where the moved vars go: the line after the run, or after the package clause if there is no run
+	P := l.lineEnd(l.off(file.Name.End()))
+
+	if top > 0 {
+		P = l.lineEnd(l.off(decls[top-1].End()))
+	}
+
+	var (
+		moved []int
+		blocked bool // an earlier var has effects, so no later var may move above it
+	)
+
+	for i := top; i < len(decls); i++ {
+		g, ok := decls[i].(*ast.GenDecl)
+		if !ok || g.Tok != token.VAR {
+			continue
+		}
+
+		if !pureVars(g) {
+			blocked = true
+			continue
+		}
+
+		if !blocked && movable(l, decls, i) {
+			moved = append(moved, i)
+		}
+	}
+
+	return moveDecls(l, src, decls, P, moved)
+}
+
+// topRunDecl reports whether d may stay in the run at the top of the file that hoistVars moves vars into: an import, a type, or a var with pure values.
+func topRunDecl(d ast.Decl) bool {
+	g, ok := d.(*ast.GenDecl)
+	if !ok {
+		return false
+	}
+
+	switch g.Tok {
+	case token.IMPORT, token.TYPE:
+		return true
+	case token.VAR:
+		return pureVars(g)
+	}
+
+	return false
 }
 
 // assignRun returns the edit that reorders the statements list[i:j], or reports false if the run is already in order or has no room to move.
@@ -1400,6 +1474,7 @@ func reorderSource(fset *token.FileSet, filename string, src []byte) ([]byte, *a
 
 			return hoistTypes(fset, file, src, external)
 		},
+		hoistVars,
 		reorderSpecRuns,
 		reorderFuncSlots,
 		reorderAssignRuns,

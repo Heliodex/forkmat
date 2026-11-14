@@ -150,6 +150,33 @@ Within a run, declarations that do not depend on each other are sorted by name, 
 
 Types also move: a type declaration moves up to just after the imports when every name it uses is a predeclared type, an imported package, its own type parameter, a type declared in another file of the same package, a type that a dot-imported package exports, or another type that moves too. The other files and the dot-imported packages are read only to find which names are types. A package is found in the module of the file, or with `go/build`. A type that uses a constant, variable or function, or a name not declared in this file, stays where it is, and so does any type that depends on one. Declaration order at package level does not change what a type means, so the move is safe; the restriction keeps a type with a constant length below its constant.
 
+Vars move the same way, up to just after the imports and the types at the top: a `var` whose values are pure (no calls other than conversions to predeclared types, `make` and `new`, and no receives) is moved up, and the printer joins the moved vars into one `var (...)` group. A `var` whose values have effects keeps its place, and so does every `var` after it, since initialisation runs those effects in declaration order and a pure value may read what they set. A pure var may still move above a var it refers to, because initialisation follows references, and the vars of a run are sorted by dependency as above. Before, with `-strict`:
+
+```go
+var va = 1
+
+func c() int { return 0 }
+
+var (
+	vb = 2
+	vc = 3
+)
+```
+
+After, with `-strict`:
+
+```go
+var (
+	va = 1
+	vb = 2
+	vc = 3
+)
+
+func c() int {
+	return 0
+}
+```
+
 Methods, `init` functions and body-less functions are sorted only with other functions of the same kind, and a run of any one kind ends at a declaration of another kind. A reference is a use of the package-level name, including a function passed as a value, or a constant used in another constant. Local names that shadow a package-level one, selectors (`x.f`), struct-literal keys and labels are not references, except that a method call by name counts as a dependency. Without type information, a name shared by two statements is taken as a dependency, which keeps them in order rather than risking a change in meaning. This runs on the source text before printing, so it is applied by `gofmt`, not by `go/format`.
 
 Before, with standard gofmt:

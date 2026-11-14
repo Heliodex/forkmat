@@ -258,9 +258,6 @@ func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 	}
 
 	elts := make([]keyed, 0, len(x.Elts))
-	// a literal with only identifier keys may be a struct, whose fields keep their
-	// order: it is a map only if some key is a literal
-	literal := false
 
 	for _, e := range x.Elts {
 		kv, ok := e.(*ast.KeyValueExpr)
@@ -273,16 +270,9 @@ func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 			return x.Elts
 		}
 
-		if k.rank < rankName {
-			literal = true
-		}
-
 		elts = append(elts, keyed{rank: k.rank, key: k.key, elt: e})
 	}
 
-	if !literal {
-		return x.Elts
-	}
 
 	slices.SortStableFunc(elts, func(a, b keyed) int {
 		if a.rank != b.rank {

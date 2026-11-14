@@ -9,10 +9,13 @@ import (
 	"sync"
 )
 
-// lockedImporter serializes the calls of an importer.
+// lockedImporter serializes the calls of an importer, and remembers the packages it
+// has imported: a source importer otherwise looks every import up again, which
+// means reading the files of the package each time.
 type lockedImporter struct {
-	mu sync.Mutex
-	imp types.ImporterFrom
+	mu   sync.Mutex
+	imp  types.ImporterFrom
+	done map[string]*types.Package
 }
 
 // checkTypes type-checks file on its own and returns the types of its expressions.
@@ -68,7 +71,20 @@ func (l *lockedImporter) ImportFrom(path, dir string, mode types.ImportMode) (*t
 
 	defer l.mu.Unlock()
 
-	return l.imp.ImportFrom(path, dir, mode)
+	if pkg, ok := l.done[path]; ok {
+		return pkg, nil
+	}
+
+	pkg, err := l.imp.ImportFrom(path, dir, mode)
+	if err == nil {
+		if l.done == nil {
+			l.done = map[string]*types.Package{}
+		}
+
+		l.done[path] = pkg
+	}
+
+	return pkg, err
 }
 
 // Import implements types.Importer.

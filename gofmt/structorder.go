@@ -11,6 +11,134 @@ import (
 	"strings"
 )
 
+// embeddedName returns the name an embedded field of type t has, or "".
+func embeddedName(t ast.Expr) string {
+	switch x := t.(type) {
+	case *ast.Ident:
+		return x.Name
+	case *ast.StarExpr:
+		return embeddedName(x.X)
+	case *ast.SelectorExpr:
+		return x.Sel.Name
+	case *ast.IndexExpr:
+		return embeddedName(x.X)
+	case *ast.IndexListExpr:
+		return embeddedName(x.X)
+	}
+
+	return ""
+}
+
+// fieldNames returns the names of the fields of a struct type, in declaration
+// order. A field without a name is embedded, and is named by its type. It
+// reports false if a field has no name that can be found.
+func fieldNames(st *ast.StructType) ([]string, bool) {
+	var names []string
+
+	for _, f := range st.Fields.List {
+		if len(f.Names) > 0 {
+			for _, id := range f.Names {
+				names = append(names, id.Name)
+			}
+
+			continue
+		}
+
+		name := embeddedName(f.Type)
+		if name == "" {
+			return nil, false
+		}
+
+		names = append(names, name)
+	}
+
+	return names, true
+}
+
+// packageTypes returns the named types declared in the .go files of dir, by name.
+// The file named skip is left out, and so is any file whose package is not pkg,
+// unless pkg is "". A file that cannot be parsed contributes nothing.
+func packageTypes(dir, skip, pkg string) map[string]ast.Expr {
+	types := map[string]ast.Expr{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return types
+	}
+
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || filepath.Ext(name) != ".go" || name == skip || pkg == "" && strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+
+		f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, name), nil, parser.SkipObjectResolution)
+		if err != nil || pkg != "" && f.Name.Name != pkg {
+			continue
+		}
+
+		for _, d := range f.Decls {
+			if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
+				for _, sp := range g.Specs {
+					ts := sp.(*ast.TypeSpec)
+					types[ts.Name.Name] = ts.Type
+				}
+			}
+		}
+	}
+
+	return types
+}
+
+// sortStructLiteral puts the keys of the literal x in the order of names, if the
+// literal can be reordered (see the comment on structLiteralOrder).
+func sortStructLiteral(x *ast.CompositeLit, names []string, comments []*ast.CommentGroup) {
+	if len(x.Elts) < 2 {
+		return
+	}
+
+	index := map[string]int{}
+
+	for i, n := range names {
+		if _, dup := index[n]; !dup {
+			index[n] = i
+		}
+	}
+
+	seen := map[string]bool{}
+
+	for _, e := range x.Elts {
+		kv, ok := e.(*ast.KeyValueExpr)
+		if !ok {
+			return
+		}
+
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			return
+		}
+
+		if _, ok := index[key.Name]; !ok || seen[key.Name] || !pureExpr(kv.Value, false) {
+			return
+		}
+
+		seen[key.Name] = true
+	}
+
+	for _, cg := range comments {
+		if cg.Pos() >= x.Lbrace && cg.Pos() < x.Rbrace {
+			return
+		}
+	}
+
+	elts := slices.Clone(x.Elts)
+
+	slices.SortStableFunc(elts, func(a, b ast.Expr) int {
+		return index[a.(*ast.KeyValueExpr).Key.(*ast.Ident).Name] - index[b.(*ast.KeyValueExpr).Key.(*ast.Ident).Name]
+	})
+
+	x.Elts = elts
+}
+
 // This file implements the field order of -strict: the keys of a struct literal
 // are put in the order the fields are declared in. The printer cannot do this,
 // since it has no declarations, so it runs here, on the parsed file.
@@ -29,6 +157,7 @@ import (
 func structLiteralOrder(filename string, file *ast.File) {
 	// named types by name, in this file and the package's other files
 	types := packageTypes(filepath.Dir(filename), filepath.Base(filename), file.Name.Name)
+
 	for _, d := range file.Decls {
 		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
 			for _, sp := range g.Specs {
@@ -42,6 +171,7 @@ func structLiteralOrder(filename string, file *ast.File) {
 	// exported types of dot-imported packages are added to types. A qualified
 	// package is only read when a literal's type refers to it.
 	paths := map[string]string{}
+
 	for _, imp := range file.Imports {
 		path, err := strconv.Unquote(imp.Path.Value)
 		if err != nil {
@@ -59,6 +189,7 @@ func structLiteralOrder(filename string, file *ast.File) {
 		}
 
 		name := path[strings.LastIndex(path, "/")+1:]
+
 		if imp.Name != nil {
 			name = imp.Name.Name
 		}
@@ -70,8 +201,7 @@ func structLiteralOrder(filename string, file *ast.File) {
 	qualifiedType := func(qualifier, name string) ast.Expr {
 		pkgTypes, ok := loaded[qualifier]
 		if !ok {
-			path, known := paths[qualifier]
-			if known {
+			if path, known := paths[qualifier]; known {
 				pkgTypes = packageTypes(packageDir(path, filepath.Dir(filename)), "", "")
 			}
 
@@ -80,7 +210,6 @@ func structLiteralOrder(filename string, file *ast.File) {
 
 		return pkgTypes[name]
 	}
-
 	resolve := func(t ast.Expr) *ast.StructType {
 		// an alias or a named type of a named type is followed, to a fixed depth
 		for range 8 {
@@ -131,130 +260,4 @@ func structLiteralOrder(filename string, file *ast.File) {
 
 		return true
 	})
-}
-
-// fieldNames returns the names of the fields of a struct type, in declaration
-// order. A field without a name is embedded, and is named by its type. It
-// reports false if a field has no name that can be found.
-func fieldNames(st *ast.StructType) ([]string, bool) {
-	var names []string
-
-	for _, f := range st.Fields.List {
-		if len(f.Names) > 0 {
-			for _, id := range f.Names {
-				names = append(names, id.Name)
-			}
-
-			continue
-		}
-
-		name := embeddedName(f.Type)
-		if name == "" {
-			return nil, false
-		}
-
-		names = append(names, name)
-	}
-
-	return names, true
-}
-
-// embeddedName returns the name an embedded field of type t has, or "".
-func embeddedName(t ast.Expr) string {
-	switch x := t.(type) {
-	case *ast.Ident:
-		return x.Name
-	case *ast.StarExpr:
-		return embeddedName(x.X)
-	case *ast.SelectorExpr:
-		return x.Sel.Name
-	case *ast.IndexExpr:
-		return embeddedName(x.X)
-	case *ast.IndexListExpr:
-		return embeddedName(x.X)
-	}
-
-	return ""
-}
-
-// sortStructLiteral puts the keys of the literal x in the order of names, if the
-// literal can be reordered (see the comment on structLiteralOrder).
-func sortStructLiteral(x *ast.CompositeLit, names []string, comments []*ast.CommentGroup) {
-	if len(x.Elts) < 2 {
-		return
-	}
-
-	index := map[string]int{}
-	for i, n := range names {
-		if _, dup := index[n]; !dup {
-			index[n] = i
-		}
-	}
-
-	seen := map[string]bool{}
-
-	for _, e := range x.Elts {
-		kv, ok := e.(*ast.KeyValueExpr)
-		if !ok {
-			return
-		}
-
-		key, ok := kv.Key.(*ast.Ident)
-		if !ok {
-			return
-		}
-
-		if _, ok := index[key.Name]; !ok || seen[key.Name] || !pureExpr(kv.Value, false) {
-			return
-		}
-
-		seen[key.Name] = true
-	}
-
-	for _, cg := range comments {
-		if cg.Pos() >= x.Lbrace && cg.Pos() < x.Rbrace {
-			return
-		}
-	}
-
-	elts := slices.Clone(x.Elts)
-	slices.SortStableFunc(elts, func(a, b ast.Expr) int {
-		return index[a.(*ast.KeyValueExpr).Key.(*ast.Ident).Name] - index[b.(*ast.KeyValueExpr).Key.(*ast.Ident).Name]
-	})
-	x.Elts = elts
-}
-
-// packageTypes returns the named types declared in the .go files of dir, by name.
-// The file named skip is left out, and so is any file whose package is not pkg,
-// unless pkg is "". A file that cannot be parsed contributes nothing.
-func packageTypes(dir, skip, pkg string) map[string]ast.Expr {
-	types := map[string]ast.Expr{}
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return types
-	}
-
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || filepath.Ext(name) != ".go" || name == skip || (pkg == "" && strings.HasSuffix(name, "_test.go")) {
-			continue
-		}
-
-		f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, name), nil, parser.SkipObjectResolution)
-		if err != nil || (pkg != "" && f.Name.Name != pkg) {
-			continue
-		}
-
-		for _, d := range f.Decls {
-			if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
-				for _, sp := range g.Specs {
-					ts := sp.(*ast.TypeSpec)
-					types[ts.Name.Name] = ts.Type
-				}
-			}
-		}
-	}
-
-	return types
 }

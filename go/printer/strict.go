@@ -11,10 +11,19 @@ import (
 	"strings"
 )
 
-// stmtKind classifies a statement for the blank lines of StrictLayout. A run
-// of statements of one kind is printed without blank lines; two adjacent
-// statements of different kinds are set off by one.
-type stmtKind int
+type (
+	// mapKey is the sort key of a map literal's key: its rank, which orders the kinds,
+	// and its value.
+	mapKey struct {
+		rank int
+		key any
+	}
+
+	// stmtKind classifies a statement for the blank lines of StrictLayout. A run
+	// of statements of one kind is printed without blank lines; two adjacent
+	// statements of different kinds are set off by one.
+	stmtKind int
+)
 
 // Rules for StrictLayout. The source's line breaks are never consulted, except
 // for comments:
@@ -253,15 +262,14 @@ func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 
 	type keyed struct {
 		rank int
-		key  any // nil, a bool, a constant.Value, or a string
-		elt  ast.Expr
+		key any // nil, a bool, a constant.Value, or a string
+		elt ast.Expr
 	}
-
 	elts := make([]keyed, 0, len(x.Elts))
 	// a literal with only identifier keys may be a struct, whose fields are put in
 	// declaration order by gofmt (see structorder.go): it is a map only if some
 	// key is a literal
-	literal := false
+	var literal bool
 
 	for _, e := range x.Elts {
 		kv, ok := e.(*ast.KeyValueExpr)
@@ -278,14 +286,16 @@ func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 			literal = true
 		}
 
-		elts = append(elts, keyed{rank: k.rank, key: k.key, elt: e})
+		elts = append(elts, keyed{
+			rank: k.rank,
+			key: k.key,
+			elt: e,
+		})
 	}
 
 	if !literal {
 		return x.Elts
 	}
-
-
 	slices.SortStableFunc(elts, func(a, b keyed) int {
 		if a.rank != b.rank {
 			return a.rank - b.rank
@@ -315,18 +325,12 @@ func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 	})
 
 	out := make([]ast.Expr, len(elts))
+
 	for i, k := range elts {
 		out[i] = k.elt
 	}
 
 	return out
-}
-
-// mapKey is the sort key of a map literal's key: its rank, which orders the kinds,
-// and its value.
-type mapKey struct {
-	rank int
-	key  any
 }
 
 // The ranks that mapKeyOf gives a key: nil, booleans, numbers, strings, and then
@@ -346,14 +350,25 @@ func mapKeyOf(e ast.Expr) (mapKey, bool) {
 	case *ast.Ident:
 		switch x.Name {
 		case "nil":
-			return mapKey{rank: rankNil}, true
+			return mapKey{
+				rank: rankNil,
+			}, true
 		case "false":
-			return mapKey{rank: rankBool, key: false}, true
+			return mapKey{
+				rank: rankBool,
+				key: false,
+			}, true
 		case "true":
-			return mapKey{rank: rankBool, key: true}, true
+			return mapKey{
+				rank: rankBool,
+				key: true,
+			}, true
 		}
 
-		return mapKey{rank: rankName, key: x.Name}, true
+		return mapKey{
+			rank: rankName,
+			key: x.Name,
+		}, true
 	case *ast.BasicLit:
 		if x.Kind == token.STRING {
 			s, err := strconv.Unquote(x.Value)
@@ -361,12 +376,18 @@ func mapKeyOf(e ast.Expr) (mapKey, bool) {
 				return mapKey{}, false
 			}
 
-			return mapKey{rank: rankString, key: s}, true
+			return mapKey{
+				rank: rankString,
+				key: s,
+			}, true
 		}
 	}
 
 	if v := numberLiteral(e); v != nil {
-		return mapKey{rank: rankNumber, key: v}, true
+		return mapKey{
+			rank: rankNumber,
+			key: v,
+		}, true
 	}
 
 	return mapKey{}, false
@@ -394,16 +415,30 @@ func pureValue(e ast.Expr) bool {
 
 		return pure
 	})
-
 	return pure
 }
 
 // pureTypeNames are the predeclared types, whose conversions have no side effects.
 var pureTypeNames = map[string]bool{
-	"bool": true, "string": true, "byte": true, "rune": true, "uintptr": true,
-	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
-	"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true,
-	"float32": true, "float64": true, "complex64": true, "complex128": true,
+	"bool": true,
+	"byte": true,
+	"complex128": true,
+	"complex64": true,
+	"float32": true,
+	"float64": true,
+	"int": true,
+	"int16": true,
+	"int32": true,
+	"int64": true,
+	"int8": true,
+	"rune": true,
+	"string": true,
+	"uint": true,
+	"uint16": true,
+	"uint32": true,
+	"uint64": true,
+	"uint8": true,
+	"uintptr": true,
 }
 
 // numberLiteral returns the value of an integer or floating-point literal, with an
@@ -416,6 +451,7 @@ func numberLiteral(e ast.Expr) constant.Value {
 		}
 
 		v := constant.MakeFromLiteral(x.Value, x.Kind, 0)
+
 		if k := v.Kind(); k != constant.Int && k != constant.Float {
 			return nil
 		}
@@ -432,13 +468,6 @@ func numberLiteral(e ast.Expr) constant.Value {
 	}
 
 	return nil
-}
-
-// strictSingleSpec reports whether a parenthesized declaration with one spec is
-// printed without its parentheses under StrictLayout: a group of one spec, with no
-// comment inside its parentheses, reads as the single declaration it holds.
-func (p *printer) strictSingleSpec(d *ast.GenDecl) bool {
-	return p.strict() && len(d.Specs) == 1 && !p.commentIn(d.Lparen, d.Rparen)
 }
 
 // strictFitsOneLine reports whether a composite literal is printed on one
@@ -479,6 +508,13 @@ func (p *printer) strictFitsOneLine(x *ast.CompositeLit) bool {
 	}
 
 	return size <= strictMaxSize
+}
+
+// strictSingleSpec reports whether a parenthesized declaration with one spec is
+// printed without its parentheses under StrictLayout: a group of one spec, with no
+// comment inside its parentheses, reads as the single declaration it holds.
+func (p *printer) strictSingleSpec(d *ast.GenDecl) bool {
+	return p.strict() && len(d.Specs) == 1 && !p.commentIn(d.Lparen, d.Rparen)
 }
 
 // hasKeyedElt reports whether any element of a composite literal is a key: value
@@ -1125,9 +1161,9 @@ func (p *printer) mergeVarSpecs(d *ast.GenDecl) *ast.GenDecl {
 	}
 
 	out := &ast.GenDecl{
+		Doc: d.Doc,
 		TokPos: d.TokPos,
 		Tok: token.VAR,
-		Doc: d.Doc,
 		Specs: specs,
 	}
 
@@ -1350,23 +1386,23 @@ func (p *printer) strictImportSpecs(d *ast.GenDecl) []ast.Spec {
 // numericTypes are the predeclared numeric types, which a conversion of a zero
 // value can name.
 var numericTypes = map[string]bool{
+	"byte": true,
+	"complex128": true,
+	"complex64": true,
+	"float32": true,
+	"float64": true,
 	"int": true,
-	"int8": true,
 	"int16": true,
 	"int32": true,
 	"int64": true,
+	"int8": true,
+	"rune": true,
 	"uint": true,
-	"uint8": true,
 	"uint16": true,
 	"uint32": true,
 	"uint64": true,
+	"uint8": true,
 	"uintptr": true,
-	"byte": true,
-	"rune": true,
-	"float32": true,
-	"float64": true,
-	"complex64": true,
-	"complex128": true,
 }
 
 // defaultNumeric returns the type that := gives an untyped numeric literal of

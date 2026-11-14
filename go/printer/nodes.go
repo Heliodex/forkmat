@@ -1113,7 +1113,9 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 		if p.strict() && !p.strictFitsOneLine(x) {
 			listMode |= strictBreak
 		}
+
 		elts := x.Elts
+
 		if p.strict() {
 			elts = p.strictSortedMapElts(x)
 		}
@@ -2016,7 +2018,7 @@ func (p *printer) genDecl(d *ast.GenDecl) {
 	p.setComment(d.Doc)
 	p.setPos(d.Pos())
 	p.print(d.Tok, blank)
-	if (d.Lparen.IsValid() && !p.strictSingleSpec(d)) || len(d.Specs) != 1 {
+	if d.Lparen.IsValid() && !p.strictSingleSpec(d) || len(d.Specs) != 1 {
 		// group of parenthesized declarations
 		p.setPos(d.Lparen)
 		p.print(token.LPAREN)

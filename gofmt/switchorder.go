@@ -10,33 +10,6 @@ import (
 	"strings"
 )
 
-// This file implements the case order of -strict: the clauses of a switch whose
-// cases are constants declared in the file are put in the order the constants
-// are declared in, typically the order of an iota block. A clause moves only
-// among the slots of the other clauses of its kind; the default clause keeps its
-// slot. The switch is changed only if its behaviour cannot change: every clause
-// that is not the default returns, and none of them can fall through or leave the
-// switch with a break. Each case is a constant named in the file, so no case
-// expression runs code, and a value matches at most one case.
-
-// switchCaseOrder reorders the clauses of the switch statements of file, whose
-// name is filename. The constants of the whole package count: those of the file
-// and of the other files of its directory with the same package name.
-func switchCaseOrder(filename string, file *ast.File) {
-	index := packageConstIndex(filename, file)
-	if len(index) == 0 {
-		return
-	}
-
-	ast.Inspect(file, func(n ast.Node) bool {
-		if s, ok := n.(*ast.SwitchStmt); ok {
-			reorderSwitchCases(s.Body, index, file.Comments)
-		}
-
-		return true
-	})
-}
-
 // packageConstIndex returns the position of each constant of the package of the
 // file named filename, in the order of the files of the package, by name, and
 // then of the declarations within each file. file is that file, parsed. A file
@@ -59,7 +32,6 @@ func packageConstIndex(filename string, file *ast.File) map[string]int {
 			}
 		}
 	}
-
 	dir := filepath.Dir(filename)
 	self := filepath.Base(filename)
 	entries, err := os.ReadDir(dir)
@@ -83,7 +55,6 @@ func packageConstIndex(filename string, file *ast.File) map[string]int {
 		if err != nil || f.Name.Name != file.Name.Name {
 			continue
 		}
-
 		add(f)
 	}
 
@@ -95,6 +66,7 @@ func packageConstIndex(filename string, file *ast.File) map[string]int {
 func reorderSwitchCases(body *ast.BlockStmt, index map[string]int, comments []*ast.CommentGroup) {
 	// the key of a clause: the smallest index among its cases
 	keys := map[*ast.CaseClause]int{}
+
 	var slots []int // the positions of the non-default clauses in body.List
 	for i, cl := range body.List {
 		c := cl.(*ast.CaseClause)
@@ -107,6 +79,7 @@ func reorderSwitchCases(body *ast.BlockStmt, index map[string]int, comments []*a
 		}
 
 		key := -1
+
 		for _, e := range c.List {
 			id, ok := e.(*ast.Ident)
 			if !ok {
@@ -138,18 +111,45 @@ func reorderSwitchCases(body *ast.BlockStmt, index map[string]int, comments []*a
 	}
 
 	clauses := make([]*ast.CaseClause, len(slots))
+
 	for k, i := range slots {
 		clauses[k] = body.List[i].(*ast.CaseClause)
 	}
-
 	slices.SortStableFunc(clauses, func(a, b *ast.CaseClause) int {
 		return keys[a] - keys[b]
 	})
 
 	list := slices.Clone(body.List)
+
 	for k, i := range slots {
 		list[i] = clauses[k]
 	}
 
 	body.List = list
+}
+
+// This file implements the case order of -strict: the clauses of a switch whose
+// cases are constants declared in the file are put in the order the constants
+// are declared in, typically the order of an iota block. A clause moves only
+// among the slots of the other clauses of its kind; the default clause keeps its
+// slot. The switch is changed only if its behaviour cannot change: every clause
+// that is not the default returns, and none of them can fall through or leave the
+// switch with a break. Each case is a constant named in the file, so no case
+// expression runs code, and a value matches at most one case.
+
+// switchCaseOrder reorders the clauses of the switch statements of file, whose
+// name is filename. The constants of the whole package count: those of the file
+// and of the other files of its directory with the same package name.
+func switchCaseOrder(filename string, file *ast.File) {
+	index := packageConstIndex(filename, file)
+	if len(index) == 0 {
+		return
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		if s, ok := n.(*ast.SwitchStmt); ok {
+			reorderSwitchCases(s.Body, index, file.Comments)
+		}
+
+		return true
+	})
 }

@@ -1430,20 +1430,20 @@ var printerPool = sync.Pool{
 func newPrinter(cfg *Config, fset *token.FileSet, nodeSizes map[ast.Node]int) *printer {
 	p := printerPool.Get().(*printer)
 	*p = printer{
-		Config: *cfg,
 		fset: fset,
-		pos: token.Position{
-			Line: 1,
-			Column: 1,
-		},
+		nodeSizes: nodeSizes,
+		output: p.output[:0],
+		wsbuf: p.wsbuf[:0],
 		out: token.Position{
 			Line: 1,
 			Column: 1,
 		},
-		wsbuf: p.wsbuf[:0],
-		nodeSizes: nodeSizes,
+		pos: token.Position{
+			Line: 1,
+			Column: 1,
+		},
+		Config: *cfg,
 		cachedPos: -1,
-		output: p.output[:0],
 	}
 
 	return p

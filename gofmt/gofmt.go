@@ -132,9 +132,9 @@ func newSequencer(maxWeight int64, out, err io.Writer) *sequencer {
 	}
 
 	return &sequencer{
-		maxWeight: maxWeight,
 		sem: sem,
 		prev: prev,
+		maxWeight: maxWeight,
 	}
 }
 

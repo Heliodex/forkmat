@@ -56,8 +56,8 @@ func TestSiblingTypes(t *testing.T) {
 		"b.go": "package p\n\ntype Val any\n",
 		"c.go": "package q\n\ntype Other int\n",
 		"d.go": "package p\n\nfunc helper() {}\n",
-		"x.go": "package p\n\ntype Self int\n",
 		"e.txt": "not go",
+		"x.go": "package p\n\ntype Self int\n",
 	}
 
 	for name, src := range files {

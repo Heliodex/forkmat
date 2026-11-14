@@ -185,7 +185,13 @@ above `a`. Four kinds of run move: consecutive plain functions, consecutive
 side effects, and consecutive type declarations. A `var` or `const` group moves
 as one unit, since its specs depend on each other. The specs of a `type (...)`
 group are reordered among themselves too: in `type ( m n; n int )`, `n` comes
-first. A `var` whose value calls a function or receives from a channel is never
+first. A type declaration moves up to just after the imports when every name it
+uses is a predeclared type, an imported package, its own type parameter, or
+another type that moves too. A type that uses a constant, variable or function,
+or a name that is not declared in this file, stays where it is, and so does any
+type that depends on one. Declaration order at package level does not change
+what a type means, so the move is safe; the restriction keeps a type with a
+constant length below its constant. A `var` whose value calls a function or receives from a channel is never
 moved, because Go runs such initialisers in declaration order, and a move would
 change the order of their effects. Conversions to predeclared types, `make` and
 `new` are not calls for this purpose. Methods, `init` functions, body-less

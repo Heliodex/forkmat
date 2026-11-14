@@ -135,6 +135,26 @@ func TestReorderFuncs(t *testing.T) {
 			want: []string{"n,m"},
 		},
 		{
+			name: "type with only type dependencies moves to the top",
+			src:  "package p\n\nfunc f() {}\n\ntype T struct{ x int }\n\ntype U struct{ t T }\n",
+			want: []string{"T", "U", "f"},
+		},
+		{
+			name: "type with a constant length stays below it",
+			src:  "package p\n\nconst N = 3\n\ntype Buf [N]byte\n\nfunc f() {}\n\ntype U struct{ b Buf }\n",
+			want: []string{"N", "Buf", "f", "U"},
+		},
+		{
+			name: "type with an imported package moves below the imports",
+			src:  "package p\n\nimport \"fmt\"\n\nfunc f() { fmt.Println() }\n\ntype T struct{ s fmt.Stringer }\n",
+			want: []string{"T", "f"},
+		},
+		{
+			name: "generic type moves to the top",
+			src:  "package p\n\nfunc f() {}\n\ntype G[T any] struct{ x T }\n",
+			want: []string{"G", "f"},
+		},
+		{
 			name: "init is a barrier",
 			src:  "package p\n\nfunc a() {\n\tb()\n}\n\nfunc init() {}\n\nfunc b() {}\n",
 			want: []string{"a", "init", "b"},
@@ -147,6 +167,17 @@ func TestReorderFuncs(t *testing.T) {
 				t.Errorf("order = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestHoistTypesAfterImports(t *testing.T) {
+	src := "package p\n\nimport \"fmt\"\n\nfunc f() { fmt.Println() }\n\ntype T struct{ s fmt.Stringer }\n"
+	got := reorderText(t, src)
+	if i, j := strings.Index(got, "import"), strings.Index(got, "type T"); !(i >= 0 && j > i) {
+		t.Errorf("type T not after the import:\n%s", got)
+	}
+	if i, j := strings.Index(got, "type T"), strings.Index(got, "func f"); !(i >= 0 && i < j) {
+		t.Errorf("type T not above func f:\n%s", got)
 	}
 }
 

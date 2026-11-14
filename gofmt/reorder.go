@@ -5,6 +5,8 @@ import (
 	"go/parser"
 	"go/token"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 // This file implements the reordering of -strict. A declaration is moved below
@@ -125,7 +127,7 @@ var predeclaredPure = map[string]bool{
 // specs of type groups, then the runs of declarations. src is returned as it is
 // if nothing moves.
 func reorderSource(filename string, src []byte) []byte {
-	passes := []func(*token.FileSet, *ast.File, []byte) []byte{reorderTypeSpecs, reorderDecls}
+	passes := []func(*token.FileSet, *ast.File, []byte) []byte{hoistTypes, reorderTypeSpecs, reorderDecls}
 	for _, pass := range passes {
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
@@ -279,6 +281,179 @@ func runBounds(l layout, file *ast.File, decls []ast.Decl, i, j int, run []unit)
 		hi = l.off(next)
 	}
 	return l.reorderItems(run, lo, hi)
+}
+
+// universeTypes are the predeclared type names.
+var universeTypes = map[string]bool{
+	"any": true, "bool": true, "byte": true, "comparable": true, "complex64": true,
+	"complex128": true, "error": true, "float32": true, "float64": true, "int": true,
+	"int8": true, "int16": true, "int32": true, "int64": true, "rune": true,
+	"string": true, "uint": true, "uint8": true, "uint16": true, "uint32": true,
+	"uint64": true, "uintptr": true,
+}
+
+// hoistTypes is the pass that moves type declarations to the top of the file,
+// after the imports. Only a type whose names are all types (of this file, or
+// predeclared), imported packages, or its own type parameters moves: a name
+// that is a constant, variable or function, or that cannot be resolved in this
+// file, keeps the type where it is, and so does every type that depends on such
+// a type. Declaration order at package level does not change the meaning of a
+// type, so a move is safe; the restriction keeps a type with a constant length
+// below its constant.
+func hoistTypes(fset *token.FileSet, file *ast.File, src []byte) []byte {
+	tf := fset.File(file.Pos())
+	if tf == nil {
+		return src
+	}
+	l := layout{tf: tf, src: src}
+	decls := file.Decls
+
+	// imports, by the name each package is referred to with
+	imports := map[string]bool{}
+	m := 0 // index of the first declaration after the imports
+	for ; m < len(decls); m++ {
+		g, ok := decls[m].(*ast.GenDecl)
+		if !ok || g.Tok != token.IMPORT {
+			break
+		}
+		for _, sp := range g.Specs {
+			is := sp.(*ast.ImportSpec)
+			name := ""
+			if is.Name != nil {
+				name = is.Name.Name
+			} else if path, err := strconv.Unquote(is.Path.Value); err == nil {
+				name = path[strings.LastIndex(path, "/")+1:]
+			}
+			if name != "" && name != "_" && name != "." {
+				imports[name] = true
+			}
+		}
+	}
+	// P is where moved types go: the line after the imports, or after the
+	// package clause if there are none
+	P := l.lineEnd(l.off(file.Name.End()))
+	if m > 0 {
+		P = l.lineEnd(l.off(decls[m-1].End()))
+	}
+
+	// the candidates are the type declarations; specIdx finds a declaration by
+	// one of its specs
+	cand := map[int]bool{}
+	specIdx := map[any]int{}
+	for i, d := range decls {
+		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
+			cand[i] = true
+			for _, sp := range g.Specs {
+				specIdx[sp] = i
+			}
+		}
+	}
+
+	// bad[i] is set for a declaration that uses a name which is neither a type
+	// nor an import; deps[i] lists the candidate declarations it uses
+	bad := map[int]bool{}
+	deps := map[int][]int{}
+	for i := range cand {
+		seen := map[int]bool{}
+		visit := func(n ast.Node) bool {
+			id, ok := n.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			if id.Obj == nil {
+				if !universeTypes[id.Name] && !imports[id.Name] {
+					bad[i] = true
+				}
+				return true
+			}
+			switch d := id.Obj.Decl.(type) {
+			case *ast.TypeSpec:
+				if j, ok := specIdx[d]; ok && !seen[j] {
+					seen[j] = true
+					deps[i] = append(deps[i], j)
+				}
+			case *ast.Field:
+				// a type parameter
+			default:
+				bad[i] = true
+			}
+			return true
+		}
+		var walk func(ast.Node) bool
+		walk = func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.SelectorExpr:
+				// only the package name of pkg.T is a use; T is not
+				ast.Inspect(x.X, walk)
+				return false
+			case *ast.Field:
+				// a field name is not a use; its type is
+				if x.Type != nil {
+					ast.Inspect(x.Type, walk)
+				}
+				return false
+			}
+			return visit(n)
+		}
+		ast.Inspect(decls[i], walk)
+	}
+	// a declaration with a bad dependency is bad too, and so is one that depends
+	// on a bad declaration
+	for changed := true; changed; {
+		changed = false
+		for i := range cand {
+			if bad[i] {
+				continue
+			}
+			for _, j := range deps[i] {
+				if bad[j] {
+					bad[i] = true
+					changed = true
+					break
+				}
+			}
+		}
+	}
+
+	// a run of types already at the top stays where it is
+	top := m
+	for top < len(decls) && cand[top] {
+		top++
+	}
+
+	var moved []int
+	for i := top; i < len(decls); i++ {
+		if !cand[i] || bad[i] {
+			continue
+		}
+		// a declaration moves with its own lines: nothing may share them
+		if i > 0 && l.line(decls[i-1].End()) == l.line(declStart(decls[i])) {
+			continue
+		}
+		if i+1 < len(decls) && l.line(decls[i].End()) == l.line(declStart(decls[i+1])) {
+			continue
+		}
+		moved = append(moved, i)
+	}
+	if len(moved) == 0 {
+		return src
+	}
+
+	// the moved declarations go in at P; each is cut out of its place with the
+	// comments that lead into it
+	var text []byte
+	edits := []edit{{start: P, end: P}}
+	for _, i := range moved {
+		start := P
+		if i > 0 {
+			start = l.lineEnd(l.off(decls[i-1].End()))
+		}
+		end := l.lineEnd(l.off(decls[i].End()))
+		text = append(text, src[start:end]...)
+		edits = append(edits, edit{start: start, end: end})
+	}
+	edits[0].text = text
+	return applyEdits(src, edits)
 }
 
 // reorderTypeSpecs is the pass over the specs of each type group.

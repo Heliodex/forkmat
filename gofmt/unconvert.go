@@ -50,15 +50,7 @@ func operand(x ast.Expr) ast.Expr {
 
 // unconvert returns file with its redundant conversions removed. file must be parsed with comments; it is type-checked as a package of its own.
 func unconvert(fset *token.FileSet, file *ast.File) *ast.File {
-	info := &types.Info{
-		Types: map[ast.Expr]types.TypeAndValue{},
-	}
-	conf := types.Config{
-		Importer: importer.ForCompiler(fset, "source", nil),
-		Error: func(error) {}, // errors are expected for names declared elsewhere
-	}
-
-	conf.Check(file.Name.Name, fset, []*ast.File{file}, info)
+	info := checkTypes(fset, file)
 
 	repl := map[*ast.CallExpr]ast.Expr{}
 
@@ -100,4 +92,21 @@ func unconvert(fset *token.FileSet, file *ast.File) *ast.File {
 	}
 
 	return rewriteVal(reflect.ValueOf(file)).Interface().(*ast.File)
+}
+
+// checkTypes type-checks file on its own and returns the types of its expressions.
+// Errors are expected for names declared elsewhere, and are ignored: an expression
+// whose type cannot be found has no entry.
+func checkTypes(fset *token.FileSet, file *ast.File) *types.Info {
+	info := &types.Info{
+		Types: map[ast.Expr]types.TypeAndValue{},
+	}
+	conf := types.Config{
+		Importer: importer.ForCompiler(fset, "source", nil),
+		Error:    func(error) {},
+	}
+
+	conf.Check(file.Name.Name, fset, []*ast.File{file}, info)
+
+	return info
 }

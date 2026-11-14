@@ -485,6 +485,11 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 		incDecStmts(file)
 	}
 
+	if *strict && sourceAdj == nil {
+		// -strict writes index loops as range loops (see rangeloop.go)
+		rangeLoops(fileSet, file, file.Comments)
+	}
+
 	if *mergeCasesFlag && sourceAdj == nil {
 		mergeCases(fileSet, file)
 	}

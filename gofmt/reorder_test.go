@@ -167,9 +167,7 @@ func TestHoistVars(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := declOrder(t, reorderText(t, tt.src))
-
-			if !reflect.DeepEqual(got, tt.want) {
+			if got := declOrder(t, reorderText(t, tt.src)); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("declaration order %v, want %v:\n%s", got, tt.want, reorderText(t, tt.src))
 			}
 		})

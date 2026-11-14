@@ -22,6 +22,52 @@ type (
 	stmtKind int
 )
 
+var (
+	// numericTypes are the predeclared numeric types, which a conversion of a zero value can name.
+	numericTypes = map[string]bool{
+		"byte": true,
+		"complex128": true,
+		"complex64": true,
+		"float32": true,
+		"float64": true,
+		"int": true,
+		"int16": true,
+		"int32": true,
+		"int64": true,
+		"int8": true,
+		"rune": true,
+		"uint": true,
+		"uint16": true,
+		"uint32": true,
+		"uint64": true,
+		"uint8": true,
+		"uintptr": true,
+	}
+
+	// pureTypeNames are the predeclared types, whose conversions have no side effects.
+	pureTypeNames = map[string]bool{
+		"bool": true,
+		"byte": true,
+		"complex128": true,
+		"complex64": true,
+		"float32": true,
+		"float64": true,
+		"int": true,
+		"int16": true,
+		"int32": true,
+		"int64": true,
+		"int8": true,
+		"rune": true,
+		"string": true,
+		"uint": true,
+		"uint16": true,
+		"uint32": true,
+		"uint64": true,
+		"uint8": true,
+		"uintptr": true,
+	}
+)
+
 // Rules for StrictLayout. The source's line breaks are never consulted, except for comments:
 //
 //   - Expression lists (call arguments, right-hand sides, parameters, results) are one line. A composite literal is one line if it fits in strictMaxSize characters and has no comments; otherwise each element is on its own line.
@@ -342,29 +388,6 @@ func caseKeyOf(e ast.Expr) (mapKey, bool) {
 	}
 
 	return mapKeyOf(e)
-}
-
-// pureTypeNames are the predeclared types, whose conversions have no side effects.
-var pureTypeNames = map[string]bool{
-	"bool": true,
-	"byte": true,
-	"complex128": true,
-	"complex64": true,
-	"float32": true,
-	"float64": true,
-	"int": true,
-	"int16": true,
-	"int32": true,
-	"int64": true,
-	"int8": true,
-	"rune": true,
-	"string": true,
-	"uint": true,
-	"uint16": true,
-	"uint32": true,
-	"uint64": true,
-	"uint8": true,
-	"uintptr": true,
 }
 
 // SortCaseList returns the expressions of a case list ordered the way StrictLayout orders the keys of a map literal: nil, booleans, numbers and characters, strings, and then names, each kind by value. The list is returned as it is, unless every expression is a literal of a basic type or a name: other expressions may have effects, and a case list evaluates them in order.
@@ -1213,27 +1236,6 @@ func withDoc(s ast.Spec, doc *ast.CommentGroup) ast.Spec {
 	}
 
 	return s
-}
-
-// numericTypes are the predeclared numeric types, which a conversion of a zero value can name.
-var numericTypes = map[string]bool{
-	"byte": true,
-	"complex128": true,
-	"complex64": true,
-	"float32": true,
-	"float64": true,
-	"int": true,
-	"int16": true,
-	"int32": true,
-	"int64": true,
-	"int8": true,
-	"rune": true,
-	"uint": true,
-	"uint16": true,
-	"uint32": true,
-	"uint64": true,
-	"uint8": true,
-	"uintptr": true,
 }
 
 // joinTypeDecls joins a run of type declarations into one type (...) declaration. Each declaration's doc comment moves onto its first spec, inside the group, so that no doc comment is left outside the block. pos is the position of the keyword and the parenthesis (see typeBlockPos).

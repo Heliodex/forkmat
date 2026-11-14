@@ -51,6 +51,57 @@ type (
 	}
 )
 
+var (
+	// predeclaredPure are the predeclared types, whose conversions have no side effects.
+	predeclaredPure = map[string]bool{
+		"bool": true,
+		"byte": true,
+		"complex128": true,
+		"complex64": true,
+		"float32": true,
+		"float64": true,
+		"int": true,
+		"int16": true,
+		"int32": true,
+		"int64": true,
+		"int8": true,
+		"rune": true,
+		"string": true,
+		"uint": true,
+		"uint16": true,
+		"uint32": true,
+		"uint64": true,
+		"uint8": true,
+		"uintptr": true,
+	}
+
+	// universeTypes are the predeclared type names.
+	universeTypes = map[string]bool{
+		"any": true,
+		"bool": true,
+		"byte": true,
+		"comparable": true,
+		"complex128": true,
+		"complex64": true,
+		"error": true,
+		"float32": true,
+		"float64": true,
+		"int": true,
+		"int16": true,
+		"int32": true,
+		"int64": true,
+		"int8": true,
+		"rune": true,
+		"string": true,
+		"uint": true,
+		"uint16": true,
+		"uint32": true,
+		"uint64": true,
+		"uint8": true,
+		"uintptr": true,
+	}
+)
+
 // alphabeticalOrder orders the components of a run of types. A component is ready when every component it depends on has been placed; among the ready ones, the one whose first name (in alphabetical order) is smallest goes next. So types are sorted wherever the dependencies allow it, and a type always comes after the types it refers to.
 func alphabeticalOrder(run []unit, deps, comps [][]int) []int {
 	compOf := make([]int, len(run))
@@ -264,29 +315,6 @@ func declStart(d ast.Decl) token.Pos {
 	return d.Pos()
 }
 
-// predeclaredPure are the predeclared types, whose conversions have no side effects.
-var predeclaredPure = map[string]bool{
-	"bool": true,
-	"byte": true,
-	"complex128": true,
-	"complex64": true,
-	"float32": true,
-	"float64": true,
-	"int": true,
-	"int16": true,
-	"int32": true,
-	"int64": true,
-	"int8": true,
-	"rune": true,
-	"string": true,
-	"uint": true,
-	"uint16": true,
-	"uint32": true,
-	"uint64": true,
-	"uint8": true,
-	"uintptr": true,
-}
-
 // enclosingModule returns the root directory and the module path of the go.mod file that governs dir, or empty strings if there is none.
 func enclosingModule(dir string) (string, string) {
 	for {
@@ -337,6 +365,143 @@ func (l layout) lineStart(o int) int {
 
 func (l layout) off(p token.Pos) int {
 	return l.tf.Offset(p)
+}
+
+// assignRun returns the edit that reorders the statements list[i:j], or reports false if the run is already in order or has no room to move.
+func (l layout) assignRun(list []ast.Stmt, i, j int, head token.Pos) (edit, bool) {
+	var lo int
+
+	if i == 0 {
+		if l.line(head) == l.line(list[0].Pos()) {
+			return edit{}, false
+		}
+
+		lo = l.lineEnd(l.off(head))
+	} else {
+		if l.line(list[i-1].End()) == l.line(list[i].Pos()) {
+			return edit{}, false
+		}
+
+		lo = l.lineEnd(l.off(list[i-1].End()))
+	}
+
+	if j < len(list) && l.line(list[j-1].End()) == l.line(list[j].Pos()) {
+		return edit{}, false
+	}
+
+	hi := l.lineEnd(l.off(list[j-1].End()))
+	cut := lo
+	run := make([]unit, 0, j-i)
+	texts := make([][]byte, 0, j-i)
+
+	for _, s := range list[i:j] {
+		as := s.(*ast.AssignStmt)
+
+		var names []string
+
+		for _, lhs := range as.Lhs {
+			if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+				names = append(names, id.Name)
+			}
+		}
+
+		run = append(run, unit{
+			kind: token.DEFINE,
+			names: names,
+			body: as,
+			objs: []any{as},
+			start: as.Pos(),
+			end: as.End(),
+		})
+		// the lines before the statement lead into it; then the statement itself, through the end of its line
+		texts = append(texts, append(append([]byte{}, l.src[cut:l.off(as.Pos())]...), l.src[l.off(as.Pos()):l.lineEnd(l.off(as.End()))]...))
+		cut = l.lineEnd(l.off(as.End()))
+	}
+
+	deps := assignDeps(run)
+	order := alphabeticalOrder(run, deps, components(deps))
+	identity := true
+
+	for t, o := range order {
+		if t != o {
+			identity = false
+			break
+		}
+	}
+
+	if identity {
+		return edit{}, false
+	}
+
+	var text []byte
+
+	for _, t := range order {
+		text = append(text, texts[t]...)
+	}
+
+	return edit{
+		start: lo,
+		end: hi,
+		text: text,
+	}, true
+}
+
+// commentIn reports whether a comment of the file starts in the offsets [from, to).
+func (l layout) commentIn(from, to int) bool {
+	for _, cg := range l.comments {
+		for _, c := range cg.List {
+			if o := l.off(c.Pos()); o >= from && o < to {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// movable reports whether decls[i] can be cut out of the source alone: a declaration moves with its own lines, so nothing may share them.
+func movable(l layout, decls []ast.Decl, i int) bool {
+	if i > 0 && l.line(decls[i-1].End()) == l.line(declStart(decls[i])) {
+		return false
+	}
+
+	return i+1 >= len(decls) || l.line(decls[i].End()) != l.line(declStart(decls[i+1]))
+}
+
+// moveDecls returns src with the declarations decls[i], for each i in moved, cut out of their places and inserted at offset at, in source order. Each moves with the comments that lead into it.
+func moveDecls(l layout, src []byte, decls []ast.Decl, at int, moved []int) []byte {
+	if len(moved) == 0 {
+		return src
+	}
+
+	// the moved declarations go in at at; each is cut out of its place with the comments that lead into it
+	var text []byte
+
+	edits := []edit{
+		{
+			start: at,
+			end: at,
+		},
+	}
+
+	for _, i := range moved {
+		start := at
+
+		if i > 0 {
+			start = l.lineEnd(l.off(decls[i-1].End()))
+		}
+
+		end := l.lineEnd(l.off(decls[i].End()))
+		text = append(text, src[start:end]...)
+		edits = append(edits, edit{
+			start: start,
+			end: end,
+		})
+	}
+
+	edits[0].text = text
+
+	return applyEdits(src, edits)
 }
 
 // hoistTypes is the pass that moves type declarations to the top of the file, after the imports. Only a type whose names are all types (of this file, or predeclared), imported packages, or its own type parameters moves: a name that is a constant, variable or function, or that cannot be resolved in this file, keeps the type where it is, and so does every type that depends on such a type. Declaration order at package level does not change the meaning of a type, so a move is safe; the restriction keeps a type with a constant length below its constant.
@@ -494,212 +659,6 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 	return moveDecls(l, src, decls, P, moved)
 }
 
-// movable reports whether decls[i] can be cut out of the source alone: a declaration moves with its own lines, so nothing may share them.
-func movable(l layout, decls []ast.Decl, i int) bool {
-	if i > 0 && l.line(decls[i-1].End()) == l.line(declStart(decls[i])) {
-		return false
-	}
-
-	return i+1 >= len(decls) || l.line(decls[i].End()) != l.line(declStart(decls[i+1]))
-}
-
-// moveDecls returns src with the declarations decls[i], for each i in moved, cut out of their places and inserted at offset at, in source order. Each moves with the comments that lead into it.
-func moveDecls(l layout, src []byte, decls []ast.Decl, at int, moved []int) []byte {
-	if len(moved) == 0 {
-		return src
-	}
-
-	// the moved declarations go in at at; each is cut out of its place with the comments that lead into it
-	var text []byte
-
-	edits := []edit{
-		{
-			start: at,
-			end: at,
-		},
-	}
-
-	for _, i := range moved {
-		start := at
-
-		if i > 0 {
-			start = l.lineEnd(l.off(decls[i-1].End()))
-		}
-
-		end := l.lineEnd(l.off(decls[i].End()))
-		text = append(text, src[start:end]...)
-		edits = append(edits, edit{
-			start: start,
-			end: end,
-		})
-	}
-
-	edits[0].text = text
-
-	return applyEdits(src, edits)
-}
-
-// hoistVars is the pass that moves var declarations up to just after the imports, the types and the other vars already at the top of the file. Only a var whose values are pure (see pureVars) moves. A var whose values have effects keeps its place, and so does every var after it: initialisation runs those effects in declaration order, and a pure value may read a variable that such an initialiser changes. A pure var may still move above a var it refers to, since initialisation follows references. The moved vars are then joined into a block by the printer, and reorderSpecRuns sorts them by dependency.
-func hoistVars(fset *token.FileSet, file *ast.File, src []byte) []byte {
-	tf := fset.File(file.Pos())
-	if tf == nil {
-		return src
-	}
-
-	decls := file.Decls
-	l := layout{
-		tf: tf,
-		src: src,
-		comments: file.Comments,
-	}
-
-	// top is the end of the run at the top of the file that moved vars join: imports, types and pure vars
-	top := 0
-
-	for top < len(decls) && topRunDecl(decls[top]) {
-		top++
-	}
-
-	// P is where the moved vars go: the line after the run, or after the package clause if there is no run
-	P := l.lineEnd(l.off(file.Name.End()))
-
-	if top > 0 {
-		P = l.lineEnd(l.off(decls[top-1].End()))
-	}
-
-	var (
-		moved []int
-		blocked bool // an earlier var has effects, so no later var may move above it
-	)
-
-	for i := top; i < len(decls); i++ {
-		g, ok := decls[i].(*ast.GenDecl)
-		if !ok || g.Tok != token.VAR {
-			continue
-		}
-
-		if !pureVars(g) {
-			blocked = true
-			continue
-		}
-
-		if !blocked && movable(l, decls, i) {
-			moved = append(moved, i)
-		}
-	}
-
-	return moveDecls(l, src, decls, P, moved)
-}
-
-// topRunDecl reports whether d may stay in the run at the top of the file that hoistVars moves vars into: an import, a type, or a var with pure values.
-func topRunDecl(d ast.Decl) bool {
-	g, ok := d.(*ast.GenDecl)
-	if !ok {
-		return false
-	}
-
-	switch g.Tok {
-	case token.IMPORT, token.TYPE:
-		return true
-	case token.VAR:
-		return pureVars(g)
-	}
-
-	return false
-}
-
-// assignRun returns the edit that reorders the statements list[i:j], or reports false if the run is already in order or has no room to move.
-func (l layout) assignRun(list []ast.Stmt, i, j int, head token.Pos) (edit, bool) {
-	var lo int
-
-	if i == 0 {
-		if l.line(head) == l.line(list[0].Pos()) {
-			return edit{}, false
-		}
-
-		lo = l.lineEnd(l.off(head))
-	} else {
-		if l.line(list[i-1].End()) == l.line(list[i].Pos()) {
-			return edit{}, false
-		}
-
-		lo = l.lineEnd(l.off(list[i-1].End()))
-	}
-
-	if j < len(list) && l.line(list[j-1].End()) == l.line(list[j].Pos()) {
-		return edit{}, false
-	}
-
-	hi := l.lineEnd(l.off(list[j-1].End()))
-	cut := lo
-	run := make([]unit, 0, j-i)
-	texts := make([][]byte, 0, j-i)
-
-	for _, s := range list[i:j] {
-		as := s.(*ast.AssignStmt)
-
-		var names []string
-
-		for _, lhs := range as.Lhs {
-			if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
-				names = append(names, id.Name)
-			}
-		}
-
-		run = append(run, unit{
-			kind: token.DEFINE,
-			names: names,
-			body: as,
-			objs: []any{as},
-			start: as.Pos(),
-			end: as.End(),
-		})
-		// the lines before the statement lead into it; then the statement itself, through the end of its line
-		texts = append(texts, append(append([]byte{}, l.src[cut:l.off(as.Pos())]...), l.src[l.off(as.Pos()):l.lineEnd(l.off(as.End()))]...))
-		cut = l.lineEnd(l.off(as.End()))
-	}
-
-	deps := assignDeps(run)
-	order := alphabeticalOrder(run, deps, components(deps))
-	identity := true
-
-	for t, o := range order {
-		if t != o {
-			identity = false
-			break
-		}
-	}
-
-	if identity {
-		return edit{}, false
-	}
-
-	var text []byte
-
-	for _, t := range order {
-		text = append(text, texts[t]...)
-	}
-
-	return edit{
-		start: lo,
-		end: hi,
-		text: text,
-	}, true
-}
-
-// commentIn reports whether a comment of the file starts in the offsets [from, to).
-func (l layout) commentIn(from, to int) bool {
-	for _, cg := range l.comments {
-		for _, c := range cg.List {
-			if o := l.off(c.Pos()); o >= from && o < to {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
 // packageDir returns the directory of the package with import path path, as seen from srcDir: a package of the module that srcDir is in is found from the module's root; any other package is found with go/build. It returns "" if the package cannot be found.
 func packageDir(path, srcDir string) string {
 	if root, mod := enclosingModule(srcDir); mod != "" {
@@ -794,32 +753,6 @@ func pureExpr(n ast.Node, funcLitOK bool) bool {
 		return pure
 	})
 	return pure
-}
-
-// universeTypes are the predeclared type names.
-var universeTypes = map[string]bool{
-	"any": true,
-	"bool": true,
-	"byte": true,
-	"comparable": true,
-	"complex128": true,
-	"complex64": true,
-	"error": true,
-	"float32": true,
-	"float64": true,
-	"int": true,
-	"int16": true,
-	"int32": true,
-	"int64": true,
-	"int8": true,
-	"rune": true,
-	"string": true,
-	"uint": true,
-	"uint16": true,
-	"uint32": true,
-	"uint64": true,
-	"uint8": true,
-	"uintptr": true,
 }
 
 // assignable reports whether s can be part of a run of := statements.
@@ -1255,6 +1188,75 @@ func specRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bo
 		end: hi,
 		text: text,
 	}, true
+}
+
+// topRunDecl reports whether d may stay in the run at the top of the file that hoistVars moves vars into: an import, a type, or a var with pure values.
+func topRunDecl(d ast.Decl) bool {
+	g, ok := d.(*ast.GenDecl)
+	if !ok {
+		return false
+	}
+
+	switch g.Tok {
+	case token.IMPORT, token.TYPE:
+		return true
+	case token.VAR:
+		return pureVars(g)
+	}
+
+	return false
+}
+
+// hoistVars is the pass that moves var declarations up to just after the imports, the types and the other vars already at the top of the file. Only a var whose values are pure (see pureVars) moves. A var whose values have effects keeps its place, and so does every var after it: initialisation runs those effects in declaration order, and a pure value may read a variable that such an initialiser changes. A pure var may still move above a var it refers to, since initialisation follows references. The moved vars are then joined into a block by the printer, and reorderSpecRuns sorts them by dependency.
+func hoistVars(fset *token.FileSet, file *ast.File, src []byte) []byte {
+	tf := fset.File(file.Pos())
+	if tf == nil {
+		return src
+	}
+
+	decls := file.Decls
+	l := layout{
+		tf: tf,
+		src: src,
+		comments: file.Comments,
+	}
+
+	// top is the end of the run at the top of the file that moved vars join: imports, types and pure vars
+	var top int
+
+	for top < len(decls) && topRunDecl(decls[top]) {
+		top++
+	}
+
+	// P is where the moved vars go: the line after the run, or after the package clause if there is no run
+	P := l.lineEnd(l.off(file.Name.End()))
+
+	if top > 0 {
+		P = l.lineEnd(l.off(decls[top-1].End()))
+	}
+
+	var (
+		moved []int
+		blocked bool // an earlier var has effects, so no later var may move above it
+	)
+
+	for i := top; i < len(decls); i++ {
+		g, ok := decls[i].(*ast.GenDecl)
+		if !ok || g.Tok != token.VAR {
+			continue
+		}
+
+		if !pureVars(g) {
+			blocked = true
+			continue
+		}
+
+		if !blocked && movable(l, decls, i) {
+			moved = append(moved, i)
+		}
+	}
+
+	return moveDecls(l, src, decls, P, moved)
 }
 
 // unitOf returns d as a unit, or false if the reordering does not move d.

@@ -290,3 +290,23 @@ func zeros() {
 	_, _, _, _, _, _, _, _, _, _ = x, y, z, s, b, a, c, m, n, r
 	_, _ = p, q
 }
+
+// Consecutive var specs of one type and no values share one line. A spec
+// with a value, or with a comment, is kept apart.
+var (
+	vx, vy int32
+	vz = 1
+	vw int32
+)
+
+func mergeVars() {
+	var (
+		pc, top int32
+		n int
+	)
+
+	var m int // kept
+	var k int
+
+	_, _, _, _, _ = pc, top, n, m, k
+}

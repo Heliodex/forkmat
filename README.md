@@ -237,6 +237,10 @@ The rules:
   `var x = y` is `x := y`, and `var a, b = 1, 2` is `a, b := 1, 2`. A `var`
   with a type stays a declaration, and so does one whose names are all `_`,
   since `:=` needs a new name. A group with a comment inside is left alone.
+- Consecutive `var` specs of one type with no values share one line:
+  `var pc int32` then `var top int32` (or the same two in a group) is
+  `var pc, top int32`. Specs with a value, or with a comment, stay apart. When
+  one spec is left, the parentheses of its group are dropped.
 - A single `:=` whose value is a zero value becomes a `var` declaration with
   its type written out: `x := 0` is `var x int`, `x := 0.` is `var x float64`,
   `x := int32(0)` is `var x int32`, and `""`, `false` and `string("")`,

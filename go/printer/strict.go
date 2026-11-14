@@ -550,6 +550,11 @@ func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
 		}
 		i = j
 	}
+	for i, d := range out {
+		if g, ok := d.(*ast.GenDecl); ok {
+			out[i] = p.mergeVarSpecs(g)
+		}
+	}
 	return out
 }
 
@@ -585,7 +590,58 @@ func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
 		}
 		i = j
 	}
+	for i, s := range out {
+		if ds, ok := s.(*ast.DeclStmt); ok {
+			if g, ok := ds.Decl.(*ast.GenDecl); ok {
+				out[i] = &ast.DeclStmt{Decl: p.mergeVarSpecs(g)}
+			}
+		}
+	}
 	return out
+}
+
+// mergeVarSpecs joins consecutive specs of a var declaration that name the same
+// type and have no values, so that var pc int32; var top int32 is written as
+// var pc, top int32. A declaration with a comment inside is left alone. When one
+// spec is left, the parentheses of the group are dropped.
+func (p *printer) mergeVarSpecs(d *ast.GenDecl) *ast.GenDecl {
+	if d.Tok != token.VAR || p.commentIn(d.Pos(), d.End()) {
+		return d
+	}
+	var specs []ast.Spec
+	merged := false
+	for _, sp := range d.Specs {
+		vs := sp.(*ast.ValueSpec)
+		if n := len(specs); n > 0 {
+			prev := specs[n-1].(*ast.ValueSpec)
+			if p.mergeableVars(prev, vs) {
+				specs[n-1] = &ast.ValueSpec{
+					Names: append(append([]*ast.Ident{}, prev.Names...), vs.Names...),
+					Type:  prev.Type,
+				}
+				merged = true
+				continue
+			}
+		}
+		specs = append(specs, sp)
+	}
+	if !merged {
+		return d
+	}
+	out := &ast.GenDecl{TokPos: d.TokPos, Tok: token.VAR, Doc: d.Doc, Specs: specs}
+	if len(specs) > 1 {
+		out.Lparen, out.Rparen = d.Lparen, d.Rparen
+	}
+	return out
+}
+
+// mergeableVars reports whether var spec cur can join the names of prev: both
+// have the same type written out, and neither has values or comments.
+func (p *printer) mergeableVars(prev, cur *ast.ValueSpec) bool {
+	return prev.Type != nil && cur.Type != nil &&
+		len(prev.Values) == 0 && len(cur.Values) == 0 &&
+		prev.Doc == nil && cur.Doc == nil && prev.Comment == nil && cur.Comment == nil &&
+		p.sameType(prev.Type, cur.Type)
 }
 
 // shortVarOK reports whether a var spec can be written as a := assignment: it

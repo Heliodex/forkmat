@@ -238,9 +238,11 @@ func reorderSource(filename string, src []byte) []byte {
 	passes := []func(*token.FileSet, *ast.File, []byte) []byte{
 		func(fset *token.FileSet, file *ast.File, src []byte) []byte {
 			external := siblingTypes(filename, file.Name.Name)
+
 			for name := range dotImportTypes(filename, file) {
 				external[name] = true
 			}
+
 			return hoistTypes(fset, file, src, external)
 		},
 		reorderSpecRuns,
@@ -683,127 +685,27 @@ func declStart(d ast.Decl) token.Pos {
 	return d.Pos()
 }
 
-// siblingTypes returns the names of the types that other files of the package of
-// filename declare. A file's package is the files of its directory with the same
-// package name. A name that a sibling declares as a type is a type, so a type may
-// use it and still move; a constant, variable or function of a sibling is not.
-func siblingTypes(filename, pkg string) map[string]bool {
-	types := map[string]bool{}
-	dir := filepath.Dir(filename)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return types
-	}
-	self, _ := filepath.Abs(filename)
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || filepath.Ext(name) != ".go" {
-			continue
-		}
-		path := filepath.Join(dir, name)
-		if abs, _ := filepath.Abs(path); abs == self {
-			continue
-		}
-		f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
-		if err != nil || f.Name.Name != pkg {
-			continue
-		}
-		for _, d := range f.Decls {
-			if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
-				for _, sp := range g.Specs {
-					types[sp.(*ast.TypeSpec).Name.Name] = true
-				}
-			}
-		}
-	}
-	return types
-}
-
-// packageDir returns the directory of the package with import path path, as seen
-// from srcDir: a package of the module that srcDir is in is found from the
-// module's root; any other package is found with go/build. It returns "" if the
-// package cannot be found.
-func packageDir(path, srcDir string) string {
-	if root, mod := enclosingModule(srcDir); mod != "" {
-		if path == mod {
-			return root
-		}
-		if rest, ok := strings.CutPrefix(path, mod+"/"); ok {
-			return filepath.Join(root, filepath.FromSlash(rest))
-		}
-	}
-	pkg, err := build.Default.Import(path, srcDir, build.FindOnly)
-	if err != nil {
-		return ""
-	}
-	return pkg.Dir
-}
-
 // enclosingModule returns the root directory and the module path of the go.mod
 // file that governs dir, or empty strings if there is none.
 func enclosingModule(dir string) (string, string) {
 	for {
-		data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
-		if err == nil {
+		if data, err := os.ReadFile(filepath.Join(dir, "go.mod")); err == nil {
 			for _, line := range strings.Split(string(data), "\n") {
 				if mod, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
 					return dir, strings.Trim(strings.TrimSpace(mod), "\"")
 				}
 			}
+
 			return "", ""
 		}
+
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			return "", ""
 		}
+
 		dir = parent
 	}
-}
-
-// dotImportTypes returns the names of the exported types of the packages that
-// file imports with a dot, which bring those names in without a qualifier. The
-// packages are located with go/build; a package that cannot be found adds no
-// names.
-func dotImportTypes(filename string, file *ast.File) map[string]bool {
-	types := map[string]bool{}
-	dir := filepath.Dir(filename)
-	for _, imp := range file.Imports {
-		if imp.Name == nil || imp.Name.Name != "." {
-			continue
-		}
-		path, err := strconv.Unquote(imp.Path.Value)
-		if err != nil {
-			continue
-		}
-		pkgDir := packageDir(path, dir)
-		if pkgDir == "" {
-			continue
-		}
-		entries, err := os.ReadDir(pkgDir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			name := e.Name()
-			if e.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
-				continue
-			}
-			f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(pkgDir, name), nil, parser.SkipObjectResolution)
-			if err != nil {
-				continue
-			}
-			for _, d := range f.Decls {
-				if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
-					for _, sp := range g.Specs {
-						if n := sp.(*ast.TypeSpec).Name; n.IsExported() {
-							types[n.Name] = true
-						}
-					}
-				}
-			}
-		}
-	}
-	return types
 }
 
 // hoistTypes is the pass that moves type declarations to the top of the file,
@@ -1014,6 +916,83 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 	return applyEdits(src, edits)
 }
 
+// packageDir returns the directory of the package with import path path, as seen
+// from srcDir: a package of the module that srcDir is in is found from the
+// module's root; any other package is found with go/build. It returns "" if the
+// package cannot be found.
+func packageDir(path, srcDir string) string {
+	if root, mod := enclosingModule(srcDir); mod != "" {
+		if path == mod {
+			return root
+		}
+
+		if rest, ok := strings.CutPrefix(path, mod+"/"); ok {
+			return filepath.Join(root, filepath.FromSlash(rest))
+		}
+	}
+
+	pkg, err := build.Default.Import(path, srcDir, build.FindOnly)
+	if err != nil {
+		return ""
+	}
+
+	return pkg.Dir
+}
+
+// dotImportTypes returns the names of the exported types of the packages that
+// file imports with a dot, which bring those names in without a qualifier. The
+// packages are located with go/build; a package that cannot be found adds no
+// names.
+func dotImportTypes(filename string, file *ast.File) map[string]bool {
+	types := map[string]bool{}
+	dir := filepath.Dir(filename)
+
+	for _, imp := range file.Imports {
+		if imp.Name == nil || imp.Name.Name != "." {
+			continue
+		}
+
+		path, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			continue
+		}
+
+		pkgDir := packageDir(path, dir)
+		if pkgDir == "" {
+			continue
+		}
+
+		entries, err := os.ReadDir(pkgDir)
+		if err != nil {
+			continue
+		}
+
+		for _, e := range entries {
+			name := e.Name()
+			if e.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+
+			f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(pkgDir, name), nil, parser.SkipObjectResolution)
+			if err != nil {
+				continue
+			}
+
+			for _, d := range f.Decls {
+				if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
+					for _, sp := range g.Specs {
+						if n := sp.(*ast.TypeSpec).Name; n.IsExported() {
+							types[n.Name] = true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return types
+}
+
 // references returns the indices of the units that n refers to. An identifier
 // refers to a unit if it resolves to one of the unit's declarations, or, when it
 // is not resolved at all, if it has the name of one of the units. The selector
@@ -1155,6 +1134,49 @@ func reorderAssignRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 		return edits[i].start < edits[j].start
 	})
 	return applyEdits(src, edits)
+}
+
+// siblingTypes returns the names of the types that other files of the package of
+// filename declare. A file's package is the files of its directory with the same
+// package name. A name that a sibling declares as a type is a type, so a type may
+// use it and still move; a constant, variable or function of a sibling is not.
+func siblingTypes(filename, pkg string) map[string]bool {
+	types := map[string]bool{}
+	dir := filepath.Dir(filename)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return types
+	}
+
+	self, _ := filepath.Abs(filename)
+
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || filepath.Ext(name) != ".go" {
+			continue
+		}
+
+		path := filepath.Join(dir, name)
+
+		if abs, _ := filepath.Abs(path); abs == self {
+			continue
+		}
+
+		f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+		if err != nil || f.Name.Name != pkg {
+			continue
+		}
+
+		for _, d := range f.Decls {
+			if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
+				for _, sp := range g.Specs {
+					types[sp.(*ast.TypeSpec).Name.Name] = true
+				}
+			}
+		}
+	}
+
+	return types
 }
 
 // specTextFrom returns lead followed by a single declaration of sp: the keyword

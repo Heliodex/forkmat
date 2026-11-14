@@ -418,16 +418,10 @@ func assert(cond bool, msg string) {
 // checkExpr checks that x is an expression (and not a type).
 func (p *parser) checkExpr(x ast.Expr) ast.Expr {
 	switch t := ast.Unparen(x).(type) {
-	case *ast.BadExpr:
-	case *ast.Ident:
-	case *ast.BasicLit:
-	case *ast.FuncLit:
-	case *ast.CompositeLit:
+	case *ast.BadExpr, *ast.Ident, *ast.BasicLit, *ast.FuncLit, *ast.CompositeLit:
 	case *ast.ParenExpr:
 		panic("unreachable")
-	case *ast.SelectorExpr:
-	case *ast.IndexExpr:
-	case *ast.SliceExpr:
+	case *ast.SelectorExpr, *ast.IndexExpr, *ast.SliceExpr:
 	case *ast.TypeAssertExpr:
 		if t.Type == nil {
 			// the form X.(type) is only allowed in type switch expressions
@@ -435,8 +429,7 @@ func (p *parser) checkExpr(x ast.Expr) ast.Expr {
 
 			x = &ast.BadExpr{x.Pos(), x.End()}
 		}
-	case *ast.CallExpr:
-	case *ast.StarExpr:
+	case *ast.CallExpr, *ast.StarExpr:
 	case *ast.UnaryExpr:
 		if t.Op == token.RANGE {
 			// the range operator is only allowed at the top of a for statement
@@ -1316,15 +1309,12 @@ func deref(x ast.Expr) ast.Expr {
 // isLiteralType reports whether x is a legal composite literal type.
 func isLiteralType(x ast.Expr) bool {
 	switch t := x.(type) {
-	case *ast.BadExpr:
-	case *ast.Ident:
+	case *ast.BadExpr, *ast.Ident:
 	case *ast.SelectorExpr:
 		_, isIdent := t.X.(*ast.Ident)
 
 		return isIdent
-	case *ast.ArrayType:
-	case *ast.StructType:
-	case *ast.MapType:
+	case *ast.ArrayType, *ast.StructType, *ast.MapType:
 	default:
 		return false // all other nodes are not legal composite literal types
 	}
@@ -1335,8 +1325,7 @@ func isLiteralType(x ast.Expr) bool {
 // isTypeName reports whether x is a (qualified) TypeName.
 func isTypeName(x ast.Expr) bool {
 	switch t := x.(type) {
-	case *ast.BadExpr:
-	case *ast.Ident:
+	case *ast.BadExpr, *ast.Ident:
 	case *ast.SelectorExpr:
 		_, isIdent := t.X.(*ast.Ident)
 

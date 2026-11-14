@@ -114,18 +114,14 @@ type (
 	}
 )
 
-const blank = whiteSpace(' ')
-
-const debug = false // enable for debugging
 const (
+	blank = whiteSpace(' ')
+	debug = false // enable for debugging
 	formfeed = whiteSpace('\f')
 	ignore = whiteSpace(0)
 	indent = whiteSpace('>')
 	infinity = 1 << 30
-)
-
-const maxNewlines = 2 // max. number of newlines between source text
-const (
+	maxNewlines = 2 // max. number of newlines between source text
 	newline = whiteSpace('\n')
 	unindent = whiteSpace('<')
 	vtab = whiteSpace('\v')

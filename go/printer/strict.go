@@ -647,18 +647,6 @@ func mergeDoc(a, b *ast.CommentGroup) *ast.CommentGroup {
 	}
 }
 
-// constJoinable reports whether a const declaration can join a group. Its specs
-// must all have values, since a spec without one repeats the value before it,
-// and no value may use iota, which counts the specs of a group.
-func constJoinable(g *ast.GenDecl) bool {
-	for _, sp := range g.Specs {
-		if len(sp.(*ast.ValueSpec).Values) == 0 {
-			return false
-		}
-	}
-	return !usesIota(g)
-}
-
 // usesIota reports whether a declaration mentions iota.
 func usesIota(d *ast.GenDecl) bool {
 	var found bool
@@ -671,6 +659,19 @@ func usesIota(d *ast.GenDecl) bool {
 		return !found
 	})
 	return found
+}
+
+// constJoinable reports whether a const declaration can join a group. Its specs
+// must all have values, since a spec without one repeats the value before it,
+// and no value may use iota, which counts the specs of a group.
+func constJoinable(g *ast.GenDecl) bool {
+	for _, sp := range g.Specs {
+		if len(sp.(*ast.ValueSpec).Values) == 0 {
+			return false
+		}
+	}
+
+	return !usesIota(g)
 }
 
 // singleDecl returns d if it can join a run of declarations of its token: an
@@ -899,7 +900,9 @@ func (p *printer) mergeVarSpecs(d *ast.GenDecl) *ast.GenDecl {
 // declarations into one type (...) declaration (see groupTypes). A comment
 // between two var declarations keeps them apart.
 func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
-	list = groupTypes(p, list, p.head, token.TYPE, func(*ast.GenDecl) bool { return true }, func(d ast.Decl) *ast.GenDecl {
+	list = groupTypes(p, list, p.head, token.TYPE, func(*ast.GenDecl) bool {
+		return true
+	}, func(d ast.Decl) *ast.GenDecl {
 		g, _ := d.(*ast.GenDecl)
 
 		return g
@@ -911,6 +914,7 @@ func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
 	// its meaning from its place in the group (see constJoinable)
 	list = groupTypes(p, list, p.head, token.CONST, constJoinable, func(d ast.Decl) *ast.GenDecl {
 		g, _ := d.(*ast.GenDecl)
+
 		return g
 	}, func(g *ast.GenDecl) ast.Decl {
 		return g
@@ -957,7 +961,9 @@ func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
 
 // strictGroupStmts is strictGroupDecls for the statements of a block.
 func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
-	list = groupTypes(p, list, token.NoPos, token.TYPE, func(*ast.GenDecl) bool { return true }, func(s ast.Stmt) *ast.GenDecl {
+	list = groupTypes(p, list, token.NoPos, token.TYPE, func(*ast.GenDecl) bool {
+		return true
+	}, func(s ast.Stmt) *ast.GenDecl {
 		if ds, ok := s.(*ast.DeclStmt); ok {
 			g, _ := ds.Decl.(*ast.GenDecl)
 

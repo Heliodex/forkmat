@@ -29,9 +29,9 @@ func ASanSupported(goos, goarch string) bool {
 	switch goos {
 	case "linux":
 		return goarch == "arm64" || goarch == "amd64" || goarch == "loong64" || goarch == "riscv64" || goarch == "ppc64le"
-	default:
-		return false
 	}
+
+	return false
 }
 
 // Broken reports whether goos/goarch is considered a broken port.
@@ -65,15 +65,15 @@ func BuildModeSupported(compiler, buildmode, goos, goarch string) bool {
 			switch goarch {
 			case "386", "amd64", "arm", "armbe", "arm64", "arm64be", "loong64", "ppc64", "ppc64le", "riscv64", "s390x":
 				return true
-			default:
 				// Other targets do not support -shared,
 				// per ParseFlags in
 				// cmd/compile/internal/base/flag.go.
 				// For c-archive the Go tool passes -shared,
 				// so that the result is suitable for inclusion
 				// in a PIE or shared library.
-				return false
 			}
+
+			return false
 		case "freebsd":
 			return goarch == "amd64"
 		}
@@ -86,9 +86,7 @@ func BuildModeSupported(compiler, buildmode, goos, goarch string) bool {
 		}
 
 		return false
-	case "default":
-		return true
-	case "exe":
+	case "default", "exe":
 		return true
 	case "pie":
 		switch platform {
@@ -111,9 +109,9 @@ func BuildModeSupported(compiler, buildmode, goos, goarch string) bool {
 		}
 
 		return false
-	default:
-		return false
 	}
+
+	return false
 }
 
 // CgoSupported reports whether goos/goarch supports cgo.
@@ -180,9 +178,9 @@ func FuzzSupported(goos, goarch string) bool {
 	switch goos {
 	case "darwin", "freebsd", "linux", "openbsd", "windows":
 		return true
-	default:
-		return false
 	}
+
+	return false
 }
 
 // FuzzInstrumented reports whether fuzzing on goos/goarch uses coverage
@@ -192,9 +190,9 @@ func FuzzInstrumented(goos, goarch string) bool {
 	case "amd64", "arm64", "loong64":
 		// TODO(#14565): support more architectures.
 		return FuzzSupported(goos, goarch)
-	default:
-		return false
 	}
+
+	return false
 }
 
 func InternalLinkPIESupported(goos, goarch string) bool {
@@ -214,9 +212,9 @@ func MSanSupported(goos, goarch string) bool {
 		return goarch == "amd64" || goarch == "arm64" || goarch == "loong64"
 	case "freebsd":
 		return goarch == "amd64"
-	default:
-		return false
 	}
+
+	return false
 }
 
 // MustLinkExternal reports whether goos/goarch requires external linking
@@ -274,7 +272,7 @@ func RaceDetectorSupported(goos, goarch string) bool {
 		return goarch == "amd64" || goarch == "arm64"
 	case "freebsd", "netbsd", "windows":
 		return goarch == "amd64"
-	default:
-		return false
 	}
+
+	return false
 }

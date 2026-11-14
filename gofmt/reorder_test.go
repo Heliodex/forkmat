@@ -11,6 +11,73 @@ import (
 	"testing"
 )
 
+func TestDotImportTypes(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, src string) {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	write("go.mod", "module tmpmod\n\ngo 1.22\n")
+	write("vm/vm.go", "package vm\n\ntype Coroutine struct{}\n\ntype val any\n\nconst Limit = 3\n")
+	write("main.go", "package main\n\nimport . \"tmpmod/vm\"\n\ntype Args struct{ Co *Coroutine }\n")
+
+	src, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, "main.go"), src, parser.ImportsOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := dotImportTypes(filepath.Join(dir, "main.go"), file)
+	if !got["Coroutine"] {
+		t.Errorf("exported type of a dot-imported package not found: %v", got)
+	}
+
+	for _, name := range []string{"val", "Limit"} {
+		if got[name] {
+			t.Errorf("%s wrongly counted as a type", name)
+		}
+	}
+}
+
+func TestSiblingTypes(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"a.go": "package p\n\ntype Coroutine struct{}\n\nconst limit = 3\n",
+		"b.go": "package p\n\ntype Val any\n",
+		"c.go": "package q\n\ntype Other int\n",
+		"d.go": "package p\n\nfunc helper() {}\n",
+		"x.go": "package p\n\ntype Self int\n",
+		"e.txt": "not go",
+	}
+
+	for name, src := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := siblingTypes(filepath.Join(dir, "x.go"), "p")
+	if !got["Coroutine"] || !got["Val"] {
+		t.Errorf("types of sibling files not found: %v", got)
+	}
+
+	for _, name := range []string{"limit", "helper", "Other", "Self"} {
+		if got[name] {
+			t.Errorf("%s wrongly counted as a sibling type", name)
+		}
+	}
+}
+
 // declOrder returns the names of the top-level functions and methods of src, in
 // order.
 func declOrder(t *testing.T, src string) []string {
@@ -293,63 +360,5 @@ func TestReorderAssignRuns(t *testing.T) {
 				t.Errorf("order changed:\n%s", got)
 			}
 		})
-	}
-}
-
-func TestSiblingTypes(t *testing.T) {
-	dir := t.TempDir()
-	files := map[string]string{
-		"a.go":  "package p\n\ntype Coroutine struct{}\n\nconst limit = 3\n",
-		"b.go":  "package p\n\ntype Val any\n",
-		"c.go":  "package q\n\ntype Other int\n",
-		"d.go":  "package p\n\nfunc helper() {}\n",
-		"x.go":  "package p\n\ntype Self int\n",
-		"e.txt": "not go",
-	}
-	for name, src := range files {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	got := siblingTypes(filepath.Join(dir, "x.go"), "p")
-	if !got["Coroutine"] || !got["Val"] {
-		t.Errorf("types of sibling files not found: %v", got)
-	}
-	for _, name := range []string{"limit", "helper", "Other", "Self"} {
-		if got[name] {
-			t.Errorf("%s wrongly counted as a sibling type", name)
-		}
-	}
-}
-
-func TestDotImportTypes(t *testing.T) {
-	dir := t.TempDir()
-	write := func(name, src string) {
-		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write("go.mod", "module tmpmod\n\ngo 1.22\n")
-	write("vm/vm.go", "package vm\n\ntype Coroutine struct{}\n\ntype val any\n\nconst Limit = 3\n")
-	write("main.go", "package main\n\nimport . \"tmpmod/vm\"\n\ntype Args struct{ Co *Coroutine }\n")
-	src, err := os.ReadFile(filepath.Join(dir, "main.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, "main.go"), src, parser.ImportsOnly)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := dotImportTypes(filepath.Join(dir, "main.go"), file)
-	if !got["Coroutine"] {
-		t.Errorf("exported type of a dot-imported package not found: %v", got)
-	}
-	for _, name := range []string{"val", "Limit"} {
-		if got[name] {
-			t.Errorf("%s wrongly counted as a type", name)
-		}
 	}
 }

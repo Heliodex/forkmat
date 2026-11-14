@@ -206,6 +206,9 @@ The rules:
   A list is broken only if it holds a comment, with one element per line.
 - Composite literals are one line if they fit in 100 characters and hold no
   comments; otherwise each element is on its own line with a trailing comma.
+  A literal that sets fields by name (`T{X: 1}`) is always split over several
+  lines, so that it reads as field initialisation. Map literals (`map[K]V{...}`
+  written with an explicit map type) are exempt.
 - Binary expressions and selector chains are never broken.
 - Consecutive named struct fields and parameters of the same type share one
   type: `x int, y int` prints as `x, y int`, and `struct{ x int; y int }` as

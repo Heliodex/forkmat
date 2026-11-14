@@ -202,9 +202,14 @@ func (p *printer) commentIn(from, to token.Pos) bool {
 
 // strictFitsOneLine reports whether a composite literal is printed on one
 // line under StrictLayout: it has no comments, and its type and elements each
-// fit, with the whole literal within strictMaxSize.
+// fit, with the whole literal within strictMaxSize. A literal that initialises
+// fields by name (T{X: 1}) is never on one line, unless its type is a map type,
+// whose keys are not fields.
 func (p *printer) strictFitsOneLine(x *ast.CompositeLit) bool {
 	if x.Incomplete || p.commentBefore(p.posFor(x.Rbrace)) {
+		return false
+	}
+	if _, isMap := x.Type.(*ast.MapType); !isMap && hasKeyedElt(x.Elts) {
 		return false
 	}
 	size := 2 // the braces
@@ -226,6 +231,17 @@ func (p *printer) strictFitsOneLine(x *ast.CompositeLit) bool {
 		}
 	}
 	return size <= strictMaxSize
+}
+
+// hasKeyedElt reports whether any element of a composite literal is a key: value
+// pair.
+func hasKeyedElt(elts []ast.Expr) bool {
+	for _, e := range elts {
+		if _, ok := e.(*ast.KeyValueExpr); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // isCallStmt reports whether s is an expression statement holding a call.

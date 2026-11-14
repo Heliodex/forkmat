@@ -205,7 +205,9 @@ type Edge struct {
 }
 
 var (
-	edgeLit = T{A: 1}
+	edgeLit = T{
+		A: 1,
+	}
 	first = 1
 	second int
 )

@@ -515,6 +515,12 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 		omitCases(fileSet, file, file.Comments)
 	}
 
+	if *strict && sourceAdj == nil {
+		// -strict puts the keys of struct literals in declaration order (see
+		// structorder.go)
+		structLiteralOrder(filename, file)
+	}
+
 	if *mergeCasesFlag && sourceAdj == nil {
 		mergeCases(fileSet, file)
 	}

@@ -271,9 +271,16 @@ The rules:
   allowed). A map with an `any` key, whose keys are literals of several basic
   types (`nil`, `true`, `false`, numbers, strings), is grouped by kind in that
   order, and sorted within each kind the same way. Identifier keys, such as
-  constants or struct field names, come after the literal keys and are sorted
-  by name. Reordering the keys of a struct literal does not change its value,
-  since each field is named, so struct literals with keyed fields are sorted too. A struct literal names its fields with identifiers, so it is not
+  constants, come after the literal keys and are sorted by name, in a literal
+  that has at least one literal key. A literal with only identifier keys may be
+  a struct, so it is left to the rule below.
+- The keys of a struct literal are put in the order of the struct's declaration
+  (`gofmt/structorder.go`). The type is found from the literal itself (an
+  anonymous struct), from the file, from the other files of its package, or
+  from an imported package, by its qualifier or through a dot import. A literal
+  whose type cannot be found, is generic, or is not a struct keeps its order.
+  A literal is reordered only if each key is a field, no key repeats, it has no
+  comment inside, and no value calls a function or receives from a channel. A struct literal names its fields with identifiers, so it is not
   reordered. A literal is reordered only if it has no comment and no value calls
   a function or receives from a channel, since Go evaluates them in order.
 - Struct and interface bodies with members are always multi-line, even with a

@@ -138,6 +138,44 @@ func caseOrder(t *testing.T, filename, src string) []string {
 	return out
 }
 
+// TestDefaultLast checks that the default clause goes last, unless a fallthrough would change what runs.
+func TestDefaultLast(t *testing.T) {
+	tests := []struct {
+		name, body, want string
+	}{
+		{
+			name: "a default in the middle goes last",
+			body: "switch x {\ncase 1:\nreturn 1\ndefault:\nreturn 0\ncase 2:\nreturn 2\n}",
+			want: "1 2 default",
+		},
+		{
+			name: "a default that falls through stays",
+			body: "switch x {\ncase 1:\nreturn 1\ndefault:\nprintln()\nfallthrough\ncase 2:\nreturn 2\n}",
+			want: "1 default 2",
+		},
+		{
+			name: "a clause that falls into the default keeps it in place",
+			body: "switch x {\ncase 1:\nprintln()\nfallthrough\ndefault:\nreturn 0\ncase 2:\nreturn 2\n}",
+			want: "1 default 2",
+		},
+		{
+			name: "a comment between clauses keeps the default in place",
+			body: "switch x {\ncase 1:\nreturn 1\n// before the default\ndefault:\nreturn 0\ncase 2:\nreturn 2\n}",
+			want: "1 default 2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := "package p\n\nfunc f(x int) int {\n" + tt.body + "\nreturn 0\n}\n"
+
+			if got := strings.Join(caseOrder(t, "x.go", src), ";"); got != tt.want {
+				t.Errorf("order = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSwitchCaseOrder(t *testing.T) {
 	const consts = "package p\n\nconst (\n\tKindA = iota\n\tKindC\n\tKindB\n)\n\n"
 
@@ -145,9 +183,9 @@ func TestSwitchCaseOrder(t *testing.T) {
 		name, body, want string
 	}{
 		{
-			name: "cases follow the declaration, the default keeps its slot",
+			name: "cases follow the declaration, the default goes last",
 			body: "switch k {\ncase KindB:\nreturn\ncase KindA:\nreturn\ndefault:\nreturn\ncase KindC:\nreturn\n}",
-			want: "KindA KindC default KindB",
+			want: "KindA KindC KindB default",
 		},
 		{
 			name: "a clause that does not return is ordered too",
@@ -300,9 +338,9 @@ func TestTypeSwitchCaseOrder(t *testing.T) {
 		name, src, want string
 	}{
 		{
-			name: "concrete types are sorted, the default keeps its slot",
+			name: "concrete types are sorted, the default goes last",
 			src: "package p\n\nfunc f(v any) {\n\tswitch v.(type) {\n\tcase string:\n\t\treturn\n\tcase int:\n\t\treturn\n\tdefault:\n\t\treturn\n\tcase bool:\n\t\treturn\n\t}\n}\n",
-			want: "bool int default string",
+			want: "bool int string default",
 		},
 		{
 			name: "an interface type keeps the switch",

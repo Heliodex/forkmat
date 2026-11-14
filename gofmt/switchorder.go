@@ -69,6 +69,34 @@ func concreteType(e ast.Expr, types map[string]ast.Expr) bool {
 	return false
 }
 
+// defaultLast moves the default clause of body to the end of the switch. The default runs only when no case matches, wherever it is written, so the move changes nothing. It is left in place when a fallthrough would change: when the default ends in one, or when the clause before it does, since that clause would then run a different clause.
+func defaultLast(body *ast.BlockStmt, comments []*ast.CommentGroup) {
+	at := -1
+
+	for i, cl := range body.List {
+		if cl.(*ast.CaseClause).List == nil {
+			at = i
+		}
+	}
+
+	if at < 0 || at == len(body.List)-1 || !clausesHoldComments(body, comments) {
+		return
+	}
+
+	if endsInFallthrough(body.List[at].(*ast.CaseClause).Body) || at > 0 && endsInFallthrough(body.List[at-1].(*ast.CaseClause).Body) {
+		return
+	}
+
+	list := slices.Clone(body.List)
+	list = append(append(list[:at], list[at+1:]...), body.List[at])
+
+	if !commentsKeepOrder(list, comments) {
+		return
+	}
+
+	body.List = list
+}
+
 // exprText returns the source text of an expression, as the printer writes it.
 func exprText(e ast.Expr) string {
 	var buf bytes.Buffer
@@ -198,7 +226,7 @@ func packageTypeExprs(filename string, file *ast.File) map[string]ast.Expr {
 	return types
 }
 
-// reorderTypeSwitchCases orders the non-default clauses of a type switch by their types, alphabetically, if every type is concrete (see concreteType). The clause bodies do not change. A type switch cannot fall through, and a break leaves the switch whichever clause it is in, so the bodies need not return. A clause with several types is ordered by its first type in alphabetical order. The default clause keeps its slot.
+// reorderTypeSwitchCases orders the non-default clauses of a type switch by their types, alphabetically, if every type is concrete (see concreteType). The clause bodies do not change. A type switch cannot fall through, and a break leaves the switch whichever clause it is in, so the bodies need not return. A clause with several types is ordered by its first type in alphabetical order. The default clause is last (see defaultLast).
 func reorderTypeSwitchCases(body *ast.BlockStmt, types map[string]ast.Expr, comments []*ast.CommentGroup) {
 	keys := map[*ast.CaseClause]string{}
 
@@ -355,7 +383,7 @@ func reorderSwitchCases(body *ast.BlockStmt, env *switchEnv, comments []*ast.Com
 		}
 
 		if c.List == nil {
-			continue // the default clause keeps its slot
+			continue // the default clause is last (see defaultLast)
 		}
 
 		key := -1
@@ -421,7 +449,7 @@ func reorderSwitchCases(body *ast.BlockStmt, env *switchEnv, comments []*ast.Com
 	body.List = list
 }
 
-// This file implements the case order of -strict: the clauses of a switch whose cases are constants are put in the order the constants are declared in, typically the order of an iota block. The constants may be those of the package of the file, or of another package, such as token.CONST from go/token. A clause moves only among the slots of the other clauses of its kind; the default clause keeps its slot. The switch is changed only if its behaviour cannot change: no clause falls through, every case is a package-level constant with a value of its own, and all cases name constants of one package. Constants are not evaluated, so moving clauses changes nothing else.
+// This file implements the case order of -strict: the clauses of a switch whose cases are constants are put in the order the constants are declared in, typically the order of an iota block. The constants may be those of the package of the file, or of another package, such as token.CONST from go/token. A clause moves only among the slots of the other clauses of its kind; the default clause goes last (see defaultLast). The switch is changed only if its behaviour cannot change: no clause falls through, every case is a package-level constant with a value of its own, and all cases name constants of one package. Constants are not evaluated, so moving clauses changes nothing else.
 
 // switchCaseOrder reorders the clauses of the switch statements of file, whose name is filename and whose positions are in fset. The constants of a package count: those of the file and of the other files of its directory with the same package name, and those of the packages the file imports.
 func switchCaseOrder(fset *token.FileSet, filename string, file *ast.File) {
@@ -436,8 +464,10 @@ func switchCaseOrder(fset *token.FileSet, filename string, file *ast.File) {
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch s := n.(type) {
 		case *ast.SwitchStmt:
+			defaultLast(s.Body, file.Comments)
 			reorderSwitchCases(s.Body, env, file.Comments)
 		case *ast.TypeSwitchStmt:
+			defaultLast(s.Body, file.Comments)
 			reorderTypeSwitchCases(s.Body, types, file.Comments)
 		}
 

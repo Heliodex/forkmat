@@ -234,8 +234,7 @@ func rangeOf(fs *ast.ForStmt, info *types.Info, comments []*ast.CommentGroup) (*
 // cannot be found keeps its loop.
 
 // rangeLoops rewrites the index loops of file. comments are the file's comments.
-func rangeLoops(fset *token.FileSet, file *ast.File, comments []*ast.CommentGroup) {
-	info := checkTypes(fset, file)
+func rangeLoops(file *ast.File, comments []*ast.CommentGroup, info *types.Info) {
 	repl := map[*ast.ForStmt]ast.Stmt{}
 
 	ast.Inspect(file, func(n ast.Node) bool {

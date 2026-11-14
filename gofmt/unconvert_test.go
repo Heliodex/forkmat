@@ -26,7 +26,7 @@ func unconvertText(t *testing.T, src string) string {
 		Tabwidth: 8,
 	}
 
-	if err := cfg.Fprint(&buf, fset, unconvert(fset, file)); err != nil {
+	if err := cfg.Fprint(&buf, fset, unconvert(fset, file, checkTypes(fset, file))); err != nil {
 		t.Fatalf("print: %v", err)
 	}
 

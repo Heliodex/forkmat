@@ -109,8 +109,7 @@ func operand(x ast.Expr) ast.Expr {
 // A conversion of a constant is kept. Removing int64(5) would change the type of the constant from int64 to its default. A conversion whose type names a member of an imported package is kept too, since removing it could leave the import unused.
 
 // unconvert returns file with its redundant conversions removed. file must be parsed with comments; it is type-checked as a package of its own.
-func unconvert(fset *token.FileSet, file *ast.File) *ast.File {
-	info := checkTypes(fset, file)
+func unconvert(fset *token.FileSet, file *ast.File, info *types.Info) *ast.File {
 	repl := map[*ast.CallExpr]ast.Expr{}
 
 	ast.Inspect(file, func(n ast.Node) bool {

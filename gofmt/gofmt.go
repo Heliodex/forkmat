@@ -12,6 +12,7 @@ import (
 	"go/parser"
 	"go/scanner"
 	"go/token"
+	"go/types"
 	"io"
 	"io/fs"
 	"math/rand"
@@ -453,10 +454,6 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 		return err
 	}
 
-	if *unconvertFlag && sourceAdj == nil {
-		file = unconvert(fileSet, file)
-	}
-
 	if *strict && sourceAdj == nil {
 		// -strict also reorders declarations below the ones they depend on (see reorder.go). The reordered source is parsed again, for printing.
 		if reordered := reorderSource(filename, src); !bytes.Equal(reordered, src) {
@@ -464,6 +461,22 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 				return err
 			}
 		}
+	}
+
+	// the types of the file, checked once and shared by the passes that need them;
+	// a pass that rebuilds the file from its source checks it again
+	var typeInfo *types.Info
+
+	typesOf := func() *types.Info {
+		if typeInfo == nil {
+			typeInfo = checkTypes(fileSet, file)
+		}
+
+		return typeInfo
+	}
+
+	if *unconvertFlag && sourceAdj == nil {
+		file = unconvert(fileSet, file, typesOf())
 	}
 
 	if *omitCasesFlag && sourceAdj == nil {
@@ -487,7 +500,7 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 
 	if *strict && sourceAdj == nil {
 		// -strict writes index loops as range loops (see rangeloop.go)
-		rangeLoops(fileSet, file, file.Comments)
+		rangeLoops(file, file.Comments, typesOf())
 	}
 
 	if *strict && sourceAdj == nil {

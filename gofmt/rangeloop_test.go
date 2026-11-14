@@ -19,7 +19,7 @@ func rangeText(t *testing.T, src string) string {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	rangeLoops(fset, file, file.Comments)
+	rangeLoops(file, file.Comments, checkTypes(fset, file))
 
 	var buf bytes.Buffer
 

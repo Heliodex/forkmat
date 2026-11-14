@@ -66,7 +66,9 @@ func params(a, b int) (c int, err error) {
 	return a + b, nil
 }
 
-type Small struct{ A int }
+type Small struct {
+	A int
+}
 
 type Big struct {
 	A int

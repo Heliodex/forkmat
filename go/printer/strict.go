@@ -16,8 +16,8 @@ import (
 //     strictMaxSize characters and has no comments; otherwise each element is
 //     on its own line.
 //   - Binary expressions and selector chains are never broken.
-//   - Struct and interface bodies are one line only if they hold a single
-//     simple field or method; otherwise each member is on its own line.
+//   - Struct and interface bodies are one line only when empty; otherwise each
+//     member is on its own line.
 //   - Statements are one per line. A blank line goes between two statements
 //     when one of them is a block statement (if, for, range, switch, select,
 //     or a bare block), a return, or a grouped var declaration, unless the

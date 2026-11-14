@@ -505,8 +505,8 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 	}
 	rbrace := fields.Closing
 	hasComments := isIncomplete || p.commentBefore(p.posFor(rbrace))
-	// Under StrictLayout the source does not decide: a body is one line only
-	// if it fits the one-line forms below.
+	// Under StrictLayout the source does not decide: an empty body is one line,
+	// and a body with members is always printed over several lines.
 	srcIsOneLine := p.strict() || lbrace.IsValid() && rbrace.IsValid() && p.lineFor(lbrace) == p.lineFor(rbrace)
 
 	if !hasComments && srcIsOneLine {
@@ -518,7 +518,7 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 			p.setPos(rbrace)
 			p.print(token.RBRACE)
 			return
-		} else if p.isOneLineFieldList(list) {
+		} else if !p.strict() && p.isOneLineFieldList(list) {
 			// small enough - print on one line
 			// (don't use identList and ignore source line breaks)
 			p.setPos(lbrace)

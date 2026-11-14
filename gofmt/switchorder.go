@@ -207,8 +207,9 @@ func reorderSwitchCases(body *ast.BlockStmt, index map[string]int, comments []*a
 }
 
 // reorderTypeSwitchCases orders the non-default clauses of a type switch by their
-// types, alphabetically, if the switch qualifies: every non-default clause returns,
-// no clause breaks out, and every type is concrete (see concreteType). A clause with
+// types, alphabetically, if every type is concrete (see concreteType). The clause
+// bodies do not change. A type switch cannot fall through, and a break leaves the
+// switch whichever clause it is in, so the bodies need not return. A clause with
 // several types is ordered by its first type in alphabetical order. The default
 // clause keeps its slot.
 func reorderTypeSwitchCases(body *ast.BlockStmt, types map[string]ast.Expr, comments []*ast.CommentGroup) {
@@ -220,10 +221,6 @@ func reorderTypeSwitchCases(body *ast.BlockStmt, types map[string]ast.Expr, comm
 		c := cl.(*ast.CaseClause)
 		if c.List == nil {
 			continue
-		}
-
-		if !endsInReturnList(c.Body) || breaksOutOf(c.Body) {
-			return
 		}
 
 		var key string

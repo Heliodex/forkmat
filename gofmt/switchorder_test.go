@@ -188,9 +188,9 @@ func TestTypeSwitchCaseOrder(t *testing.T) {
 			want: "string I",
 		},
 		{
-			name: "a clause that does not return keeps the switch",
+			name: "a clause that does not return is sorted too",
 			src: "package p\n\nfunc f(v any) {\n\tswitch v.(type) {\n\tcase string:\n\t\tprintln()\n\tcase int:\n\t\treturn\n\t}\n}\n",
-			want: "string int",
+			want: "int string",
 		},
 	}
 

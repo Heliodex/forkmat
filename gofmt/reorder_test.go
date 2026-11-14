@@ -81,13 +81,13 @@ func TestReorderFuncs(t *testing.T) {
 		},
 		{
 			name: "local shadowing a function is not a reference",
-			src:  "package p\n\nfunc p1() {\n\tleaf := 1\n\t_ = leaf\n}\n\nfunc leaf() {}\n",
-			want: []string{"p1", "leaf"},
+			src:  "package p\n\nfunc a1() {\n\tleaf := 1\n\t_ = leaf\n}\n\nfunc leaf() {}\n",
+			want: []string{"a1", "leaf"},
 		},
 		{
 			name: "selector is not a reference",
-			src:  "package p\n\nfunc p1(x T) {\n\tx.leaf()\n}\n\nfunc leaf() {}\n",
-			want: []string{"p1", "leaf"},
+			src:  "package p\n\nfunc a1(x T) {\n\tx.leaf()\n}\n\nfunc leaf() {}\n",
+			want: []string{"a1", "leaf"},
 		},
 		{
 			name: "method is a barrier",
@@ -170,9 +170,19 @@ func TestReorderFuncs(t *testing.T) {
 			want: []string{"A", "Z"},
 		},
 		{
-			name: "functions keep their source order",
+			name: "functions are sorted alphabetically",
 			src:  "package p\n\nfunc z() {}\n\nfunc a() {}\n",
-			want: []string{"z", "a"},
+			want: []string{"a", "z"},
+		},
+		{
+			name: "methods are sorted by receiver type, then name",
+			src:  "package p\n\ntype B struct{}\n\ntype A struct{}\n\nfunc (b B) Z() {}\n\nfunc (a A) Y() {}\n\nfunc (b B) X() {}\n",
+			want: []string{"A", "B", "Y", "X", "Z"},
+		},
+		{
+			name: "a method that calls another comes after it",
+			src:  "package p\n\ntype B struct{}\n\nfunc (b B) A() { b.Z() }\n\nfunc (b B) Z() {}\n",
+			want: []string{"B", "Z", "A"},
 		},
 		{
 			name: "init is a barrier",
@@ -198,6 +208,62 @@ func TestHoistTypesAfterImports(t *testing.T) {
 	}
 	if i, j := strings.Index(got, "type T"), strings.Index(got, "func f"); !(i >= 0 && i < j) {
 		t.Errorf("type T not above func f:\n%s", got)
+	}
+}
+
+// stmtPos returns the offset of the first occurrence of text in src.
+func stmtPos(t *testing.T, src, text string) int {
+	t.Helper()
+	i := strings.Index(src, text)
+	if i < 0 {
+		t.Fatalf("%q not in output:\n%s", text, src)
+	}
+	return i
+}
+
+func TestReorderAssignRuns(t *testing.T) {
+	tests := []struct {
+		name, src   string
+		first, then string // first must come before then in the output
+		sorted      bool   // whether the statements are sorted (then comes first) or kept
+	}{
+		{
+			name:   "independent := statements are sorted by name",
+			src:    "package p\n\nfunc f() {\n\tz := 1\n\ta := 2\n\t_, _ = z, a\n}\n",
+			first:  "a := 2",
+			then:   "z := 1",
+			sorted: true,
+		},
+		{
+			name:  "a statement stays after the one it uses",
+			src:   "package p\n\nfunc f() {\n\tz := 1\n\ta := z\n\t_ = a\n}\n",
+			first: "z := 1",
+			then:  "a := z",
+		},
+		{
+			name:  "a shadowing declaration stays after the read it would change",
+			src:   "package p\n\nvar n = 5\n\nfunc f() {\n\tz := n\n\tn := 1\n\t_, _ = z, n\n}\n",
+			first: "z := n",
+			then:  "n := 1",
+		},
+		{
+			name:  "a call is not moved",
+			src:   "package p\n\nfunc f() {\n\tz := g()\n\ta := 2\n\t_, _ = z, a\n}\n",
+			first: "z := g()",
+			then:  "a := 2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := reorderText(t, tt.src)
+			i, j := stmtPos(t, got, tt.first), stmtPos(t, got, tt.then)
+			if tt.sorted && !(i < j) {
+				t.Errorf("not sorted:\n%s", got)
+			}
+			if !tt.sorted && !(i < j) {
+				t.Errorf("order changed:\n%s", got)
+			}
+		})
 	}
 }
 

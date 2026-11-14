@@ -34,59 +34,94 @@ import (
 // unit is a declaration, or a spec of a type group, that is moved as a whole.
 type unit struct {
 	kind  token.Token // token.FUNC for a function, otherwise the token of the declaration
-	names []string    // the names it declares
+	names []string    // the names it declares; for a method, "Type.Name"
 	body  ast.Node    // the part whose references count as dependencies
 	objs  []any       // the declarations that resolved references may point to
 	start token.Pos   // where it starts, including its doc comment
 	end   token.Pos   // where it ends
+
+	method     bool     // a method: a function with a receiver
+	methodName string   // the name of a method
+	sels       []string // the names selected in its body, which may name other methods
 }
 
 // unitOf returns d as a unit, or false if the reordering does not move d.
 func unitOf(d ast.Decl) (unit, bool) {
 	switch d := d.(type) {
 	case *ast.FuncDecl:
-		if d.Recv != nil || d.Name.Name == "init" || d.Body == nil {
+		if d.Body == nil || (d.Recv == nil && d.Name.Name == "init") {
 			return unit{}, false
+		}
+		if d.Recv != nil {
+			recv := receiverType(d.Recv)
+			if recv == "" {
+				return unit{}, false
+			}
+			return unit{kind: token.FUNC, method: true, names: []string{recv + "." + d.Name.Name},
+				body: d.Body, objs: []any{d}, start: declStart(d), end: d.End(),
+				methodName: d.Name.Name, sels: selectorNames(d.Body)}, true
 		}
 		return unit{kind: token.FUNC, names: []string{d.Name.Name}, body: d.Body,
 			objs: []any{d}, start: declStart(d), end: d.End()}, true
-	case *ast.GenDecl:
-		switch d.Tok {
-		case token.CONST:
-		case token.VAR:
-			if !pureVars(d) {
-				return unit{}, false
-			}
-		default:
-			// types are reordered by reorderTypeRuns
-			return unit{}, false
-		}
-		var names []string
-		var objs []any
-		for _, sp := range d.Specs {
-			objs = append(objs, sp)
-			switch sp := sp.(type) {
-			case *ast.ValueSpec:
-				for _, id := range sp.Names {
-					names = append(names, id.Name)
-				}
-			case *ast.TypeSpec:
-				names = append(names, sp.Name.Name)
-			}
-		}
-		return unit{kind: d.Tok, names: names, body: d, objs: objs, start: declStart(d), end: d.End()}, true
 	}
+	// const, var and type declarations are reordered by reorderSpecRuns
 	return unit{}, false
 }
 
-// specUnit returns spec s of a type group as a unit.
-func specUnit(s *ast.TypeSpec) unit {
-	start := s.Pos()
-	if s.Doc != nil {
-		start = s.Doc.Pos()
+// specUnit returns spec sp of a declaration of token tok as a unit.
+func specUnit(tok token.Token, sp ast.Spec) unit {
+	var names []string
+	start, end := sp.Pos(), sp.End()
+	switch sp := sp.(type) {
+	case *ast.ValueSpec:
+		for _, id := range sp.Names {
+			names = append(names, id.Name)
+		}
+		if sp.Doc != nil {
+			start = sp.Doc.Pos()
+		}
+	case *ast.TypeSpec:
+		names = []string{sp.Name.Name}
+		if sp.Doc != nil {
+			start = sp.Doc.Pos()
+		}
 	}
-	return unit{kind: token.TYPE, names: []string{s.Name.Name}, body: s, objs: []any{s},
-		start: start, end: s.End()}
+	return unit{kind: tok, names: names, body: sp, objs: []any{sp}, start: start, end: end}
+}
+
+// specRunToken returns the token of the declarations that reorderSpecRuns may
+// split into specs and sort, or ILLEGAL if d is not one of them. Types always
+// are. A var declaration is one if its values are pure (see pureVars). A const
+// declaration is one unless it is a group whose specs take their values from
+// their position: a spec without values repeats the one before it, and iota
+// counts the specs, so such a group keeps its order. Single const declarations
+// are always splittable: each is a group of its own.
+func specRunToken(d ast.Decl) token.Token {
+	g, ok := d.(*ast.GenDecl)
+	if !ok {
+		return token.ILLEGAL
+	}
+	switch g.Tok {
+	case token.TYPE:
+		return token.TYPE
+	case token.VAR:
+		if pureVars(g) {
+			return token.VAR
+		}
+	case token.CONST:
+		if !g.Lparen.IsValid() {
+			return token.CONST
+		}
+		for _, sp := range g.Specs {
+			if vs := sp.(*ast.ValueSpec); len(vs.Values) == 0 {
+				return token.ILLEGAL
+			}
+		}
+		if !usesIota(g) {
+			return token.CONST
+		}
+	}
+	return token.ILLEGAL
 }
 
 // pureVars reports whether the values of a var declaration can be evaluated
@@ -97,8 +132,15 @@ func specUnit(s *ast.TypeSpec) unit {
 // predeclared type, make and new cannot. Calls are checked syntactically, so a
 // call to a function named like a predeclared type is taken to be impure.
 func pureVars(d *ast.GenDecl) bool {
+	return pureExpr(d, true)
+}
+
+// pureExpr reports whether the node n is free of calls (other than conversions to
+// predeclared types, make and new) and of receives. A function literal is pure
+// only if funcLitOK: its body may hold blocks, which a move could not cut out.
+func pureExpr(n ast.Node, funcLitOK bool) bool {
 	pure := true
-	ast.Inspect(d, func(n ast.Node) bool {
+	ast.Inspect(n, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CallExpr:
 			id, ok := x.Fun.(*ast.Ident)
@@ -107,6 +149,10 @@ func pureVars(d *ast.GenDecl) bool {
 			}
 		case *ast.UnaryExpr:
 			if x.Op == token.ARROW {
+				pure = false
+			}
+		case *ast.FuncLit:
+			if !funcLitOK {
 				pure = false
 			}
 		}
@@ -128,7 +174,7 @@ var predeclaredPure = map[string]bool{
 // specs of type groups, then the runs of declarations. src is returned as it is
 // if nothing moves.
 func reorderSource(filename string, src []byte) []byte {
-	passes := []func(*token.FileSet, *ast.File, []byte) []byte{hoistTypes, reorderTypeRuns, reorderDecls}
+	passes := []func(*token.FileSet, *ast.File, []byte) []byte{hoistTypes, reorderSpecRuns, reorderDecls, reorderAssignRuns}
 	for _, pass := range passes {
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
@@ -235,6 +281,49 @@ func (l layout) reorderItems(run []unit, lo, hi int) (edit, bool) {
 	return edit{start: lo, end: hi, text: text}, true
 }
 
+// sameRun reports whether two units can be in one run: both are functions, or
+// both are methods, or both are of the same declaration token.
+func sameRun(a, b unit) bool {
+	return a.kind == b.kind && a.method == b.method
+}
+
+// receiverType returns the name of the type a method is declared on: the
+// receiver's type without its pointer, parentheses and type arguments.
+func receiverType(recv *ast.FieldList) string {
+	if recv == nil || len(recv.List) == 0 {
+		return ""
+	}
+	t := recv.List[0].Type
+	for {
+		switch x := t.(type) {
+		case *ast.StarExpr:
+			t = x.X
+		case *ast.ParenExpr:
+			t = x.X
+		case *ast.IndexExpr:
+			t = x.X
+		case *ast.IndexListExpr:
+			t = x.X
+		case *ast.Ident:
+			return x.Name
+		default:
+			return ""
+		}
+	}
+}
+
+// selectorNames returns the names that n selects, as in x.name.
+func selectorNames(n ast.Node) []string {
+	var out []string
+	ast.Inspect(n, func(n ast.Node) bool {
+		if sel, ok := n.(*ast.SelectorExpr); ok {
+			out = append(out, sel.Sel.Name)
+		}
+		return true
+	})
+	return out
+}
+
 // reorderDecls is the pass over the runs of declarations.
 func reorderDecls(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	tf := fset.File(file.Pos())
@@ -255,7 +344,7 @@ func reorderDecls(fset *token.FileSet, file *ast.File, src []byte) []byte {
 		for j < len(decls) {
 			next, ok := unitOf(decls[j])
 			// a run is laid out line by line, so two declarations on one line end it
-			if !ok || next.kind != run[0].kind || l.line(run[len(run)-1].end) == l.line(next.start) {
+			if !ok || !sameRun(next, run[0]) || l.line(run[len(run)-1].end) == l.line(next.start) {
 				break
 			}
 			run = append(run, next)
@@ -292,7 +381,13 @@ func runBounds(l layout, file *ast.File, decls []ast.Decl, i, j int, run []unit)
 		if l.line(run[len(run)-1].end) == l.line(next) {
 			return edit{}, false
 		}
-		hi = l.off(next)
+		if _, ok := unitOf(decls[j]); ok {
+			// the next declaration starts a run of its own, which takes the
+			// lines between: this run ends with its own last line
+			hi = l.lineEnd(l.off(run[len(run)-1].end))
+		} else {
+			hi = l.off(next)
+		}
 	}
 	return l.reorderItems(run, lo, hi)
 }
@@ -470,13 +565,14 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	return applyEdits(src, edits)
 }
 
-// reorderTypeRuns is the pass over the runs of type declarations. A run is
-// rewritten as single type declarations, one per spec, in dependency order, and
-// the printer then joins them into one type block. Within a run, types that do
-// not depend on each other are sorted alphabetically (see alphabeticalOrder).
-// A group is opened and closed by its own lines, and a comment on those lines
-// is not carried over, so a run with such a comment is left alone.
-func reorderTypeRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
+// reorderSpecRuns is the pass over the runs of const, var and type declarations
+// (see specRunToken). A run is rewritten as single declarations, one per spec, in
+// dependency order, and the printer then joins them into blocks. Within a run,
+// specs that do not depend on each other are sorted alphabetically (see
+// alphabeticalOrder). A group is opened and closed by its own lines, and a
+// comment on those lines is not carried over, so a run with such a comment is
+// left alone.
+func reorderSpecRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	tf := fset.File(file.Pos())
 	if tf == nil {
 		return src
@@ -485,15 +581,16 @@ func reorderTypeRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	decls := file.Decls
 	var edits []edit
 	for i := 0; i < len(decls); {
-		if !isTypeDecl(decls[i]) {
+		tok := specRunToken(decls[i])
+		if tok == token.ILLEGAL {
 			i++
 			continue
 		}
-		j := i
-		for j < len(decls) && isTypeDecl(decls[j]) {
+		j := i + 1
+		for j < len(decls) && specRunToken(decls[j]) == tok {
 			j++
 		}
-		if e, ok := typeRunEdit(l, file, decls, i, j); ok {
+		if e, ok := specRunEdit(l, file, decls, i, j); ok {
 			edits = append(edits, e)
 		}
 		i = j
@@ -501,16 +598,10 @@ func reorderTypeRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	return applyEdits(src, edits)
 }
 
-// isTypeDecl reports whether d is a type declaration, single or grouped.
-func isTypeDecl(d ast.Decl) bool {
-	g, ok := d.(*ast.GenDecl)
-	return ok && g.Tok == token.TYPE
-}
-
-// typeRunEdit returns the edit that rewrites the type declarations decls[i:j]
-// as single declarations in their new order, or reports false if the run is
-// left alone.
-func typeRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bool) {
+// specRunEdit returns the edit that rewrites the declarations decls[i:j] as
+// single declarations in their new order, or reports false if the run is left
+// alone.
+func specRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bool) {
 	src := l.src
 	// the run's extent: the lines after the declaration before it (or the
 	// package clause) to the end of its last declaration
@@ -528,10 +619,8 @@ func typeRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bo
 	}
 	last := decls[j-1].End()
 	hi := l.lineEnd(l.off(last))
-	if j < len(decls) {
-		if l.line(last) == l.line(declStart(decls[j])) {
-			return edit{}, false
-		}
+	if j < len(decls) && l.line(last) == l.line(declStart(decls[j])) {
+		return edit{}, false
 	}
 
 	// one unit per spec. text is what the unit prints as: the lines that lead
@@ -541,10 +630,11 @@ func typeRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bo
 	cut := lo
 	for _, d := range decls[i:j] {
 		g := d.(*ast.GenDecl)
+		keyword := g.Tok.String() + " "
 		if !g.Lparen.IsValid() {
-			sp := g.Specs[0].(*ast.TypeSpec)
-			run = append(run, specUnit(sp))
-			texts = append(texts, typeText(src, cut, g.TokPos, sp, l))
+			sp := g.Specs[0]
+			run = append(run, specUnit(g.Tok, sp))
+			texts = append(texts, specText(src, cut, g.TokPos, sp, keyword, l))
 			cut = l.lineEnd(l.off(g.End()))
 			continue
 		}
@@ -554,15 +644,14 @@ func typeRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bo
 			return edit{}, false
 		}
 		groupCut := l.lineEnd(l.off(g.Lparen))
-		for k, s := range g.Specs {
-			sp := s.(*ast.TypeSpec)
-			run = append(run, specUnit(sp))
+		for k, sp := range g.Specs {
+			run = append(run, specUnit(g.Tok, sp))
 			if k == 0 {
 				// the lines before the keyword lead into the first spec too
 				lead := append(append([]byte{}, src[cut:l.off(g.TokPos)]...), src[groupCut:l.off(sp.Pos())]...)
-				texts = append(texts, typeTextFrom(src, lead, sp, l))
+				texts = append(texts, specTextFrom(src, lead, sp, keyword, l))
 			} else {
-				texts = append(texts, typeTextFrom(src, src[groupCut:l.off(sp.Pos())], sp, l))
+				texts = append(texts, specTextFrom(src, src[groupCut:l.off(sp.Pos())], sp, keyword, l))
 			}
 			groupCut = l.lineEnd(l.off(sp.End()))
 		}
@@ -587,29 +676,25 @@ func typeRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bo
 	return edit{start: lo, end: hi, text: text}, true
 }
 
-// typeText returns the text of a single type declaration that starts with the
-// lines src[from:keyword] and whose keyword is at keyword.
-func typeText(src []byte, from int, keyword token.Pos, sp *ast.TypeSpec, l layout) []byte {
-	return typeTextFrom(src, src[from:l.off(keyword)], sp, l)
+// specText returns the text of a single declaration of spec sp, which starts with
+// the lines src[from:keyword] and whose keyword is at keyword.
+func specText(src []byte, from int, keyword token.Pos, sp ast.Spec, kw string, l layout) []byte {
+	return specTextFrom(src, src[from:l.off(keyword)], sp, kw, l)
 }
 
-// typeTextFrom returns lead followed by a single type declaration of sp: the
-// keyword, then the spec's own text, through the end of its line.
-func typeTextFrom(src []byte, lead []byte, sp *ast.TypeSpec, l layout) []byte {
+// specTextFrom returns lead followed by a single declaration of sp: the keyword
+// kw, then the spec's own text, through the end of its line.
+func specTextFrom(src []byte, lead []byte, sp ast.Spec, kw string, l layout) []byte {
 	out := append([]byte{}, lead...)
-	out = append(out, "type "...)
+	out = append(out, kw...)
 	return append(out, src[l.off(sp.Pos()):l.lineEnd(l.off(sp.End()))]...)
 }
 
 // dependencyOrder returns the indices of run in an order where each unit comes
-// after the units it refers to. The units are grouped into strongly connected
-// components, that is, sets of units that refer to each other, directly or
-// through others; the units of one component keep their source order. A run of
-// functions, constants or variables takes the components in the order Tarjan's
-// algorithm emits them, which visits units in source order, so a unit moves only
-// when it has to. A run of types takes the alphabetically first name among the
-// components that are ready (see alphabeticalOrder), so that types which do not
-// depend on each other are sorted.
+// after the units it refers to, and otherwise in alphabetical order by name (see
+// alphabeticalOrder). The units are grouped into strongly connected components,
+// that is, sets of units that refer to each other, directly or through others;
+// the units of one component keep their source order.
 func dependencyOrder(run []unit) []int {
 	byName := map[string]int{} // for names that are not resolved
 	byObj := map[any]int{}     // for names resolved to a unit's declaration
@@ -621,10 +706,21 @@ func dependencyOrder(run []unit) []int {
 			byObj[o] = t
 		}
 	}
+	// a method may call another method by name; that is a dependency too
+	byMethod := map[string][]int{}
+	for t, u := range run {
+		if u.method {
+			byMethod[u.methodName] = append(byMethod[u.methodName], t)
+		}
+	}
 	deps := make([][]int, len(run))
 	for t, u := range run {
 		seen := map[int]bool{}
-		for _, v := range references(u.body, byName, byObj) {
+		refs := references(u.body, byName, byObj)
+		for _, name := range u.sels {
+			refs = append(refs, byMethod[name]...)
+		}
+		for _, v := range refs {
 			if v != t && !seen[v] {
 				seen[v] = true
 				deps[t] = append(deps[t], v)
@@ -633,15 +729,7 @@ func dependencyOrder(run []unit) []int {
 		sort.Ints(deps[t])
 	}
 
-	comps := components(deps)
-	if run[0].kind == token.TYPE {
-		return alphabeticalOrder(run, deps, comps)
-	}
-	var order []int
-	for _, c := range comps {
-		order = append(order, c...)
-	}
-	return order
+	return alphabeticalOrder(run, deps, components(deps))
 }
 
 // components returns the strongly connected components of the graph deps, in the
@@ -809,4 +897,176 @@ func declStart(d ast.Decl) token.Pos {
 		return doc.Pos()
 	}
 	return d.Pos()
+}
+
+// reorderAssignRuns is the pass over the runs of := statements. A run is a
+// sequence of consecutive := statements with pure values (see pureExpr), each on
+// a line of its own. Within a run, statements that do not depend on each other
+// are sorted by the names they declare, and a statement stays after an earlier
+// one it could interact with (see assignDeps). It runs over every block of the
+// file, and over the clauses of switch and select statements.
+func reorderAssignRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
+	tf := fset.File(file.Pos())
+	if tf == nil {
+		return src
+	}
+	l := layout{tf: tf, src: src, comments: file.Comments}
+	var edits []edit
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch b := n.(type) {
+		case *ast.BlockStmt:
+			edits = append(edits, l.assignRunEdits(b.List, b.Lbrace)...)
+		case *ast.CaseClause:
+			edits = append(edits, l.assignRunEdits(b.Body, b.Colon)...)
+		case *ast.CommClause:
+			edits = append(edits, l.assignRunEdits(b.Body, b.Colon)...)
+		}
+		return true
+	})
+	sort.Slice(edits, func(i, j int) bool { return edits[i].start < edits[j].start })
+	return applyEdits(src, edits)
+}
+
+// assignable reports whether s can be part of a run of := statements.
+func assignable(s ast.Stmt) bool {
+	as, ok := s.(*ast.AssignStmt)
+	return ok && as.Tok == token.DEFINE && pureExpr(as, false)
+}
+
+// assignRunEdits returns the edits that reorder each run of := statements in
+// list. head is the position of the token that opens the list, a brace or a
+// colon.
+func (l layout) assignRunEdits(list []ast.Stmt, head token.Pos) []edit {
+	var edits []edit
+	for i := 0; i < len(list); {
+		if !assignable(list[i]) {
+			i++
+			continue
+		}
+		j := i + 1
+		for j < len(list) && assignable(list[j]) && l.line(list[j-1].End()) != l.line(list[j].Pos()) {
+			j++
+		}
+		if e, ok := l.assignRun(list, i, j, head); ok {
+			edits = append(edits, e)
+		}
+		i = j
+	}
+	return edits
+}
+
+// assignRun returns the edit that reorders the statements list[i:j], or reports
+// false if the run is already in order or has no room to move.
+func (l layout) assignRun(list []ast.Stmt, i, j int, head token.Pos) (edit, bool) {
+	var lo int
+	if i == 0 {
+		if l.line(head) == l.line(list[0].Pos()) {
+			return edit{}, false
+		}
+		lo = l.lineEnd(l.off(head))
+	} else {
+		if l.line(list[i-1].End()) == l.line(list[i].Pos()) {
+			return edit{}, false
+		}
+		lo = l.lineEnd(l.off(list[i-1].End()))
+	}
+	if j < len(list) && l.line(list[j-1].End()) == l.line(list[j].Pos()) {
+		return edit{}, false
+	}
+	hi := l.lineEnd(l.off(list[j-1].End()))
+
+	run := make([]unit, 0, j-i)
+	texts := make([][]byte, 0, j-i)
+	cut := lo
+	for _, s := range list[i:j] {
+		as := s.(*ast.AssignStmt)
+		var names []string
+		for _, lhs := range as.Lhs {
+			if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+				names = append(names, id.Name)
+			}
+		}
+		run = append(run, unit{kind: token.DEFINE, names: names, body: as, objs: []any{as},
+			start: as.Pos(), end: as.End()})
+		// the lines before the statement lead into it; then the statement itself,
+		// through the end of its line
+		texts = append(texts, append(append([]byte{}, l.src[cut:l.off(as.Pos())]...),
+			l.src[l.off(as.Pos()):l.lineEnd(l.off(as.End()))]...))
+		cut = l.lineEnd(l.off(as.End()))
+	}
+
+	deps := assignDeps(run)
+	order := alphabeticalOrder(run, deps, components(deps))
+	identity := true
+	for t, o := range order {
+		if t != o {
+			identity = false
+			break
+		}
+	}
+	if identity {
+		return edit{}, false
+	}
+	var text []byte
+	for _, t := range order {
+		text = append(text, texts[t]...)
+	}
+	return edit{start: lo, end: hi, text: text}, true
+}
+
+// assignDeps returns the dependencies of a run of := statements, by name. A
+// statement j depends on an earlier statement i when one of them declares a name
+// that the other uses or declares. Names are compared as spelled, since a
+// declaration can shadow a name that an earlier statement reads from outside the
+// run.
+func assignDeps(run []unit) [][]int {
+	mentions := make([]map[string]bool, len(run))
+	declares := make([]map[string]bool, len(run))
+	for t, u := range run {
+		mentions[t] = map[string]bool{}
+		ast.Inspect(u.body, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok {
+				mentions[t][id.Name] = true
+			}
+			return true
+		})
+		declares[t] = map[string]bool{}
+		for _, n := range u.names {
+			declares[t][n] = true
+		}
+	}
+	overlap := func(i, j int) bool {
+		for n := range declares[i] {
+			if mentions[j][n] || declares[j][n] {
+				return true
+			}
+		}
+		for n := range declares[j] {
+			if mentions[i][n] {
+				return true
+			}
+		}
+		return false
+	}
+	deps := make([][]int, len(run))
+	for j := range run {
+		for i := 0; i < j; i++ {
+			if overlap(i, j) {
+				deps[j] = append(deps[j], i)
+			}
+		}
+	}
+	return deps
+}
+
+// usesIota reports whether a declaration mentions iota.
+func usesIota(d ast.Node) bool {
+	found := false
+	ast.Inspect(d, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && id.Name == "iota" {
+			found = true
+		}
+		return !found
+	})
+	return found
 }

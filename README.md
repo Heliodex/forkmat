@@ -179,34 +179,46 @@ rules are documented in `go/printer/strict.go`, and the mode is
 `printer.StrictLayout`.
 
 `-strict` also reorders declarations, in `gofmt/reorder.go`, so that each one
-comes after the declarations it refers to. In `a` calling `b`, `b` is printed
-above `a`. Four kinds of run move: consecutive plain functions, consecutive
-`const` declarations, consecutive `var` declarations whose values are free of
-side effects, and consecutive type declarations. A `var` or `const` group moves
-as one unit, since its specs depend on each other. Type declarations are
-handled separately: a run of them is rewritten as single declarations, one per
-spec, and the printer joins them into one `type (...)` block. In `type ( m n; n
-int )`, `n` comes first. Within a run, types that do not depend on each other
-are sorted alphabetically; a type still comes after the types it refers to. A
-run with a comment on the lines of a group keeps its layout. A type declaration
-moves up to just after the imports when every name it
-uses is a predeclared type, an imported package, its own type parameter, or
-another type that moves too. A type that uses a constant, variable or function,
-or a name that is not declared in this file, stays where it is, and so does any
-type that depends on one. Declaration order at package level does not change
-what a type means, so the move is safe; the restriction keeps a type with a
-constant length below its constant. A `var` whose value calls a function or receives from a channel is never
-moved, because Go runs such initialisers in declaration order, and a move would
-change the order of their effects. Conversions to predeclared types, `make` and
-`new` are not calls for this purpose. Methods, `init` functions, body-less
-functions, and every other kind of declaration end a run and stay put. A
-reference is a
-use of the package-level name, including a function passed as a value, or a
-constant used in another constant. Local names that shadow a package-level one,
-selectors (`x.f`), struct-literal keys and labels are not references, and
-methods are not matched by name. A cycle keeps its source order. Each
-declaration moves with the comments that lead into it. This runs on the source
-text before printing, so it is applied by `gofmt`, not by `go/format`.
+comes after the declarations it refers to, and otherwise in alphabetical order.
+In `a` calling `b`, `b` is printed above `a`. Each of these kinds of run is
+sorted:
+
+- consecutive plain functions, and consecutive methods, which are sorted by
+  receiver type and then by name. A method that calls another method by name
+  comes after it;
+- consecutive `const`, `var` and `type` declarations. Each spec is rewritten as
+  a single declaration, and the printer joins them into blocks. A `var` whose
+  value calls a function or receives from a channel is never moved, because Go
+  runs such initialisers in declaration order and a move would change the order
+  of their effects. Conversions to predeclared types, `make` and `new` are not
+  calls for this purpose. A `const` group whose specs take values from their
+  position (a spec without a value, or `iota`) keeps its order;
+- consecutive `:=` statements in a block, with values free of calls and
+  receives. Statements are sorted by the names they declare, and one stays after
+  an earlier one it uses or redeclares, compared by name.
+
+Within a run, declarations that do not depend on each other are sorted by name,
+and a declaration always comes after the ones it refers to. A cycle keeps its
+source order. Declarations move with the comments that lead into them.
+
+Types also move: a type declaration moves up to just after the imports when
+every name it uses is a predeclared type, an imported package, its own type
+parameter, or another type that moves too. A type that uses a constant,
+variable or function, or a name not declared in this file, stays where it is,
+and so does any type that depends on one. Declaration order at package level
+does not change what a type means, so the move is safe; the restriction keeps a
+type with a constant length below its constant.
+
+Methods, `init` functions and body-less functions are sorted only with other
+functions of the same kind, and a run of any one kind ends at a declaration of
+another kind. A reference is a use of the package-level name, including a
+function passed as a value, or a constant used in another constant. Local names
+that shadow a package-level one, selectors (`x.f`), struct-literal keys and
+labels are not references, except that a method call by name counts as a
+dependency. Without type information, a name shared by two statements is taken
+as a dependency, which keeps them in order rather than risking a change in
+meaning. This runs on the source text before printing, so it is applied by
+`gofmt`, not by `go/format`.
 
 Before, with standard gofmt:
 

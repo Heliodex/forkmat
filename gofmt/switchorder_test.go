@@ -4,19 +4,21 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// caseOrder returns, for each switch of src after switchCaseOrder, its clauses'
-// case expressions in order ("default" for the default clause).
-func caseOrder(t *testing.T, src string) []string {
+// caseOrder returns, for each switch of the file after switchCaseOrder, its
+// clauses' case expressions in order ("default" for the default clause).
+func caseOrder(t *testing.T, filename, src string) []string {
 	t.Helper()
-	file, err := parser.ParseFile(token.NewFileSet(), "x.go", src, parser.ParseComments|parser.SkipObjectResolution)
+	file, err := parser.ParseFile(token.NewFileSet(), filename, src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	switchCaseOrder(file)
+	switchCaseOrder(filename, file)
 	var out []string
 	ast.Inspect(file, func(n ast.Node) bool {
 		s, ok := n.(*ast.SwitchStmt)
@@ -59,6 +61,11 @@ func TestSwitchCaseOrder(t *testing.T) {
 			want: "KindB KindA",
 		},
 		{
+			name: "constants of another file of the package count",
+			body: "switch k {\ncase Far:\nreturn\ncase KindA:\nreturn\n}",
+			want: "KindA Far",
+		},
+		{
 			name: "a case that is not a declared constant keeps the switch",
 			body: "switch k {\ncase Other:\nreturn\ncase KindA:\nreturn\n}",
 			want: "Other KindA",
@@ -66,8 +73,17 @@ func TestSwitchCaseOrder(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			name := filepath.Join(dir, "x.go")
 			src := consts + "func f(k int) {\n" + tt.body + "\n}\n"
-			if got := strings.Join(caseOrder(t, src), ";"); got != tt.want {
+			if err := os.WriteFile(name, []byte(src), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			// a constant of another file of the package, declared after the others
+			if err := os.WriteFile(filepath.Join(dir, "y.go"), []byte("package p\n\nconst Far = 99\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(caseOrder(t, name, src), ";"); got != tt.want {
 				t.Errorf("order = %q, want %q", got, tt.want)
 			}
 		})

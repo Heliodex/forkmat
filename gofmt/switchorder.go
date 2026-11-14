@@ -2,8 +2,12 @@ package main
 
 import (
 	"go/ast"
+	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 )
 
 // This file implements the case order of -strict: the clauses of a switch whose
@@ -15,25 +19,11 @@ import (
 // switch with a break. Each case is a constant named in the file, so no case
 // expression runs code, and a value matches at most one case.
 
-// switchCaseOrder reorders the clauses of the switch statements of file.
-func switchCaseOrder(file *ast.File) {
-	// the position of each constant in the declarations of the file
-	index := map[string]int{}
-	for _, d := range file.Decls {
-		g, ok := d.(*ast.GenDecl)
-		if !ok || g.Tok != token.CONST {
-			continue
-		}
-
-		for _, sp := range g.Specs {
-			for _, id := range sp.(*ast.ValueSpec).Names {
-				if _, dup := index[id.Name]; !dup {
-					index[id.Name] = len(index)
-				}
-			}
-		}
-	}
-
+// switchCaseOrder reorders the clauses of the switch statements of file, whose
+// name is filename. The constants of the whole package count: those of the file
+// and of the other files of its directory with the same package name.
+func switchCaseOrder(filename string, file *ast.File) {
+	index := packageConstIndex(filename, file)
 	if len(index) == 0 {
 		return
 	}
@@ -45,6 +35,59 @@ func switchCaseOrder(file *ast.File) {
 
 		return true
 	})
+}
+
+// packageConstIndex returns the position of each constant of the package of the
+// file named filename, in the order of the files of the package, by name, and
+// then of the declarations within each file. file is that file, parsed. A file
+// that cannot be read adds no constants.
+func packageConstIndex(filename string, file *ast.File) map[string]int {
+	index := map[string]int{}
+	add := func(f *ast.File) {
+		for _, d := range f.Decls {
+			g, ok := d.(*ast.GenDecl)
+			if !ok || g.Tok != token.CONST {
+				continue
+			}
+
+			for _, sp := range g.Specs {
+				for _, id := range sp.(*ast.ValueSpec).Names {
+					if _, dup := index[id.Name]; !dup {
+						index[id.Name] = len(index)
+					}
+				}
+			}
+		}
+	}
+
+	dir := filepath.Dir(filename)
+	self := filepath.Base(filename)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		add(file)
+		return index
+	}
+
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+
+		if name == self {
+			add(file)
+			continue
+		}
+
+		f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, name), nil, parser.SkipObjectResolution)
+		if err != nil || f.Name.Name != file.Name.Name {
+			continue
+		}
+
+		add(f)
+	}
+
+	return index
 }
 
 // reorderSwitchCases orders the non-default clauses of body by the declaration

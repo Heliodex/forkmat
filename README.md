@@ -287,7 +287,9 @@ The rules:
   in the order those constants are declared in, typically an `iota` block
   (`gofmt/switchorder.go`). The `default` clause keeps its slot. The switch is
   left alone unless every non-default clause ends in a `return` with no unlabeled
-  `break`, and every case is a constant named in the file.
+  `break`, and every case is a constant of the package. Constants of the other
+  files of the package are ordered after the file's own by file name, then by
+  declaration, since declaration order across files is not defined.
 - Struct and interface bodies with members are always multi-line, even with a
   single simple field or method. An empty body stays `struct{}`.
 - Statements are one per line. A blank line goes before and after a block

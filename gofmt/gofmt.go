@@ -456,10 +456,8 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 
 	if *strict && sourceAdj == nil {
 		// -strict also reorders declarations below the ones they depend on (see reorder.go). The reordered source is parsed again, for printing.
-		if reordered := reorderSource(filename, src); !bytes.Equal(reordered, src) {
-			if file, err = parser.ParseFile(fileSet, filename, reordered, parserMode); err != nil {
-				return err
-			}
+		if _, reordered := reorderSource(fileSet, filename, src); reordered != nil {
+			file = reordered
 		}
 	}
 

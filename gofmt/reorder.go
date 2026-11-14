@@ -9,6 +9,7 @@ package main
 //
 // In every run, a declaration comes after the declarations it refers to, and otherwise in alphabetical order. A cycle keeps its source order. Declarations and statements move with the comments that lead into them. A var whose value calls a function is never moved (see pureExpr).
 import (
+	"bytes"
 	"go/ast"
 	"go/build"
 	"go/parser"
@@ -1383,7 +1384,11 @@ func reorderSpecRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 }
 
 // reorderSource returns src with the passes of reordering applied: first the specs of type groups, then the runs of declarations. src is returned as it is if nothing moves.
-func reorderSource(filename string, src []byte) []byte {
+// reorderSource applies the passes of reordering to src, which is the source of the
+// file named filename. The source is parsed once, and parsed again only after a pass
+// changes it. It returns the reordered source, and the file parsed from it, or nil if
+// nothing changed.
+func reorderSource(fset *token.FileSet, filename string, src []byte) ([]byte, *ast.File) {
 	passes := []func(*token.FileSet, *ast.File, []byte) []byte{
 		func(fset *token.FileSet, file *ast.File, src []byte) []byte {
 			external := siblingTypes(filename, file.Name.Name)
@@ -1398,16 +1403,26 @@ func reorderSource(filename string, src []byte) []byte {
 		reorderFuncSlots,
 		reorderAssignRuns,
 	}
-
-	for _, pass := range passes {
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
-		if err != nil {
-			return src
-		}
-
-		src = pass(fset, file, src)
+	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
+	if err != nil {
+		return src, nil
 	}
 
-	return src
+	var changed *ast.File
+
+	for _, pass := range passes {
+		out := pass(fset, file, src)
+		if bytes.Equal(out, src) {
+			continue
+		}
+
+		f, err := parser.ParseFile(fset, filename, out, parser.ParseComments)
+		if err != nil {
+			return src, nil
+		}
+
+		src, file, changed = out, f, f
+	}
+
+	return src, changed
 }

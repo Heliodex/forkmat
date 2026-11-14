@@ -119,7 +119,10 @@ func declOrder(t *testing.T, src string) []string {
 // reorderText returns src with its function runs reordered.
 func reorderText(t *testing.T, src string) string {
 	t.Helper()
-	return string(reorderSource("x.go", []byte(src)))
+
+	out, _ := reorderSource(token.NewFileSet(), "x.go", []byte(src))
+
+	return string(out)
 }
 
 func TestHoistTypesAfterImports(t *testing.T) {

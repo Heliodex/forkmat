@@ -416,3 +416,25 @@ func constGroups() {
     const kC = "c"
     _, _, _ = kA, kB, kC
 }
+
+// Adjacent var groups join into one, as single var declarations do. Const
+// groups do not: iota counts the specs of each group.
+
+var (
+    _ tIface = tImpl{}
+    _ tIface = tOther{}
+)
+
+var (
+    _ tOther2 = tImpl{}
+    _ tOther2 = tOther{}
+)
+
+const (
+    gA = iota
+    gB
+)
+
+const (
+    gC = iota
+)

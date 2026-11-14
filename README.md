@@ -283,8 +283,10 @@ The rules:
   A group holds one keyword only, and a spec that spans several lines is
   set off from its neighbours by a blank line.
 - Adjacent single `var` declarations, at package level or in a block, are
-  joined into one `var (...)` group, as before. A doc comment or another
-  statement between two of them keeps them apart.
+  joined into one `var (...)` group, as before. Existing `var (...)` groups join
+  the run too, with their specs kept in order, so two groups side by side
+  become one. A doc comment or another statement between two of them keeps them
+  apart.
 - Adjacent single `const` declarations are joined into one `const (...)` group
   the same way, except where a value uses `iota`: `iota` counts the specs of a
   group, so such a constant stays on its own.

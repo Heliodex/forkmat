@@ -545,21 +545,30 @@ func (p *printer) afterOpenBrace() bool {
 	return false
 }
 
-// singleDecl returns d if it is an ungrouped var declaration of one spec with
-// no comment, and nil otherwise. A const declaration counts too, unless its
-// values use iota: iota counts the specs of a group, so grouping such a const
-// would change its value.
+// singleDecl returns d if it can join a run of declarations of its token: an
+// ungrouped var or const declaration of one spec with no comment, or a var
+// group, whose specs can be joined with others without changing their meaning.
+// A const declaration is joined only if its values do not use iota: iota
+// counts the specs of a group, so grouping such a const would change its value.
+// A const group is never joined. A doc comment on the declaration keeps it apart.
 func singleDecl(d *ast.GenDecl) *ast.GenDecl {
-	if d == nil || d.Lparen.IsValid() || len(d.Specs) != 1 || d.Doc != nil {
+	if d == nil || d.Doc != nil {
 		return nil
 	}
 	switch d.Tok {
 	case token.VAR:
+		if d.Lparen.IsValid() {
+			// a var group: its specs keep their own comments inside the group
+			return d
+		}
 	case token.CONST:
-		if usesIota(d) {
+		if d.Lparen.IsValid() || len(d.Specs) != 1 || usesIota(d) {
 			return nil
 		}
 	default:
+		return nil
+	}
+	if len(d.Specs) != 1 {
 		return nil
 	}
 	if vs := d.Specs[0].(*ast.ValueSpec); vs.Doc != nil || vs.Comment != nil {

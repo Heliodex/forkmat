@@ -283,6 +283,11 @@ The rules:
   comment inside, and no value calls a function or receives from a channel. A struct literal names its fields with identifiers, so it is not
   reordered. A literal is reordered only if it has no comment and no value calls
   a function or receives from a channel, since Go evaluates them in order.
+- The clauses of a switch whose cases are constants declared in the file are put
+  in the order those constants are declared in, typically an `iota` block
+  (`gofmt/switchorder.go`). The `default` clause keeps its slot. The switch is
+  left alone unless every non-default clause ends in a `return` with no unlabeled
+  `break`, and every case is a constant named in the file.
 - Struct and interface bodies with members are always multi-line, even with a
   single simple field or method. An empty body stays `struct{}`.
 - Statements are one per line. A blank line goes before and after a block

@@ -464,9 +464,7 @@ const (
 	gB
 )
 
-const (
-	gC = iota
-)
+const gC = iota
 
 const (
 	// Constant groups join when no value depends on its place in the group.

@@ -434,6 +434,13 @@ func numberLiteral(e ast.Expr) constant.Value {
 	return nil
 }
 
+// strictSingleSpec reports whether a parenthesized declaration with one spec is
+// printed without its parentheses under StrictLayout: a group of one spec, with no
+// comment inside its parentheses, reads as the single declaration it holds.
+func (p *printer) strictSingleSpec(d *ast.GenDecl) bool {
+	return p.strict() && len(d.Specs) == 1 && !p.commentIn(d.Lparen, d.Rparen)
+}
+
 // strictFitsOneLine reports whether a composite literal is printed on one
 // line under StrictLayout: it has no comments, and its type and elements each
 // fit, with the whole literal within strictMaxSize. A literal that initialises

@@ -283,6 +283,9 @@ The rules:
   comment inside, and no value calls a function or receives from a channel. A struct literal names its fields with identifiers, so it is not
   reordered. A literal is reordered only if it has no comment and no value calls
   a function or receives from a channel, since Go evaluates them in order.
+- A `type (...)`, `const (...)` or `var (...)` group that holds one declaration
+  is printed as that declaration, without parentheses, unless a comment lies
+  inside them.
 - The clauses of a switch whose cases are constants declared in the file are put
   in the order those constants are declared in, typically an `iota` block
   (`gofmt/switchorder.go`). The `default` clause keeps its slot. The switch is

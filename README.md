@@ -180,15 +180,17 @@ rules are documented in `go/printer/strict.go`, and the mode is
 
 `-strict` also reorders declarations, in `gofmt/reorder.go`, so that each one
 comes after the declarations it refers to. In `a` calling `b`, `b` is printed
-above `a`. Three kinds of run move: consecutive plain functions, consecutive
-`const` declarations, and consecutive `var` declarations whose values are free
-of side effects, where a `var (...)` or `const (...)` group moves as one unit.
-A `var` whose value calls a function or receives from a channel is never moved,
-because Go runs such initialisers in declaration order, and a move would change
-the order of their effects. Conversions to predeclared types, `make` and `new`
-are not calls for this purpose. Methods,
-`init` functions, body-less functions, and every other kind of declaration end
-a run and stay put, so types and variables are never moved. A reference is a
+above `a`. Four kinds of run move: consecutive plain functions, consecutive
+`const` declarations, consecutive `var` declarations whose values are free of
+side effects, and consecutive type declarations. A `var` or `const` group moves
+as one unit, since its specs depend on each other. The specs of a `type (...)`
+group are reordered among themselves too: in `type ( m n; n int )`, `n` comes
+first. A `var` whose value calls a function or receives from a channel is never
+moved, because Go runs such initialisers in declaration order, and a move would
+change the order of their effects. Conversions to predeclared types, `make` and
+`new` are not calls for this purpose. Methods, `init` functions, body-less
+functions, and every other kind of declaration end a run and stay put. A
+reference is a
 use of the package-level name, including a function passed as a value, or a
 constant used in another constant. Local names that shadow a package-level one,
 selectors (`x.f`), struct-literal keys and labels are not references, and

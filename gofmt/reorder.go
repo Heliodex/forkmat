@@ -2,53 +2,88 @@ package main
 
 import (
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"sort"
 )
 
-// This file implements the reordering of -strict: within each run of
-// consecutive functions, or of consecutive const declarations, a declaration is
-// moved below the declarations it depends on, so that dependencies come first.
-// Methods, init functions and functions without a body are never moved, and
-// neither is anything else; each of them ends a run. A const declaration is one
-// unit with its whole group: the specs of a group depend on each other through
-// iota, so a group is never split.
+// This file implements the reordering of -strict. A declaration is moved below
+// the declarations it depends on, so that dependencies come first. Two kinds of
+// move are made, each as a pass over the source:
 //
-// The reordering works on the source text. Each unit, with the comments that
-// come before it on its own lines, is cut out as a segment; the segments are put
-// back in the new order. Comments therefore travel with the declaration they
-// lead into, and the rest of the file is left as it was. The caller parses the
-// result again and prints it as usual.
+//   - the specs of a type group are reordered among themselves;
+//   - in each run of consecutive declarations of one kind, a declaration is
+//     moved below the ones it refers to. Runs are of plain functions, of const
+//     declarations, of var declarations whose values are free of side effects,
+//     and of type declarations. A group of const or var declarations is one
+//     unit, since its specs depend on each other through iota or on order of
+//     evaluation.
+//
+// Methods, init functions and body-less functions are never moved and end a
+// run, as does any other kind of declaration. A var with a side-effecting
+// initialiser is never moved either (see pureVars).
+//
+// A pass works on the source text. Each unit, with the comments that come before
+// it on its own lines, is cut out as a segment; the segments are put back in the
+// new order. Comments therefore travel with the declaration they lead into, and
+// the rest of the file is left as it was. reorderSource runs the passes in turn,
+// parsing the result again after each.
 
-// unit is a declaration that is moved as a whole.
+// unit is a declaration, or a spec of a type group, that is moved as a whole.
 type unit struct {
-	decl  ast.Decl
-	names []string // the names it declares
-	body  ast.Node // the part whose references count as dependencies
+	kind  token.Token // token.FUNC for a function, otherwise the token of the declaration
+	names []string    // the names it declares
+	body  ast.Node    // the part whose references count as dependencies
+	objs  []any       // the declarations that resolved references may point to
+	start token.Pos   // where it starts, including its doc comment
+	end   token.Pos   // where it ends
 }
 
-// unitOf returns d as a unit, or false if the reordering does not move d. A var
-// declaration is a unit only if its values are pure (see pureVars).
+// unitOf returns d as a unit, or false if the reordering does not move d.
 func unitOf(d ast.Decl) (unit, bool) {
 	switch d := d.(type) {
 	case *ast.FuncDecl:
 		if d.Recv != nil || d.Name.Name == "init" || d.Body == nil {
 			return unit{}, false
 		}
-		return unit{decl: d, names: []string{d.Name.Name}, body: d.Body}, true
+		return unit{kind: token.FUNC, names: []string{d.Name.Name}, body: d.Body,
+			objs: []any{d}, start: declStart(d), end: d.End()}, true
 	case *ast.GenDecl:
-		if d.Tok != token.CONST && !(d.Tok == token.VAR && pureVars(d)) {
+		switch d.Tok {
+		case token.CONST, token.TYPE:
+		case token.VAR:
+			if !pureVars(d) {
+				return unit{}, false
+			}
+		default:
 			return unit{}, false
 		}
 		var names []string
+		var objs []any
 		for _, sp := range d.Specs {
-			for _, id := range sp.(*ast.ValueSpec).Names {
-				names = append(names, id.Name)
+			objs = append(objs, sp)
+			switch sp := sp.(type) {
+			case *ast.ValueSpec:
+				for _, id := range sp.Names {
+					names = append(names, id.Name)
+				}
+			case *ast.TypeSpec:
+				names = append(names, sp.Name.Name)
 			}
 		}
-		return unit{decl: d, names: names, body: d}, true
+		return unit{kind: d.Tok, names: names, body: d, objs: objs, start: declStart(d), end: d.End()}, true
 	}
 	return unit{}, false
+}
+
+// specUnit returns spec s of a type group as a unit.
+func specUnit(s *ast.TypeSpec) unit {
+	start := s.Pos()
+	if s.Doc != nil {
+		start = s.Doc.Pos()
+	}
+	return unit{kind: token.TYPE, names: []string{s.Name.Name}, body: s, objs: []any{s},
+		start: start, end: s.End()}
 }
 
 // pureVars reports whether the values of a var declaration can be evaluated
@@ -86,63 +121,61 @@ var predeclaredPure = map[string]bool{
 	"float32": true, "float64": true, "complex64": true, "complex128": true,
 }
 
-// unitKind returns the kind of a unit: token.FUNC for a function, otherwise the
-// token of its declaration. Consecutive units of one kind form a run.
-func unitKind(u unit) token.Token {
-	if _, ok := u.decl.(*ast.FuncDecl); ok {
-		return token.FUNC
+// reorderSource returns src with the passes of reordering applied: first the
+// specs of type groups, then the runs of declarations. src is returned as it is
+// if nothing moves.
+func reorderSource(filename string, src []byte) []byte {
+	passes := []func(*token.FileSet, *ast.File, []byte) []byte{reorderTypeSpecs, reorderDecls}
+	for _, pass := range passes {
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
+		if err != nil {
+			return src
+		}
+		src = pass(fset, file, src)
 	}
-	return u.decl.(*ast.GenDecl).Tok
+	return src
 }
 
-// reorderDeclRuns returns src with each run of functions, and each run of const
-// declarations, reordered. file is src parsed with object resolution, so that a
-// local name that shadows a package-level one is not taken for a reference to
-// it; fset is the fileset of that parse.
-func reorderDeclRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
-	tf := fset.File(file.Pos())
-	if tf == nil {
-		return src
-	}
-	off := func(p token.Pos) int { return tf.Offset(p) }
-	line := func(p token.Pos) int { return tf.Line(p) }
-	// lineEnd returns the offset just past the newline that ends the line
-	// containing offset o, or len(src) if there is none.
-	lineEnd := func(o int) int {
-		for o < len(src) && src[o] != '\n' {
-			o++
-		}
-		if o < len(src) {
-			return o + 1
-		}
-		return len(src)
-	}
+// layout gives positions of a file as offsets into its source.
+type layout struct {
+	tf  *token.File
+	src []byte
+}
 
-	decls := file.Decls
-	var edits []edit
-	for i := 0; i < len(decls); {
-		u, ok := unitOf(decls[i])
-		if !ok {
-			i++
-			continue
-		}
-		run := []unit{u}
-		j := i + 1
-		for j < len(decls) {
-			next, ok := unitOf(decls[j])
-			// a run is laid out line by line, so two declarations on one line end it
-			if !ok || unitKind(next) != unitKind(run[0]) || line(decls[j-1].End()) == line(declStart(decls[j])) {
-				break
-			}
-			run = append(run, next)
-			j++
-		}
-		if e, ok := reorderRun(run, i, j, file, decls, src, off, line, lineEnd); ok {
-			edits = append(edits, e)
-		}
-		i = j
-	}
+func (l layout) off(p token.Pos) int { return l.tf.Offset(p) }
 
+func (l layout) line(p token.Pos) int { return l.tf.Line(p) }
+
+// lineEnd returns the offset just past the newline that ends the line containing
+// offset o, or len(src) if there is none.
+func (l layout) lineEnd(o int) int {
+	for o < len(l.src) && l.src[o] != '\n' {
+		o++
+	}
+	if o < len(l.src) {
+		return o + 1
+	}
+	return len(l.src)
+}
+
+// lineStart returns the offset of the start of the line containing offset o.
+func (l layout) lineStart(o int) int {
+	for o > 0 && l.src[o-1] != '\n' {
+		o--
+	}
+	return o
+}
+
+// edit replaces src[start:end] with text.
+type edit struct {
+	start, end int
+	text       []byte
+}
+
+// applyEdits returns src with the edits applied. They must be in source order
+// and must not overlap.
+func applyEdits(src []byte, edits []edit) []byte {
 	if len(edits) == 0 {
 		return src
 	}
@@ -156,53 +189,18 @@ func reorderDeclRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	return append(out, src[prev:]...)
 }
 
-// edit replaces src[start:end] with text.
-type edit struct {
-	start, end int
-	text       []byte
-}
-
-// reorderRun computes the edit that reorders run, the declarations decls[i:j],
-// or reports false if the run is already in order or cannot be reordered safely.
-func reorderRun(run []unit, i, j int, file *ast.File, decls []ast.Decl, src []byte,
-	off func(token.Pos) int, line func(token.Pos) int, lineEnd func(int) int) (edit, bool) {
-	// the run's extent in the source: from the line after the declaration before
-	// it (or the package clause) to the start of the declaration after it
-	var lo int
-	if i == 0 {
-		if line(file.Name.End()) == line(declStart(decls[0])) {
-			return edit{}, false
-		}
-		lo = lineEnd(off(file.Name.End()))
-	} else {
-		prevEnd := decls[i-1].End()
-		if line(prevEnd) == line(declStart(decls[i])) {
-			return edit{}, false
-		}
-		lo = lineEnd(off(prevEnd))
-	}
-	hi := len(src)
-	if j < len(decls) {
-		if line(decls[j-1].End()) == line(declStart(decls[j])) {
-			return edit{}, false
-		}
-		hi = off(declStart(decls[j]))
-	}
-
-	// segment t starts on the line after unit t-1 ends, so the comments before
-	// unit t travel with it
+// reorderItems returns the edit that reorders run, the units between lo and hi
+// in the source, or reports false if the run is already in order. Unit t
+// occupies the lines from the line after unit t-1 ends, so the comments before
+// it travel with it.
+func (l layout) reorderItems(run []unit, lo, hi int) (edit, bool) {
 	k := len(run)
 	starts := make([]int, k+1)
 	starts[0] = lo
 	for t := 1; t < k; t++ {
-		starts[t] = lineEnd(off(decls[i+t-1].End()))
+		starts[t] = l.lineEnd(l.off(run[t-1].end))
 	}
 	starts[k] = hi
-	segs := make([][]byte, k)
-	for t := range k {
-		segs[t] = src[starts[t]:starts[t+1]]
-	}
-
 	order := dependencyOrder(run)
 	identity := true
 	for t, o := range order {
@@ -214,12 +212,105 @@ func reorderRun(run []unit, i, j int, file *ast.File, decls []ast.Decl, src []by
 	if identity {
 		return edit{}, false
 	}
-
 	var text []byte
 	for _, t := range order {
-		text = append(text, segs[t]...)
+		text = append(text, l.src[starts[t]:starts[t+1]]...)
 	}
 	return edit{start: lo, end: hi, text: text}, true
+}
+
+// reorderDecls is the pass over the runs of declarations.
+func reorderDecls(fset *token.FileSet, file *ast.File, src []byte) []byte {
+	tf := fset.File(file.Pos())
+	if tf == nil {
+		return src
+	}
+	l := layout{tf: tf, src: src}
+	decls := file.Decls
+	var edits []edit
+	for i := 0; i < len(decls); {
+		u, ok := unitOf(decls[i])
+		if !ok {
+			i++
+			continue
+		}
+		run := []unit{u}
+		j := i + 1
+		for j < len(decls) {
+			next, ok := unitOf(decls[j])
+			// a run is laid out line by line, so two declarations on one line end it
+			if !ok || next.kind != run[0].kind || l.line(run[len(run)-1].end) == l.line(next.start) {
+				break
+			}
+			run = append(run, next)
+			j++
+		}
+		if e, ok := runBounds(l, file, decls, i, j, run); ok {
+			edits = append(edits, e)
+		}
+		i = j
+	}
+	return applyEdits(src, edits)
+}
+
+// runBounds returns the edit for the run decls[i:j], whose units are run, or
+// reports false if the run has no room to move: a declaration before or after
+// it shares a line with it.
+func runBounds(l layout, file *ast.File, decls []ast.Decl, i, j int, run []unit) (edit, bool) {
+	var lo int
+	if i == 0 {
+		if l.line(file.Name.End()) == l.line(run[0].start) {
+			return edit{}, false
+		}
+		lo = l.lineEnd(l.off(file.Name.End()))
+	} else {
+		prevEnd := decls[i-1].End()
+		if l.line(prevEnd) == l.line(run[0].start) {
+			return edit{}, false
+		}
+		lo = l.lineEnd(l.off(prevEnd))
+	}
+	hi := len(l.src)
+	if j < len(decls) {
+		next := declStart(decls[j])
+		if l.line(run[len(run)-1].end) == l.line(next) {
+			return edit{}, false
+		}
+		hi = l.off(next)
+	}
+	return l.reorderItems(run, lo, hi)
+}
+
+// reorderTypeSpecs is the pass over the specs of each type group.
+func reorderTypeSpecs(fset *token.FileSet, file *ast.File, src []byte) []byte {
+	tf := fset.File(file.Pos())
+	if tf == nil {
+		return src
+	}
+	l := layout{tf: tf, src: src}
+	var edits []edit
+	for _, d := range file.Decls {
+		g, ok := d.(*ast.GenDecl)
+		if !ok || g.Tok != token.TYPE || !g.Lparen.IsValid() || len(g.Specs) < 2 {
+			continue
+		}
+		run := make([]unit, 0, len(g.Specs))
+		for _, sp := range g.Specs {
+			run = append(run, specUnit(sp.(*ast.TypeSpec)))
+		}
+		// the specs need a line each, with the parentheses on lines of their own
+		ok = l.line(g.Lparen) != l.line(run[0].start) && l.line(run[len(run)-1].end) != l.line(g.Rparen)
+		for t := 1; ok && t < len(run); t++ {
+			ok = l.line(run[t-1].end) != l.line(run[t].start)
+		}
+		if !ok {
+			continue
+		}
+		if e, ok := l.reorderItems(run, l.lineEnd(l.off(g.Lparen)), l.lineStart(l.off(g.Rparen))); ok {
+			edits = append(edits, e)
+		}
+	}
+	return applyEdits(src, edits)
 }
 
 // dependencyOrder returns the indices of run in an order where each unit comes
@@ -229,19 +320,14 @@ func reorderRun(run []unit, i, j int, file *ast.File, decls []ast.Decl, src []by
 // it depends on, and visits units in source order, so a unit moves only when it
 // has to. The units of one component keep their source order.
 func dependencyOrder(run []unit) []int {
-	byName := map[string]int{}   // for names that are not resolved
-	byObj := map[any]int{}       // for names resolved to a unit's declaration
+	byName := map[string]int{} // for names that are not resolved
+	byObj := map[any]int{}     // for names resolved to a unit's declaration
 	for t, u := range run {
 		for _, n := range u.names {
 			byName[n] = t
 		}
-		switch d := u.decl.(type) {
-		case *ast.FuncDecl:
-			byObj[d] = t
-		case *ast.GenDecl:
-			for _, sp := range d.Specs {
-				byObj[sp] = t
-			}
+		for _, o := range u.objs {
+			byObj[o] = t
 		}
 	}
 	deps := make([][]int, len(run))
@@ -305,7 +391,8 @@ func dependencyOrder(run []unit) []int {
 // references returns the indices of the units that n refers to. An identifier
 // refers to a unit if it resolves to one of the unit's declarations, or, when it
 // is not resolved at all, if it has the name of one of the units. The selector
-// in x.f, the key of a struct literal field and labels are not references.
+// in x.f, the name of a field, the key of a struct literal field and labels are
+// not references.
 func references(n ast.Node, byName map[string]int, byObj map[any]int) []int {
 	var out []int
 	var visit func(ast.Node) bool
@@ -313,6 +400,11 @@ func references(n ast.Node, byName map[string]int, byObj map[any]int) []int {
 		switch x := n.(type) {
 		case *ast.SelectorExpr:
 			ast.Inspect(x.X, visit)
+			return false
+		case *ast.Field:
+			if x.Type != nil {
+				ast.Inspect(x.Type, visit)
+			}
 			return false
 		case *ast.KeyValueExpr:
 			if _, isName := x.Key.(*ast.Ident); !isName {

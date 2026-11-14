@@ -12,12 +12,7 @@ import (
 // reorderText returns src with its function runs reordered.
 func reorderText(t *testing.T, src string) string {
 	t.Helper()
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	return string(reorderDeclRuns(fset, file, []byte(src)))
+	return string(reorderSource("x.go", []byte(src)))
 }
 
 // declOrder returns the names of the top-level functions and methods of src, in
@@ -34,11 +29,16 @@ func declOrder(t *testing.T, src string) []string {
 		case *ast.FuncDecl:
 			names = append(names, d.Name.Name)
 		case *ast.GenDecl:
-			if d.Tok == token.CONST || d.Tok == token.VAR {
+			if d.Tok == token.CONST || d.Tok == token.VAR || d.Tok == token.TYPE {
 				var group []string
 				for _, sp := range d.Specs {
-					for _, id := range sp.(*ast.ValueSpec).Names {
-						group = append(group, id.Name)
+					switch sp := sp.(type) {
+					case *ast.ValueSpec:
+						for _, id := range sp.Names {
+							group = append(group, id.Name)
+						}
+					case *ast.TypeSpec:
+						group = append(group, sp.Name.Name)
 					}
 				}
 				names = append(names, strings.Join(group, ","))
@@ -123,6 +123,16 @@ func TestReorderFuncs(t *testing.T) {
 			name: "var with a conversion of a constant moves",
 			src:  "package p\n\nvar y = x\n\nvar x = int32(5)\n",
 			want: []string{"x", "y"},
+		},
+		{
+			name: "type declared before its use moves below it",
+			src:  "package p\n\ntype m n\n\ntype n int\n",
+			want: []string{"n", "m"},
+		},
+		{
+			name: "specs of a type group reorder among themselves",
+			src:  "package p\n\ntype (\n\tm n\n\tn int\n)\n",
+			want: []string{"n,m"},
 		},
 		{
 			name: "init is a barrier",

@@ -184,9 +184,9 @@ func TestReorderFuncs(t *testing.T) {
 			want: []string{"a1", "leaf"},
 		},
 		{
-			name: "method is a barrier",
+			name: "a method is ordered like a function",
 			src: "package p\n\nfunc a() {\n\tb()\n}\n\nfunc (T) M() {}\n\nfunc b() {}\n",
-			want: []string{"a", "M", "b"},
+			want: []string{"M", "b", "a"},
 		},
 		{
 			name: "const declared before its use moves below it",
@@ -279,9 +279,9 @@ func TestReorderFuncs(t *testing.T) {
 			want: []string{"B", "Z", "A"},
 		},
 		{
-			name: "init is a barrier",
+			name: "init keeps its place",
 			src: "package p\n\nfunc a() {\n\tb()\n}\n\nfunc init() {}\n\nfunc b() {}\n",
-			want: []string{"a", "init", "b"},
+			want: []string{"b", "init", "a"},
 		},
 	}
 

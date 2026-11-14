@@ -331,6 +331,29 @@ What still follows the source:
 Not done yet: breaking long lines to a column width, redundant parentheses,
 and normalising string escapes.
 
+### `-unconvert`: remove redundant conversions
+
+`gofmt -unconvert` removes a conversion `T(x)` when `x` already has the type
+`T`, so `string(string(s))` prints as `s` and `MyInt(m)` as `m` when `m` is a
+`MyInt`. This is the first check that uses type information: the file is
+type-checked on its own (`go/types`, with the source importer), and a name that
+cannot be resolved from the file has no type, so a conversion of it is kept.
+
+A conversion is kept when:
+
+- its operand is a constant, since `int64(5)` is not the same as `5` once
+  untyped (`unconvert.go`);
+- its operand's type differs, such as `string(b)` for a byte slice or `int(m)`
+  for a `MyInt`;
+- its type names a member of an imported package, such as `time.Duration(d)`,
+  since removing it could leave the import unused.
+
+Where the operand's operators would bind differently in the conversion's place,
+it is parenthesised; `-strict` drops parentheses that are not needed.
+
+It is off by default, and runs on complete files only. Type-checking a file
+loads its imports from source, so it is slower than the other passes.
+
 ## What differs from upstream
 
 Only import paths, so that code outside the Go tree can reach packages that

@@ -38,6 +38,7 @@ var (
 	simplifyAST = flag.Bool("s", false, "simplify code")
 	doDiff = flag.Bool("d", false, "display diffs instead of rewriting files")
 	allErrors = flag.Bool("e", false, "report all errors (not just the first 10 on different lines)")
+	unconvertFlag = flag.Bool("unconvert", false, "remove conversions T(x) where x already has type T (see unconvert.go)")
 	strict = flag.Bool("strict", false, "lay out code from the AST alone, ignoring the source's line breaks (see go/printer/strict.go)")
 
 	// debugging
@@ -255,6 +256,10 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 	file, sourceAdj, indentAdj, err := parse(fileSet, filename, src, fragmentOk)
 	if err != nil {
 		return err
+	}
+
+	if *unconvertFlag && sourceAdj == nil {
+		file = unconvert(fileSet, file)
 	}
 
 	if *strict && sourceAdj == nil {

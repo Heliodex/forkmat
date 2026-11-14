@@ -132,7 +132,7 @@ func TestReorderFuncs(t *testing.T) {
 		{
 			name: "specs of a type group reorder among themselves",
 			src:  "package p\n\ntype (\n\tm n\n\tn int\n)\n",
-			want: []string{"n,m"},
+			want: []string{"n", "m"},
 		},
 		{
 			name: "type with only type dependencies moves to the top",
@@ -153,6 +153,26 @@ func TestReorderFuncs(t *testing.T) {
 			name: "generic type moves to the top",
 			src:  "package p\n\nfunc f() {}\n\ntype G[T any] struct{ x T }\n",
 			want: []string{"G", "f"},
+		},
+		{
+			name: "types are sorted alphabetically",
+			src:  "package p\n\ntype Z int\n\ntype A int\n\ntype M int\n",
+			want: []string{"A", "M", "Z"},
+		},
+		{
+			name: "a dependency comes before alphabetical order",
+			src:  "package p\n\ntype A B\n\ntype B int\n\ntype C int\n",
+			want: []string{"B", "A", "C"},
+		},
+		{
+			name: "specs of a type group are sorted alphabetically",
+			src:  "package p\n\ntype (\n\tZ int\n\tA int\n)\n",
+			want: []string{"A", "Z"},
+		},
+		{
+			name: "functions keep their source order",
+			src:  "package p\n\nfunc z() {}\n\nfunc a() {}\n",
+			want: []string{"z", "a"},
 		},
 		{
 			name: "init is a barrier",

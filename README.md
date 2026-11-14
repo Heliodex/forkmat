@@ -183,9 +183,13 @@ comes after the declarations it refers to. In `a` calling `b`, `b` is printed
 above `a`. Four kinds of run move: consecutive plain functions, consecutive
 `const` declarations, consecutive `var` declarations whose values are free of
 side effects, and consecutive type declarations. A `var` or `const` group moves
-as one unit, since its specs depend on each other. The specs of a `type (...)`
-group are reordered among themselves too: in `type ( m n; n int )`, `n` comes
-first. A type declaration moves up to just after the imports when every name it
+as one unit, since its specs depend on each other. Type declarations are
+handled separately: a run of them is rewritten as single declarations, one per
+spec, and the printer joins them into one `type (...)` block. In `type ( m n; n
+int )`, `n` comes first. Within a run, types that do not depend on each other
+are sorted alphabetically; a type still comes after the types it refers to. A
+run with a comment on the lines of a group keeps its layout. A type declaration
+moves up to just after the imports when every name it
 uses is a predeclared type, an imported package, its own type parameter, or
 another type that moves too. A type that uses a constant, variable or function,
 or a name that is not declared in this file, stays where it is, and so does any

@@ -52,12 +52,13 @@ func unitOf(d ast.Decl) (unit, bool) {
 			objs: []any{d}, start: declStart(d), end: d.End()}, true
 	case *ast.GenDecl:
 		switch d.Tok {
-		case token.CONST, token.TYPE:
+		case token.CONST:
 		case token.VAR:
 			if !pureVars(d) {
 				return unit{}, false
 			}
 		default:
+			// types are reordered by reorderTypeRuns
 			return unit{}, false
 		}
 		var names []string
@@ -127,7 +128,7 @@ var predeclaredPure = map[string]bool{
 // specs of type groups, then the runs of declarations. src is returned as it is
 // if nothing moves.
 func reorderSource(filename string, src []byte) []byte {
-	passes := []func(*token.FileSet, *ast.File, []byte) []byte{hoistTypes, reorderTypeSpecs, reorderDecls}
+	passes := []func(*token.FileSet, *ast.File, []byte) []byte{hoistTypes, reorderTypeRuns, reorderDecls}
 	for _, pass := range passes {
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
@@ -141,8 +142,9 @@ func reorderSource(filename string, src []byte) []byte {
 
 // layout gives positions of a file as offsets into its source.
 type layout struct {
-	tf  *token.File
-	src []byte
+	tf       *token.File
+	src      []byte
+	comments []*ast.CommentGroup
 }
 
 func (l layout) off(p token.Pos) int { return l.tf.Offset(p) }
@@ -159,6 +161,18 @@ func (l layout) lineEnd(o int) int {
 		return o + 1
 	}
 	return len(l.src)
+}
+
+// commentIn reports whether a comment of the file starts in the offsets [from, to).
+func (l layout) commentIn(from, to int) bool {
+	for _, cg := range l.comments {
+		for _, c := range cg.List {
+			if o := l.off(c.Pos()); o >= from && o < to {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // lineStart returns the offset of the start of the line containing offset o.
@@ -227,7 +241,7 @@ func reorderDecls(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	if tf == nil {
 		return src
 	}
-	l := layout{tf: tf, src: src}
+	l := layout{tf: tf, src: src, comments: file.Comments}
 	decls := file.Decls
 	var edits []edit
 	for i := 0; i < len(decls); {
@@ -305,7 +319,7 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	if tf == nil {
 		return src
 	}
-	l := layout{tf: tf, src: src}
+	l := layout{tf: tf, src: src, comments: file.Comments}
 	decls := file.Decls
 
 	// imports, by the name each package is referred to with
@@ -456,44 +470,146 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	return applyEdits(src, edits)
 }
 
-// reorderTypeSpecs is the pass over the specs of each type group.
-func reorderTypeSpecs(fset *token.FileSet, file *ast.File, src []byte) []byte {
+// reorderTypeRuns is the pass over the runs of type declarations. A run is
+// rewritten as single type declarations, one per spec, in dependency order, and
+// the printer then joins them into one type block. Within a run, types that do
+// not depend on each other are sorted alphabetically (see alphabeticalOrder).
+// A group is opened and closed by its own lines, and a comment on those lines
+// is not carried over, so a run with such a comment is left alone.
+func reorderTypeRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	tf := fset.File(file.Pos())
 	if tf == nil {
 		return src
 	}
-	l := layout{tf: tf, src: src}
+	l := layout{tf: tf, src: src, comments: file.Comments}
+	decls := file.Decls
 	var edits []edit
-	for _, d := range file.Decls {
-		g, ok := d.(*ast.GenDecl)
-		if !ok || g.Tok != token.TYPE || !g.Lparen.IsValid() || len(g.Specs) < 2 {
+	for i := 0; i < len(decls); {
+		if !isTypeDecl(decls[i]) {
+			i++
 			continue
 		}
-		run := make([]unit, 0, len(g.Specs))
-		for _, sp := range g.Specs {
-			run = append(run, specUnit(sp.(*ast.TypeSpec)))
+		j := i
+		for j < len(decls) && isTypeDecl(decls[j]) {
+			j++
 		}
-		// the specs need a line each, with the parentheses on lines of their own
-		ok = l.line(g.Lparen) != l.line(run[0].start) && l.line(run[len(run)-1].end) != l.line(g.Rparen)
-		for t := 1; ok && t < len(run); t++ {
-			ok = l.line(run[t-1].end) != l.line(run[t].start)
-		}
-		if !ok {
-			continue
-		}
-		if e, ok := l.reorderItems(run, l.lineEnd(l.off(g.Lparen)), l.lineStart(l.off(g.Rparen))); ok {
+		if e, ok := typeRunEdit(l, file, decls, i, j); ok {
 			edits = append(edits, e)
 		}
+		i = j
 	}
 	return applyEdits(src, edits)
+}
+
+// isTypeDecl reports whether d is a type declaration, single or grouped.
+func isTypeDecl(d ast.Decl) bool {
+	g, ok := d.(*ast.GenDecl)
+	return ok && g.Tok == token.TYPE
+}
+
+// typeRunEdit returns the edit that rewrites the type declarations decls[i:j]
+// as single declarations in their new order, or reports false if the run is
+// left alone.
+func typeRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bool) {
+	src := l.src
+	// the run's extent: the lines after the declaration before it (or the
+	// package clause) to the end of its last declaration
+	var lo int
+	if i == 0 {
+		if l.line(file.Name.End()) == l.line(declStart(decls[0])) {
+			return edit{}, false
+		}
+		lo = l.lineEnd(l.off(file.Name.End()))
+	} else {
+		if l.line(decls[i-1].End()) == l.line(declStart(decls[i])) {
+			return edit{}, false
+		}
+		lo = l.lineEnd(l.off(decls[i-1].End()))
+	}
+	last := decls[j-1].End()
+	hi := l.lineEnd(l.off(last))
+	if j < len(decls) {
+		if l.line(last) == l.line(declStart(decls[j])) {
+			return edit{}, false
+		}
+	}
+
+	// one unit per spec. text is what the unit prints as: the lines that lead
+	// into it, then a single declaration of the spec.
+	var run []unit
+	var texts [][]byte
+	cut := lo
+	for _, d := range decls[i:j] {
+		g := d.(*ast.GenDecl)
+		if !g.Lparen.IsValid() {
+			sp := g.Specs[0].(*ast.TypeSpec)
+			run = append(run, specUnit(sp))
+			texts = append(texts, typeText(src, cut, g.TokPos, sp, l))
+			cut = l.lineEnd(l.off(g.End()))
+			continue
+		}
+		// a group: its own lines, and any comment on them, are not carried over
+		lastEnd := l.off(g.Specs[len(g.Specs)-1].End())
+		if l.commentIn(l.off(g.TokPos), l.lineEnd(l.off(g.Lparen))) || l.commentIn(lastEnd, l.off(g.Rparen)+1) {
+			return edit{}, false
+		}
+		groupCut := l.lineEnd(l.off(g.Lparen))
+		for k, s := range g.Specs {
+			sp := s.(*ast.TypeSpec)
+			run = append(run, specUnit(sp))
+			if k == 0 {
+				// the lines before the keyword lead into the first spec too
+				lead := append(append([]byte{}, src[cut:l.off(g.TokPos)]...), src[groupCut:l.off(sp.Pos())]...)
+				texts = append(texts, typeTextFrom(src, lead, sp, l))
+			} else {
+				texts = append(texts, typeTextFrom(src, src[groupCut:l.off(sp.Pos())], sp, l))
+			}
+			groupCut = l.lineEnd(l.off(sp.End()))
+		}
+		cut = l.lineEnd(l.off(g.End()))
+	}
+
+	order := dependencyOrder(run)
+	identity := true
+	for t, o := range order {
+		if t != o {
+			identity = false
+			break
+		}
+	}
+	if identity && j-i == 1 {
+		return edit{}, false // a single declaration, or a group, already in order
+	}
+	var text []byte
+	for _, t := range order {
+		text = append(text, texts[t]...)
+	}
+	return edit{start: lo, end: hi, text: text}, true
+}
+
+// typeText returns the text of a single type declaration that starts with the
+// lines src[from:keyword] and whose keyword is at keyword.
+func typeText(src []byte, from int, keyword token.Pos, sp *ast.TypeSpec, l layout) []byte {
+	return typeTextFrom(src, src[from:l.off(keyword)], sp, l)
+}
+
+// typeTextFrom returns lead followed by a single type declaration of sp: the
+// keyword, then the spec's own text, through the end of its line.
+func typeTextFrom(src []byte, lead []byte, sp *ast.TypeSpec, l layout) []byte {
+	out := append([]byte{}, lead...)
+	out = append(out, "type "...)
+	return append(out, src[l.off(sp.Pos()):l.lineEnd(l.off(sp.End()))]...)
 }
 
 // dependencyOrder returns the indices of run in an order where each unit comes
 // after the units it refers to. The units are grouped into strongly connected
 // components, that is, sets of units that refer to each other, directly or
-// through others. Tarjan's algorithm emits each component after the components
-// it depends on, and visits units in source order, so a unit moves only when it
-// has to. The units of one component keep their source order.
+// through others; the units of one component keep their source order. A run of
+// functions, constants or variables takes the components in the order Tarjan's
+// algorithm emits them, which visits units in source order, so a unit moves only
+// when it has to. A run of types takes the alphabetically first name among the
+// components that are ready (see alphabeticalOrder), so that types which do not
+// depend on each other are sorted.
 func dependencyOrder(run []unit) []int {
 	byName := map[string]int{} // for names that are not resolved
 	byObj := map[any]int{}     // for names resolved to a unit's declaration
@@ -517,15 +633,30 @@ func dependencyOrder(run []unit) []int {
 		sort.Ints(deps[t])
 	}
 
-	num := make([]int, len(run)) // discovery number, or -1 before discovery
-	low := make([]int, len(run)) // lowest number reachable from the unit
-	onStack := make([]bool, len(run))
+	comps := components(deps)
+	if run[0].kind == token.TYPE {
+		return alphabeticalOrder(run, deps, comps)
+	}
+	var order []int
+	for _, c := range comps {
+		order = append(order, c...)
+	}
+	return order
+}
+
+// components returns the strongly connected components of the graph deps, in the
+// order Tarjan's algorithm emits them: each after the components it depends on.
+// The units of a component are in source order.
+func components(deps [][]int) [][]int {
+	num := make([]int, len(deps)) // discovery number, or -1 before discovery
+	low := make([]int, len(deps)) // lowest number reachable from the unit
+	onStack := make([]bool, len(deps))
 	for t := range num {
 		num[t] = -1
 	}
 	var stack []int
 	counter := 0
-	var order []int
+	var comps [][]int
 	var connect func(t int)
 	connect = func(t int) {
 		num[t], low[t] = counter, counter
@@ -552,12 +683,67 @@ func dependencyOrder(run []unit) []int {
 				}
 			}
 			sort.Ints(comp)
-			order = append(order, comp...)
+			comps = append(comps, comp)
 		}
 	}
-	for t := range run {
+	for t := range deps {
 		if num[t] < 0 {
 			connect(t)
+		}
+	}
+	return comps
+}
+
+// alphabeticalOrder orders the components of a run of types. A component is
+// ready when every component it depends on has been placed; among the ready
+// ones, the one whose first name (in alphabetical order) is smallest goes next.
+// So types are sorted wherever the dependencies allow it, and a type always
+// comes after the types it refers to.
+func alphabeticalOrder(run []unit, deps [][]int, comps [][]int) []int {
+	compOf := make([]int, len(run))
+	for c, members := range comps {
+		for _, t := range members {
+			compOf[t] = c
+		}
+	}
+	need := make([]int, len(comps)) // dependencies not yet placed
+	dependents := make([][]int, len(comps))
+	type edge struct{ from, to int }
+	seen := map[edge]bool{}
+	for t := range run {
+		for _, u := range deps[t] {
+			a, b := compOf[t], compOf[u]
+			if a != b && !seen[edge{a, b}] {
+				seen[edge{a, b}] = true
+				need[a]++
+				dependents[b] = append(dependents[b], a)
+			}
+		}
+	}
+	key := make([]string, len(comps))
+	for c, members := range comps {
+		for _, t := range members {
+			for _, n := range run[t].names {
+				if key[c] == "" || n < key[c] {
+					key[c] = n
+				}
+			}
+		}
+	}
+
+	placed := make([]bool, len(comps))
+	var order []int
+	for range comps {
+		best := -1
+		for c := range comps {
+			if !placed[c] && need[c] == 0 && (best < 0 || key[c] < key[best]) {
+				best = c
+			}
+		}
+		placed[best] = true
+		order = append(order, comps[best]...)
+		for _, a := range dependents[best] {
+			need[a]--
 		}
 	}
 	return order

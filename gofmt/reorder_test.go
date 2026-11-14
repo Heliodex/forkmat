@@ -100,12 +100,12 @@ func declOrder(t *testing.T, src string) []string {
 
 				for _, sp := range d.Specs {
 					switch sp := sp.(type) {
+					case *ast.TypeSpec:
+						group = append(group, sp.Name.Name)
 					case *ast.ValueSpec:
 						for _, id := range sp.Names {
 							group = append(group, id.Name)
 						}
-					case *ast.TypeSpec:
-						group = append(group, sp.Name.Name)
 					}
 				}
 

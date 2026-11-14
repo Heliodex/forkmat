@@ -1065,10 +1065,10 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 		var paren bool
 
 		switch t := x.Fun.(type) {
-		case *ast.FuncType:
-			paren = true
 		case *ast.ChanType:
 			paren = t.Dir == ast.RECV
+		case *ast.FuncType:
+			paren = true
 		}
 
 		if paren {
@@ -2090,10 +2090,10 @@ func (p *printer) decl(decl ast.Decl) {
 	case *ast.BadDecl:
 		p.setPos(d.Pos())
 		p.print("BadDecl")
-	case *ast.GenDecl:
-		p.genDecl(d)
 	case *ast.FuncDecl:
 		p.funcDecl(d)
+	case *ast.GenDecl:
+		p.genDecl(d)
 	default:
 		panic("unreachable")
 	}
@@ -2121,10 +2121,10 @@ func declToken(decl ast.Decl) (tok token.Token) {
 	tok = token.ILLEGAL
 
 	switch d := decl.(type) {
-	case *ast.GenDecl:
-		tok = d.Tok
 	case *ast.FuncDecl:
 		tok = token.FUNC
+	case *ast.GenDecl:
+		tok = d.Tok
 	}
 
 	return

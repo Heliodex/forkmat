@@ -347,6 +347,18 @@ const (
 // literal of a basic type nor an identifier.
 func mapKeyOf(e ast.Expr) (mapKey, bool) {
 	switch x := e.(type) {
+	case *ast.BasicLit:
+		if x.Kind == token.STRING {
+			s, err := strconv.Unquote(x.Value)
+			if err != nil {
+				return mapKey{}, false
+			}
+
+			return mapKey{
+				rank: rankString,
+				key: s,
+			}, true
+		}
 	case *ast.Ident:
 		switch x.Name {
 		case "nil":
@@ -369,18 +381,6 @@ func mapKeyOf(e ast.Expr) (mapKey, bool) {
 			rank: rankName,
 			key: x.Name,
 		}, true
-	case *ast.BasicLit:
-		if x.Kind == token.STRING {
-			s, err := strconv.Unquote(x.Value)
-			if err != nil {
-				return mapKey{}, false
-			}
-
-			return mapKey{
-				rank: rankString,
-				key: s,
-			}, true
-		}
 	}
 
 	if v := numberLiteral(e); v != nil {
@@ -405,12 +405,12 @@ func pureValue(e ast.Expr) bool {
 			if id, ok := x.Fun.(*ast.Ident); !ok || !(pureTypeNames[id.Name] || id.Name == "make" || id.Name == "new") {
 				pure = false
 			}
+		case *ast.FuncLit:
+			pure = false
 		case *ast.UnaryExpr:
 			if x.Op == token.ARROW {
 				pure = false
 			}
-		case *ast.FuncLit:
-			pure = false
 		}
 
 		return pure
@@ -545,10 +545,6 @@ const (
 // kindOf returns the kind of s.
 func kindOf(s ast.Stmt) stmtKind {
 	switch s := s.(type) {
-	case *ast.ExprStmt:
-		if _, ok := s.X.(*ast.CallExpr); ok {
-			return kindCall
-		}
 	case *ast.AssignStmt, *ast.IncDecStmt:
 		return kindAssign
 	case *ast.DeclStmt:
@@ -559,6 +555,10 @@ func kindOf(s ast.Stmt) stmtKind {
 			case token.VAR:
 				return kindVar
 			}
+		}
+	case *ast.ExprStmt:
+		if _, ok := s.X.(*ast.CallExpr); ok {
+			return kindCall
 		}
 	}
 
@@ -722,10 +722,10 @@ func hasCompositeLit(x ast.Expr) bool {
 
 	ast.Inspect(x, func(n ast.Node) bool {
 		switch n.(type) {
-		case *ast.ParenExpr:
-			return false
 		case *ast.CompositeLit:
 			found = true
+		case *ast.ParenExpr:
+			return false
 		}
 
 		return !found
@@ -1452,13 +1452,6 @@ func zeroVarType(e ast.Expr) ast.Expr {
 				Name: "string",
 			}
 		}
-	case *ast.Ident:
-		if x.Name == "false" {
-			return &ast.Ident{
-				NamePos: x.Pos(),
-				Name: "bool",
-			}
-		}
 	case *ast.CallExpr:
 		fun, ok := x.Fun.(*ast.Ident)
 		if !ok || len(x.Args) != 1 || x.Ellipsis.IsValid() {
@@ -1477,6 +1470,13 @@ func zeroVarType(e ast.Expr) ast.Expr {
 		case *ast.Ident:
 			if fun.Name == "bool" && arg.Name == "false" {
 				return fun
+			}
+		}
+	case *ast.Ident:
+		if x.Name == "false" {
+			return &ast.Ident{
+				NamePos: x.Pos(),
+				Name: "bool",
 			}
 		}
 	}

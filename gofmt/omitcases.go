@@ -10,12 +10,12 @@ import (
 func hasDeclarations(list []ast.Stmt) bool {
 	for _, s := range list {
 		switch s := s.(type) {
-		case *ast.DeclStmt:
-			return true
 		case *ast.AssignStmt:
 			if s.Tok == token.DEFINE {
 				return true
 			}
+		case *ast.DeclStmt:
+			return true
 		}
 	}
 

@@ -20,8 +20,6 @@ func concreteType(e ast.Expr, types map[string]ast.Expr) bool {
 		switch x := e.(type) {
 		case *ast.StarExpr, *ast.ArrayType, *ast.MapType, *ast.ChanType, *ast.FuncType, *ast.StructType:
 			return true
-		case *ast.ParenExpr:
-			e = x.X
 		case *ast.Ident:
 			if predeclaredPure[x.Name] {
 				return true
@@ -33,6 +31,8 @@ func concreteType(e ast.Expr, types map[string]ast.Expr) bool {
 			}
 
 			e = next
+		case *ast.ParenExpr:
+			e = x.X
 		default:
 			return false
 		}

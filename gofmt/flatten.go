@@ -10,16 +10,16 @@ import (
 // inside a loop or switch within s; nested reports whether s itself is one.
 func breaksOut(s ast.Stmt, nested bool) bool {
 	switch s := s.(type) {
-	case *ast.BranchStmt:
-		return s.Tok == token.BREAK && s.Label == nil && !nested
 	case *ast.BlockStmt:
 		for _, x := range s.List {
 			if breaksOut(x, nested) {
 				return true
 			}
 		}
-	case *ast.LabeledStmt:
-		return breaksOut(s.Stmt, nested)
+	case *ast.BranchStmt:
+		return s.Tok == token.BREAK && s.Label == nil && !nested
+	case *ast.ForStmt:
+		return breaksOut(s.Body, true)
 	case *ast.IfStmt:
 		if breaksOut(s.Body, nested) {
 			return true
@@ -28,15 +28,15 @@ func breaksOut(s ast.Stmt, nested bool) bool {
 		if s.Else != nil {
 			return breaksOut(s.Else, nested)
 		}
-	case *ast.ForStmt:
-		return breaksOut(s.Body, true)
+	case *ast.LabeledStmt:
+		return breaksOut(s.Stmt, nested)
 	case *ast.RangeStmt:
 		return breaksOut(s.Body, true)
+	case *ast.SelectStmt:
+		return clausesBreakOut(s.Body)
 	case *ast.SwitchStmt:
 		return clausesBreakOut(s.Body)
 	case *ast.TypeSwitchStmt:
-		return clausesBreakOut(s.Body)
-	case *ast.SelectStmt:
 		return clausesBreakOut(s.Body)
 	}
 

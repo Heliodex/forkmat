@@ -69,12 +69,12 @@ func pureExpr(n ast.Node, funcLitOK bool) bool {
 			if id, ok := x.Fun.(*ast.Ident); !ok || !(predeclaredPure[id.Name] || id.Name == "make" || id.Name == "new") {
 				pure = false
 			}
-		case *ast.UnaryExpr:
-			if x.Op == token.ARROW {
-				pure = false
-			}
 		case *ast.FuncLit:
 			if !funcLitOK {
+				pure = false
+			}
+		case *ast.UnaryExpr:
+			if x.Op == token.ARROW {
 				pure = false
 			}
 		}
@@ -141,16 +141,16 @@ func specUnit(tok token.Token, sp ast.Spec) unit {
 	start, end := sp.Pos(), sp.End()
 
 	switch sp := sp.(type) {
-	case *ast.ValueSpec:
-		for _, id := range sp.Names {
-			names = append(names, id.Name)
-		}
+	case *ast.TypeSpec:
+		names = []string{sp.Name.Name}
 
 		if sp.Doc != nil {
 			start = sp.Doc.Pos()
 		}
-	case *ast.TypeSpec:
-		names = []string{sp.Name.Name}
+	case *ast.ValueSpec:
+		for _, id := range sp.Names {
+			names = append(names, id.Name)
+		}
 
 		if sp.Doc != nil {
 			start = sp.Doc.Pos()
@@ -380,16 +380,16 @@ func receiverType(recv *ast.FieldList) string {
 
 	for {
 		switch x := t.(type) {
-		case *ast.StarExpr:
-			t = x.X
-		case *ast.ParenExpr:
-			t = x.X
+		case *ast.Ident:
+			return x.Name
 		case *ast.IndexExpr:
 			t = x.X
 		case *ast.IndexListExpr:
 			t = x.X
-		case *ast.Ident:
-			return x.Name
+		case *ast.ParenExpr:
+			t = x.X
+		case *ast.StarExpr:
+			t = x.X
 		default:
 			return ""
 		}
@@ -1006,25 +1006,13 @@ func references(n ast.Node, byName map[string]int, byObj map[any]int) []int {
 
 	visit = func(n ast.Node) bool {
 		switch x := n.(type) {
-		case *ast.SelectorExpr:
-			ast.Inspect(x.X, visit)
+		case *ast.BranchStmt:
 			return false
 		case *ast.Field:
 			if x.Type != nil {
 				ast.Inspect(x.Type, visit)
 			}
 
-			return false
-		case *ast.KeyValueExpr:
-			if _, isName := x.Key.(*ast.Ident); !isName {
-				ast.Inspect(x.Key, visit)
-			}
-			ast.Inspect(x.Value, visit)
-			return false
-		case *ast.LabeledStmt:
-			ast.Inspect(x.Stmt, visit)
-			return false
-		case *ast.BranchStmt:
 			return false
 		case *ast.Ident:
 			var (
@@ -1041,6 +1029,18 @@ func references(n ast.Node, byName map[string]int, byObj map[any]int) []int {
 			if ok {
 				out = append(out, t)
 			}
+		case *ast.KeyValueExpr:
+			if _, isName := x.Key.(*ast.Ident); !isName {
+				ast.Inspect(x.Key, visit)
+			}
+			ast.Inspect(x.Value, visit)
+			return false
+		case *ast.LabeledStmt:
+			ast.Inspect(x.Stmt, visit)
+			return false
+		case *ast.SelectorExpr:
+			ast.Inspect(x.X, visit)
+			return false
 		}
 
 		return true

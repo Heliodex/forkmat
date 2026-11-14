@@ -220,8 +220,6 @@ func structLiteralOrder(filename string, file *ast.File) {
 		// an alias or a named type of a named type is followed, to a fixed depth
 		for range 8 {
 			switch x := t.(type) {
-			case *ast.StructType:
-				return x
 			case *ast.Ident:
 				next, ok := types[x.Name]
 				if !ok {
@@ -241,6 +239,8 @@ func structLiteralOrder(filename string, file *ast.File) {
 				}
 
 				t = next
+			case *ast.StructType:
+				return x
 			default:
 				return nil
 			}

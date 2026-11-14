@@ -1165,20 +1165,20 @@ func getLastComment(n ast.Node) *ast.CommentGroup {
 	switch n := n.(type) {
 	case *ast.Field:
 		return n.Comment
-	case *ast.ImportSpec:
-		return n.Comment
-	case *ast.ValueSpec:
-		return n.Comment
-	case *ast.TypeSpec:
-		return n.Comment
-	case *ast.GenDecl:
-		if len(n.Specs) > 0 {
-			return getLastComment(n.Specs[len(n.Specs)-1])
-		}
 	case *ast.File:
 		if len(n.Comments) > 0 {
 			return n.Comments[len(n.Comments)-1]
 		}
+	case *ast.GenDecl:
+		if len(n.Specs) > 0 {
+			return getLastComment(n.Specs[len(n.Specs)-1])
+		}
+	case *ast.ImportSpec:
+		return n.Comment
+	case *ast.TypeSpec:
+		return n.Comment
+	case *ast.ValueSpec:
+		return n.Comment
 	}
 
 	return nil

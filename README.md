@@ -216,6 +216,9 @@ The rules:
 - Statements are one per line. A blank line goes before and after a block
   statement (`if`, `for`, `range`, `switch`, `select`, a bare block), a
   `return`, and a grouped `var` declaration, but not next to a call statement.
+  Calls, assignments (`=`, `:=`, `op=`, `++`, `--`), `const` declarations and
+  `var` declarations form runs: a blank line goes between two adjacent
+  statements of different kinds, and none within a run.
   A run of `go` or `defer` statements is set off by blank lines from the
   statements around it, but its members are not separated from each other.
 - Parentheses are dropped where operator precedence already groups the

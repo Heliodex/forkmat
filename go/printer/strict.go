@@ -21,7 +21,9 @@ import (
 //   - Statements are one per line. A blank line goes between two statements
 //     when one of them is a block statement (if, for, range, switch, select,
 //     or a bare block), a return, or a grouped var declaration, unless the
-//     other is a call statement.
+//     other is a call statement. Calls, assignments, const declarations and
+//     var declarations form runs: a blank line goes between two adjacent
+//     statements of different kinds, and none within a run.
 //   - Top-level declarations are separated by a blank line when the token
 //     changes, when the next declaration has a doc comment, or when either
 //     declaration spans several lines (a grouped declaration, or a function
@@ -228,12 +230,42 @@ func (p *printer) strictFitsOneLine(x *ast.CompositeLit) bool {
 
 // isCallStmt reports whether s is an expression statement holding a call.
 func isCallStmt(s ast.Stmt) bool {
-	e, ok := s.(*ast.ExprStmt)
-	if !ok {
-		return false
+	return kindOf(s) == kindCall
+}
+
+// stmtKind classifies a statement for the blank lines of StrictLayout. A run
+// of statements of one kind is printed without blank lines; two adjacent
+// statements of different kinds are set off by one.
+type stmtKind int
+
+const (
+	kindNone   stmtKind = iota // any other statement, which never sets off a neighbour
+	kindCall                   // an expression statement holding a call
+	kindAssign                 // an assignment, := or op=, or an increment or decrement
+	kindConst                  // a const declaration
+	kindVar                    // a var declaration
+)
+
+// kindOf returns the kind of s.
+func kindOf(s ast.Stmt) stmtKind {
+	switch s := s.(type) {
+	case *ast.ExprStmt:
+		if _, ok := s.X.(*ast.CallExpr); ok {
+			return kindCall
+		}
+	case *ast.AssignStmt, *ast.IncDecStmt:
+		return kindAssign
+	case *ast.DeclStmt:
+		if d, ok := s.Decl.(*ast.GenDecl); ok {
+			switch d.Tok {
+			case token.CONST:
+				return kindConst
+			case token.VAR:
+				return kindVar
+			}
+		}
 	}
-	_, ok = e.X.(*ast.CallExpr)
-	return ok
+	return kindNone
 }
 
 // blankStmt reports whether s gets a blank line on either side under
@@ -258,10 +290,13 @@ func (p *printer) blankLineBetween(prev, next ast.Stmt) bool {
 	if isGoOrDefer(prev) || isGoOrDefer(next) {
 		return !(isGoOrDefer(prev) && isGoOrDefer(next))
 	}
-	if isCallStmt(prev) || isCallStmt(next) {
-		return false
+	if p.blankStmt(prev) || p.blankStmt(next) {
+		return !isCallStmt(prev) && !isCallStmt(next)
 	}
-	return p.blankStmt(prev) || p.blankStmt(next)
+	// Calls, assignments, and const and var declarations are each set off from
+	// the others. A statement of kindNone is never set off by this rule.
+	kp, kn := kindOf(prev), kindOf(next)
+	return kp != kindNone && kn != kindNone && kp != kn
 }
 
 // isGoOrDefer reports whether s is a go or defer statement.

@@ -243,3 +243,19 @@ func shortVars() (int, error) {
 }
 
 var packageVar = 1
+
+// Runs of calls, assignments, and const and var declarations are set off from
+// each other; a send statement sets nothing off.
+func kinds(ch chan int) {
+    fmt.Println("a")
+    fmt.Println("b")
+    const k = 1
+    const m = 2
+    x := k
+    x++
+    var y int
+    y = x
+    ch <- y
+    ch <- m
+    fmt.Println(y)
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -8,6 +9,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"forkmat/go/printer"
 )
 
 // packageConstIndex returns the position of each constant of the package of the
@@ -143,16 +146,141 @@ func reorderSwitchCases(body *ast.BlockStmt, index map[string]int, comments []*a
 // and of the other files of its directory with the same package name.
 func switchCaseOrder(filename string, file *ast.File) {
 	index := packageConstIndex(filename, file)
-	if len(index) == 0 {
-		return
-	}
+	types := packageTypeExprs(filename, file)
 	ast.Inspect(file, func(n ast.Node) bool {
-		if s, ok := n.(*ast.SwitchStmt); ok {
-			reorderSwitchCases(s.Body, index, file.Comments)
+		switch s := n.(type) {
+		case *ast.SwitchStmt:
+			if len(index) > 0 {
+				reorderSwitchCases(s.Body, index, file.Comments)
+			}
+		case *ast.TypeSwitchStmt:
+			reorderTypeSwitchCases(s.Body, types, file.Comments)
 		}
 
 		return true
 	})
+}
+
+// packageTypeExprs returns the named types of the file and of the other files of
+// its package, by name, as their type expressions.
+func packageTypeExprs(filename string, file *ast.File) map[string]ast.Expr {
+	dir := filepath.Dir(filename)
+	if !onDisk(filename) {
+		dir = ""
+	}
+
+	types := packageTypes(dir, filepath.Base(filename), file.Name.Name)
+	for _, d := range file.Decls {
+		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
+			for _, sp := range g.Specs {
+				ts := sp.(*ast.TypeSpec)
+				types[ts.Name.Name] = ts.Type
+			}
+		}
+	}
+
+	return types
+}
+
+// concreteType reports whether the type expression e names a type that is not an
+// interface, so that no two of the types of a type switch can both match a value.
+// A named type is looked up in types; a type that cannot be found is not concrete.
+func concreteType(e ast.Expr, types map[string]ast.Expr) bool {
+	for range 8 {
+		switch x := e.(type) {
+		case *ast.StarExpr, *ast.ArrayType, *ast.MapType, *ast.ChanType, *ast.FuncType, *ast.StructType:
+			return true
+		case *ast.ParenExpr:
+			e = x.X
+		case *ast.Ident:
+			if predeclaredPure[x.Name] {
+				return true
+			}
+
+			next, ok := types[x.Name]
+			if !ok {
+				return false
+			}
+
+			e = next
+		default:
+			return false
+		}
+	}
+
+	return false
+}
+
+// reorderTypeSwitchCases orders the non-default clauses of a type switch by their
+// types, alphabetically, if the switch qualifies: every non-default clause returns,
+// no clause breaks out, and every type is concrete (see concreteType). A clause with
+// several types is ordered by its first type in alphabetical order. The default
+// clause keeps its slot.
+func reorderTypeSwitchCases(body *ast.BlockStmt, types map[string]ast.Expr, comments []*ast.CommentGroup) {
+	keys := map[*ast.CaseClause]string{}
+	var slots []int
+	for i, cl := range body.List {
+		c := cl.(*ast.CaseClause)
+		if c.List == nil {
+			continue
+		}
+
+		if !endsInReturnList(c.Body) || breaksOutOf(c.Body) {
+			return
+		}
+
+		key := ""
+		for _, e := range c.List {
+			if !concreteType(e, types) {
+				return
+			}
+
+			text := exprText(e)
+			if key == "" || text < key {
+				key = text
+			}
+		}
+
+		keys[c] = key
+		slots = append(slots, i)
+	}
+
+	if len(slots) < 2 {
+		return
+	}
+
+	for _, cg := range comments {
+		if cg.Pos() >= body.Lbrace && cg.Pos() < body.Rbrace {
+			return
+		}
+	}
+
+	clauses := make([]*ast.CaseClause, len(slots))
+	for k, i := range slots {
+		clauses[k] = body.List[i].(*ast.CaseClause)
+	}
+
+	slices.SortStableFunc(clauses, func(a, b *ast.CaseClause) int {
+		return strings.Compare(keys[a], keys[b])
+	})
+
+	list := slices.Clone(body.List)
+	for k, i := range slots {
+		list[i] = clauses[k]
+	}
+
+	body.List = list
+}
+
+// exprText returns the source text of an expression, as the printer writes it.
+func exprText(e ast.Expr) string {
+	var buf bytes.Buffer
+	cfg := printer.Config{Mode: printer.RawFormat}
+	if err := cfg.Fprint(&buf, token.NewFileSet(), e); err != nil {
+		return ""
+	}
+
+	return buf.String()
 }
 
 // onDisk reports whether filename names a file that exists. A file read from

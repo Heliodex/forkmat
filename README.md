@@ -286,6 +286,12 @@ The rules:
 - A `type (...)`, `const (...)` or `var (...)` group that holds one declaration
   is printed as that declaration, without parentheses, unless a comment lies
   inside them.
+- The clauses of a type switch are sorted alphabetically by their types, when
+  every non-default clause returns with no unlabeled `break`, and every type is
+  concrete: a pointer, slice, map, array, channel, function or struct type, a
+  predeclared type other than an interface, or a named type whose declaration
+  is not an interface. Interfaces may overlap, so a type switch with one is left
+  alone. The `default` clause keeps its slot.
 - The clauses of a switch whose cases are constants declared in the file are put
   in the order those constants are declared in, typically an `iota` block
   (`gofmt/switchorder.go`). The `default` clause keeps its slot. The switch is

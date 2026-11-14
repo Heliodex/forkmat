@@ -1,13 +1,19 @@
 package main
 
 import (
-	"sync"
 	"go/ast"
 	"go/importer"
 	"go/token"
 	"go/types"
 	"reflect"
+	"sync"
 )
+
+// lockedImporter serializes the calls of an importer.
+type lockedImporter struct {
+	mu sync.Mutex
+	imp types.ImporterFrom
+}
 
 // checkTypes type-checks file on its own and returns the types of its expressions.
 // Errors are expected for names declared elsewhere, and are ignored: an expression
@@ -18,11 +24,10 @@ func checkTypes(fset *token.FileSet, file *ast.File) *types.Info {
 	}
 	conf := types.Config{
 		Importer: sharedImporter,
-		Error:    func(error) {},
+		Error: func(error) {},
 	}
 
 	conf.Check(file.Name.Name, fset, []*ast.File{file}, info)
-
 	return info
 }
 
@@ -32,28 +37,6 @@ func checkTypes(fset *token.FileSet, file *ast.File) *types.Info {
 var sharedImporter types.ImporterFrom = &lockedImporter{
 	imp: importer.ForCompiler(token.NewFileSet(), "source", nil).(types.ImporterFrom),
 }
-
-// lockedImporter serializes the calls of an importer.
-type lockedImporter struct {
-	mu  sync.Mutex
-	imp types.ImporterFrom
-}
-
-// Import implements types.Importer.
-func (l *lockedImporter) Import(path string) (*types.Package, error) {
-	return l.ImportFrom(path, "", 0)
-}
-
-// ImportFrom implements types.ImporterFrom.
-func (l *lockedImporter) ImportFrom(path, dir string, mode types.ImportMode) (*types.Package, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	return l.imp.ImportFrom(path, dir, mode)
-}
-
-// callExprPtrType is the type of a *ast.CallExpr.
-var callExprPtrType = reflect.TypeFor[*ast.CallExpr]()
 
 // hasSelector reports whether an expression holds a selector, such as pkg.T.
 func hasSelector(e ast.Expr) bool {
@@ -74,6 +57,23 @@ func isUntyped(t types.Type) bool {
 	b, ok := t.(*types.Basic)
 
 	return ok && b.Info()&types.IsUntyped != 0
+}
+
+// callExprPtrType is the type of a *ast.CallExpr.
+var callExprPtrType = reflect.TypeFor[*ast.CallExpr]()
+
+// ImportFrom implements types.ImporterFrom.
+func (l *lockedImporter) ImportFrom(path, dir string, mode types.ImportMode) (*types.Package, error) {
+	l.mu.Lock()
+
+	defer l.mu.Unlock()
+
+	return l.imp.ImportFrom(path, dir, mode)
+}
+
+// Import implements types.Importer.
+func (l *lockedImporter) Import(path string) (*types.Package, error) {
+	return l.ImportFrom(path, "", 0)
 }
 
 // operand returns the expression that stands in for a conversion T(x) once it is removed: x itself, in parentheses when its operators would bind differently in the place of the conversion. The parentheses are dropped again by the printer under -strict when they are not needed.

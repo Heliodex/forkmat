@@ -258,6 +258,9 @@ func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 	}
 
 	elts := make([]keyed, 0, len(x.Elts))
+	// a literal with only identifier keys may be a struct, whose fields keep their
+	// order: it is a map only if some key is a literal
+	literal := false
 
 	for _, e := range x.Elts {
 		kv, ok := e.(*ast.KeyValueExpr)
@@ -270,7 +273,15 @@ func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 			return x.Elts
 		}
 
+		if k.rank < rankName {
+			literal = true
+		}
+
 		elts = append(elts, keyed{rank: k.rank, key: k.key, elt: e})
+	}
+
+	if !literal {
+		return x.Elts
 	}
 
 	slices.SortStableFunc(elts, func(a, b keyed) int {
@@ -316,19 +327,31 @@ type mapKey struct {
 	key  any
 }
 
-// mapKeyOf returns the sort key of a map key, or false if the key is not a literal
-// of a basic type. The ranks order the kinds: nil, booleans, numbers, strings.
+// The ranks that mapKeyOf gives a key: nil, booleans, numbers, strings, and then
+// names, which are constants or variables.
+const (
+	rankNil = iota
+	rankBool
+	rankNumber
+	rankString
+	rankName
+)
+
+// mapKeyOf returns the sort key of a map key, or false if the key is neither a
+// literal of a basic type nor an identifier.
 func mapKeyOf(e ast.Expr) (mapKey, bool) {
 	switch x := e.(type) {
 	case *ast.Ident:
 		switch x.Name {
 		case "nil":
-			return mapKey{rank: 0}, true
+			return mapKey{rank: rankNil}, true
 		case "false":
-			return mapKey{rank: 1, key: false}, true
+			return mapKey{rank: rankBool, key: false}, true
 		case "true":
-			return mapKey{rank: 1, key: true}, true
+			return mapKey{rank: rankBool, key: true}, true
 		}
+
+		return mapKey{rank: rankName, key: x.Name}, true
 	case *ast.BasicLit:
 		if x.Kind == token.STRING {
 			s, err := strconv.Unquote(x.Value)
@@ -336,12 +359,12 @@ func mapKeyOf(e ast.Expr) (mapKey, bool) {
 				return mapKey{}, false
 			}
 
-			return mapKey{rank: 3, key: s}, true
+			return mapKey{rank: rankString, key: s}, true
 		}
 	}
 
 	if v := numberLiteral(e); v != nil {
-		return mapKey{rank: 2, key: v}, true
+		return mapKey{rank: rankNumber, key: v}, true
 	}
 
 	return mapKey{}, false

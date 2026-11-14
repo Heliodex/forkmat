@@ -484,3 +484,12 @@ var mapAny = map[any]string{
     -1: "neg",
     false: "f",
 }
+
+// Identifier keys, as in a map with constant keys, come after the literal keys,
+// sorted by name. A literal with only identifier keys may be a struct, so it stays.
+var mapNames = map[any]int{
+    Zeta: 1,
+    "b": 2,
+    Alpha: 3,
+    2: 4,
+}

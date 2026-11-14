@@ -270,7 +270,10 @@ The rules:
   key, and one whose keys are all number literals numerically (a minus sign is
   allowed). A map with an `any` key, whose keys are literals of several basic
   types (`nil`, `true`, `false`, numbers, strings), is grouped by kind in that
-  order, and sorted within each kind the same way. A struct literal names its fields with identifiers, so it is not
+  order, and sorted within each kind the same way. Identifier keys, such as
+  constants, come after the literal keys, sorted by name, in a literal that has
+  at least one literal key. A literal with only identifier keys may be a struct,
+  so it keeps its order. A struct literal names its fields with identifiers, so it is not
   reordered. A literal is reordered only if it has no comment and no value calls
   a function or receives from a channel, since Go evaluates them in order.
 - Struct and interface bodies with members are always multi-line, even with a

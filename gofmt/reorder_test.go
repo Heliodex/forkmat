@@ -34,7 +34,7 @@ func declOrder(t *testing.T, src string) []string {
 		case *ast.FuncDecl:
 			names = append(names, d.Name.Name)
 		case *ast.GenDecl:
-			if d.Tok == token.CONST {
+			if d.Tok == token.CONST || d.Tok == token.VAR {
 				var group []string
 				for _, sp := range d.Specs {
 					for _, id := range sp.(*ast.ValueSpec).Names {
@@ -108,6 +108,21 @@ func TestReorderFuncs(t *testing.T) {
 			name: "local const shadowing a package const is not a reference",
 			src:  "package p\n\nfunc p1() {\n\tconst x = 1\n\t_ = x\n}\n\nconst x = 5\n",
 			want: []string{"p1", "x"},
+		},
+		{
+			name: "var declared before its use moves below it",
+			src:  "package p\n\nvar y = x\n\nvar x = 5\n",
+			want: []string{"x", "y"},
+		},
+		{
+			name: "var with a call is a barrier",
+			src:  "package p\n\nvar y = x\n\nvar x = f()\n",
+			want: []string{"y", "x"},
+		},
+		{
+			name: "var with a conversion of a constant moves",
+			src:  "package p\n\nvar y = x\n\nvar x = int32(5)\n",
+			want: []string{"x", "y"},
 		},
 		{
 			name: "init is a barrier",

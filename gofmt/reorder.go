@@ -27,7 +27,8 @@ type unit struct {
 	body  ast.Node // the part whose references count as dependencies
 }
 
-// unitOf returns d as a unit, or false if the reordering does not move d.
+// unitOf returns d as a unit, or false if the reordering does not move d. A var
+// declaration is a unit only if its values are pure (see pureVars).
 func unitOf(d ast.Decl) (unit, bool) {
 	switch d := d.(type) {
 	case *ast.FuncDecl:
@@ -36,7 +37,7 @@ func unitOf(d ast.Decl) (unit, bool) {
 		}
 		return unit{decl: d, names: []string{d.Name.Name}, body: d.Body}, true
 	case *ast.GenDecl:
-		if d.Tok != token.CONST {
+		if d.Tok != token.CONST && !(d.Tok == token.VAR && pureVars(d)) {
 			return unit{}, false
 		}
 		var names []string
@@ -50,11 +51,48 @@ func unitOf(d ast.Decl) (unit, bool) {
 	return unit{}, false
 }
 
-// sameKind reports whether two units are both functions or both const groups.
-func sameKind(a, b unit) bool {
-	_, af := a.decl.(*ast.FuncDecl)
-	_, bf := b.decl.(*ast.FuncDecl)
-	return af == bf
+// pureVars reports whether the values of a var declaration can be evaluated
+// without side effects, so that moving it does not change the order of any
+// effect. Go initialises package variables in declaration order, except where a
+// dependency forces another order, so a move is visible only through a side
+// effect. A call can have one, and a receive can block; a conversion to a
+// predeclared type, make and new cannot. Calls are checked syntactically, so a
+// call to a function named like a predeclared type is taken to be impure.
+func pureVars(d *ast.GenDecl) bool {
+	pure := true
+	ast.Inspect(d, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.CallExpr:
+			id, ok := x.Fun.(*ast.Ident)
+			if !ok || !(predeclaredPure[id.Name] || id.Name == "make" || id.Name == "new") {
+				pure = false
+			}
+		case *ast.UnaryExpr:
+			if x.Op == token.ARROW {
+				pure = false
+			}
+		}
+		return pure
+	})
+	return pure
+}
+
+// predeclaredPure are the predeclared types, whose conversions have no side
+// effects.
+var predeclaredPure = map[string]bool{
+	"bool": true, "string": true, "byte": true, "rune": true, "uintptr": true,
+	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
+	"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true,
+	"float32": true, "float64": true, "complex64": true, "complex128": true,
+}
+
+// unitKind returns the kind of a unit: token.FUNC for a function, otherwise the
+// token of its declaration. Consecutive units of one kind form a run.
+func unitKind(u unit) token.Token {
+	if _, ok := u.decl.(*ast.FuncDecl); ok {
+		return token.FUNC
+	}
+	return u.decl.(*ast.GenDecl).Tok
 }
 
 // reorderDeclRuns returns src with each run of functions, and each run of const
@@ -93,7 +131,7 @@ func reorderDeclRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 		for j < len(decls) {
 			next, ok := unitOf(decls[j])
 			// a run is laid out line by line, so two declarations on one line end it
-			if !ok || !sameKind(run[0], next) || line(decls[j-1].End()) == line(declStart(decls[j])) {
+			if !ok || unitKind(next) != unitKind(run[0]) || line(decls[j-1].End()) == line(declStart(decls[j])) {
 				break
 			}
 			run = append(run, next)

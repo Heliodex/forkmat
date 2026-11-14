@@ -50,133 +50,164 @@ const (
 	strictLayout
 )
 
-// checkEqual compares a and b.
-func checkEqual(aname, bname string, a, b []byte) error {
-	if bytes.Equal(a, b) {
-		return nil
-	}
+// Verify that the printer doesn't crash if the AST contains BadXXX nodes.
+func TestBadNodes(t *testing.T) {
+	const (
+		src = "package p\n("
+		res = "package p\nBadDecl\n"
+	)
 
-	return errors.New(string(diff.Diff(aname, a, bname, b)))
-}
-
-// format parses src, prints the corresponding AST, verifies the resulting
-// src is syntactically correct, and returns the resulting src or an error
-// if any.
-func format(src []byte, mode checkMode) ([]byte, error) {
-	// parse src
 	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
-	if err != nil {
-		return nil, fmt.Errorf("parse: %s\n%s", err, src)
+	if err == nil {
+		t.Error("expected illegal program") // error in test
 	}
 
-	// filter exports if necessary
-	if mode&export != 0 {
-		ast.FileExports(f) // ignore result
-		f.Comments = nil // don't print comments that are not in AST
-	}
-
-	// determine printer configuration
-	cfg := Config{
-		Tabwidth: tabwidth,
-	}
-
-	if mode&rawFormat != 0 {
-		cfg.Mode |= RawFormat
-	}
-
-	if mode&normNumber != 0 {
-		cfg.Mode |= normalizeNumbers
-	}
-
-	if mode&strictLayout != 0 {
-		cfg.Mode |= StrictLayout
-	}
-
-	// print AST
 	var buf bytes.Buffer
 
-	if err := cfg.Fprint(&buf, fset, f); err != nil {
-		return nil, fmt.Errorf("print: %s", err)
-	}
-
-	// make sure formatted output is syntactically correct
-	res := buf.Bytes()
-
-	if _, err := parser.ParseFile(fset, "", res, parser.ParseComments|parser.SkipObjectResolution); err != nil {
-		return nil, fmt.Errorf("re-parse: %s\n%s", err, buf.Bytes())
-	}
-
-	return res, nil
-}
-
-func runcheck(t *testing.T, source, golden string, mode checkMode) {
-	src, err := os.ReadFile(source)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	res, err := format(src, mode)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	// update golden files if necessary
-	if *update {
-		if werr := os.WriteFile(golden, res, 0o644); werr != nil {
-			t.Error(werr)
-		}
-
-		return
-	}
-
-	// get golden
-	gld, err := os.ReadFile(golden)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	// formatted source and golden must be the same
-	if cerr := checkEqual(fmt.Sprintf("format(%v)", source), golden, res, gld); cerr != nil {
-		t.Error(cerr)
-		return
-	}
-
-	if mode&idempotent != 0 {
-		// formatting golden must be idempotent
-		// (This is very difficult to achieve in general and for now
-		// it is only checked for files explicitly marked as such.)
-		res, err = format(gld, mode)
-
-		if err != nil {
-			t.Error(err)
-			return
-		}
-
-		if err := checkEqual(golden, fmt.Sprintf("format(%s)", golden), gld, res); err != nil {
-			t.Errorf("golden is not idempotent: %s", err)
-		}
+	Fprint(&buf, fset, f)
+	if buf.String() != res {
+		t.Errorf("got %q, expected %q", buf.String(), res)
 	}
 }
 
-func check(t *testing.T, source, golden string, mode checkMode) {
-	// run the test
-	cc := make(chan int, 1)
+func TestBaseIndent(t *testing.T) {
+	t.Parallel()
+	// The testfile must not contain multi-line raw strings since those
+	// are not indented (because their values must not change) and make
+	// this test fail.
+	const filename = "printer.go"
 
-	go func() {
-		runcheck(t, source, golden, mode)
-		cc <- 0
-	}()
+	src, err := os.ReadFile(filename)
+	if err != nil {
+		panic(err) // error in test
+	}
 
-	// wait with timeout
-	select {
-	case <-time.After(10 * time.Second): // plenty of a safety margin, even for very slow machines
-		// test running past time out
-		t.Errorf("%s: running too slowly", source)
-	case <-cc:
-		// test finished within allotted time margin
+	file, err := parser.ParseFile(fset, filename, src, parser.SkipObjectResolution)
+	if err != nil {
+		panic(err) // error in test
+	}
+
+	for indent := range 4 {
+		t.Run(fmt.Sprint(indent), func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+
+			(&Config{
+				Tabwidth: tabwidth,
+				Indent: indent,
+			}).Fprint(&buf, fset, file)
+			// all code must be indented by at least 'indent' tabs
+			lines := bytes.Split(buf.Bytes(), []byte{'\n'})
+
+			for i, line := range lines {
+				if len(line) == 0 {
+					continue // empty lines don't have indentation
+				}
+
+				var n int
+
+				for j, b := range line {
+					if b != '\t' {
+						// end of indentation
+						n = j
+						break
+					}
+				}
+
+				if n < indent {
+					t.Errorf("line %d: got only %d tabs; want at least %d: %q", i, n, indent, line)
+				}
+			}
+		})
+	}
+}
+
+// TestChanType tests that the tree for <-(<-chan int), without
+// ParenExpr, is correctly formatted with parens.
+// Test case for issue #63362.
+func TestChanType(t *testing.T) {
+	expr := &ast.UnaryExpr{
+		Op: token.ARROW,
+		X: &ast.CallExpr{
+			Fun: &ast.ChanType{
+				Dir: ast.RECV,
+				Value: &ast.Ident{
+					Name: "int",
+				},
+			},
+			Args: []ast.Expr{
+				&ast.Ident{
+					Name: "nil",
+				},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+
+	if err := Fprint(&buf, fset, expr); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := buf.String(), `<-(<-chan int)(nil)`; got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s\n", got, want)
+	}
+}
+
+func TestCommentedNode(t *testing.T) {
+	const (
+		input = `package main
+
+func foo() {
+	// comment inside func
+}
+
+// leading comment
+type bar int // comment2
+
+`
+		foo = `func foo() {
+	// comment inside func
+}`
+		bar = `// leading comment
+type bar int // comment2
+`
+	)
+
+	lfset := token.NewFileSet()
+	f, err := parser.ParseFile(lfset, "input.go", input, parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+
+	err = Fprint(&buf, lfset, &CommentedNode{
+		Node: f.Decls[0],
+		Comments: f.Comments,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if buf.String() != foo {
+		t.Errorf("got %q, want %q", buf.String(), foo)
+	}
+	buf.Reset()
+
+	err = Fprint(&buf, lfset, &CommentedNode{
+		Node: f.Decls[1],
+		Comments: f.Comments,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if buf.String() != bar {
+		t.Errorf("got %q, want %q", buf.String(), bar)
 	}
 }
 
@@ -207,56 +238,41 @@ var data = []entry{
 	{"gobuild7.input", "gobuild7.golden", idempotent},
 }
 
-func TestFiles(t *testing.T) {
-	t.Parallel()
-	for _, e := range data {
-		source := filepath.Join(dataDir, e.source)
-		golden := filepath.Join(dataDir, e.golden)
-		mode := e.mode
+func TestDeclLists(t *testing.T) {
+	for _, src := range decls {
+		file, err := parser.ParseFile(fset, "", "package p;"+src, parser.ParseComments|parser.SkipObjectResolution)
+		if err != nil {
+			panic(err) // error in test
+		}
 
-		t.Run(e.source, func(t *testing.T) {
-			t.Parallel()
-			check(t, source, golden, mode)
-			// TODO(gri) check that golden is idempotent
-			//check(t, golden, golden, e.mode)
-		})
+		var buf bytes.Buffer
+
+		err = Fprint(&buf, fset, file.Decls) // only print declarations
+		if err != nil {
+			panic(err) // error in test
+		}
+
+		if out := buf.String(); out != src {
+			t.Errorf("\ngot : %q\nwant: %q\n", out, src)
+		}
 	}
 }
 
-// TestLineComments, using a simple test case, checks that consecutive line
-// comments are properly terminated with a newline even if the AST position
-// information is incorrect.
-func TestLineComments(t *testing.T) {
-	const src = `// comment 1
-	// comment 2
-	// comment 3
-	package main
-	`
+// TestEmptyDecl tests that empty decls for const, var, import are printed with
+// valid syntax e.g "var ()" instead of just "var", which is invalid and cannot
+// be parsed.
+func TestEmptyDecl(t *testing.T) { // issue 63566
+	for _, tok := range []token.Token{token.IMPORT, token.CONST, token.TYPE, token.VAR} {
+		var buf bytes.Buffer
 
-	lfset := token.NewFileSet()
-	f, err := parser.ParseFile(lfset, "", src, parser.ParseComments|parser.SkipObjectResolution)
-	if err != nil {
-		panic(err) // error in test
-	}
+		Fprint(&buf, token.NewFileSet(), &ast.GenDecl{
+			Tok: tok,
+		})
 
-	var buf bytes.Buffer
-
-	lfset = token.NewFileSet() // use the wrong file set
-	Fprint(&buf, lfset, f)
-
-	var nlines int
-
-	for _, ch := range buf.Bytes() {
-		if ch == '\n' {
-			nlines++
+		got := buf.String()
+		if want := tok.String() + " ()"; got != want {
+			t.Errorf("got %q, want %q", got, want)
 		}
-	}
-
-	const expected = 3
-
-	if nlines < expected {
-		t.Errorf("got %d, expected %d\n", nlines, expected)
-		t.Errorf("result:\n%s", buf.Bytes())
 	}
 }
 
@@ -278,109 +294,100 @@ func init() {
 	}
 }
 
-// Verify that the printer doesn't crash if the AST contains BadXXX nodes.
-func TestBadNodes(t *testing.T) {
-	const (
-		src = "package p\n("
-		res = "package p\nBadDecl\n"
-	)
-
-	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
-	if err == nil {
-		t.Error("expected illegal program") // error in test
+// TestFuncType tests that an ast.FuncType with a nil Params field
+// can be printed (per go/ast specification). Test case for issue 3870.
+func TestFuncType(t *testing.T) {
+	src := &ast.File{
+		Name: &ast.Ident{
+			Name: "p",
+		},
+		Decls: []ast.Decl{
+			&ast.FuncDecl{
+				Name: &ast.Ident{
+					Name: "f",
+				},
+				Type: &ast.FuncType{},
+			},
+		},
 	}
 
 	var buf bytes.Buffer
 
-	Fprint(&buf, fset, f)
-	if buf.String() != res {
-		t.Errorf("got %q, expected %q", buf.String(), res)
+	if err := Fprint(&buf, fset, src); err != nil {
+		t.Fatal(err)
 	}
-}
 
-// testComment verifies that f can be parsed again after printing it
-// with its first comment set to comment at any possible source offset.
-func testComment(t *testing.T, f *ast.File, srclen int, comment *ast.Comment) {
-	f.Comments[0].List[0] = comment
+	got := buf.String()
 
-	var buf bytes.Buffer
+	const want = `package p
 
-	for offs := 0; offs <= srclen; offs++ {
-		buf.Reset()
-		// Printing f should result in a correct program no
-		// matter what the (incorrect) comment position is.
-		if err := Fprint(&buf, fset, f); err != nil {
-			t.Error(err)
-		}
-
-		if _, err := parser.ParseFile(fset, "", buf.Bytes(), parser.SkipObjectResolution); err != nil {
-			t.Fatalf("incorrect program for pos = %d:\n%s", comment.Slash, buf.String())
-		}
-		// Position information is just an offset.
-		// Move comment one byte down in the source.
-		comment.Slash++
-	}
-}
-
-// Verify that the printer produces a correct program
-// even if the position information of comments introducing newlines
-// is incorrect.
-func TestBadComments(t *testing.T) {
-	t.Parallel()
-
-	const src = `
-// first comment - text and position changed by test
-package p
-import "fmt"
-const pi = 3.14 // rough circle
-var (
-	x, y, z int = 1, 2, 3
-	u, v float64
-)
-func fibo(n int) {
-	if n < 2 {
-		return n /* seed values */
-	}
-	return fibo(n-1) + fibo(n-2)
-}
+func f()
 `
 
-	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
-	if err != nil {
-		t.Error(err) // error in test
+	if got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s\n", got, want)
 	}
-
-	comment := f.Comments[0].List[0]
-	pos := comment.Pos()
-	if fset.PositionFor(
-		pos,
-		false, /* absolute position */).Offset != 1 {
-		t.Error("expected offset 1") // error in test
-	}
-	testComment(t, f, len(src), &ast.Comment{
-		Slash: pos,
-		Text: "//-style comment",
-	})
-	testComment(t, f, len(src), &ast.Comment{
-		Slash: pos,
-		Text: "/*-style comment */",
-	})
-	testComment(t, f, len(src), &ast.Comment{
-		Slash: pos,
-		Text: "/*-style \n comment */",
-	})
-	testComment(t, f, len(src), &ast.Comment{
-		Slash: pos,
-		Text: "/*-style comment \n\n\n */",
-	})
 }
 
-func (v visitor) Visit(n ast.Node) (w ast.Visitor) {
-	if ident, ok := n.(*ast.Ident); ok {
-		v <- ident
+func TestIssue11151(t *testing.T) {
+	const src = "package p\t/*\r/1\r*\r/2*\r\r\r\r/3*\r\r+\r\r/4*/\n"
+
+	lfset := token.NewFileSet()
+	f, err := parser.ParseFile(lfset, "", src, parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	return v
+	var buf bytes.Buffer
+
+	Fprint(&buf, lfset, f)
+
+	got := buf.String()
+
+	const want = "package p /*/1*\r/2*\r/3*+/4*/\n" // \r following opening /* should be stripped
+	if got != want {
+		t.Errorf("\ngot : %q\nwant: %q", got, want)
+	}
+
+	// the resulting program must be valid
+	_, err = parser.ParseFile(lfset, "", got, parser.SkipObjectResolution)
+
+	if err != nil {
+		t.Errorf("%v\norig: %q\ngot : %q", err, src, got)
+	}
+}
+
+// Verify that we don't print a newline between "return" and its results, as
+// that would incorrectly cause a naked return.
+func TestIssue32854(t *testing.T) {
+	src := `package foo
+
+func f() {
+        return Composite{
+                call(),
+        }
+}`
+	lfset := token.NewFileSet()
+	file, err := parser.ParseFile(lfset, "", src, parser.SkipObjectResolution)
+	if err != nil {
+		panic(err)
+	}
+
+	// Replace the result with call(), which is on the next line.
+	fd := file.Decls[0].(*ast.FuncDecl)
+	ret := fd.Body.List[0].(*ast.ReturnStmt)
+	ret.Results[0] = ret.Results[0].(*ast.CompositeLit).Elts[0]
+
+	var buf bytes.Buffer
+
+	if err := Fprint(&buf, lfset, ret); err != nil {
+		t.Fatal(err)
+	}
+
+	want := "return call()"
+	if got := buf.String(); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
 }
 
 func TestIssue52605(t *testing.T) {
@@ -476,6 +483,286 @@ func g() {
 	// compare original with desired output
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s\n", got, want)
+	}
+}
+
+// TestLineComments, using a simple test case, checks that consecutive line
+// comments are properly terminated with a newline even if the AST position
+// information is incorrect.
+func TestLineComments(t *testing.T) {
+	const src = `// comment 1
+	// comment 2
+	// comment 3
+	package main
+	`
+
+	lfset := token.NewFileSet()
+	f, err := parser.ParseFile(lfset, "", src, parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		panic(err) // error in test
+	}
+
+	var buf bytes.Buffer
+
+	lfset = token.NewFileSet() // use the wrong file set
+	Fprint(&buf, lfset, f)
+
+	var nlines int
+
+	for _, ch := range buf.Bytes() {
+		if ch == '\n' {
+			nlines++
+		}
+	}
+
+	const expected = 3
+
+	if nlines < expected {
+		t.Errorf("got %d, expected %d\n", nlines, expected)
+		t.Errorf("result:\n%s", buf.Bytes())
+	}
+}
+
+// If a declaration has multiple specifications, a parenthesized
+// declaration must be printed even if Lparen is token.NoPos.
+func TestParenthesizedDecl(t *testing.T) {
+	// a package with multiple specs in a single declaration
+	const src = "package p; var ( a float64; b int )"
+
+	lfset := token.NewFileSet()
+	f, err := parser.ParseFile(lfset, "", src, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// print the original package
+	var buf bytes.Buffer
+
+	err = Fprint(&buf, lfset, f)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	original := buf.String()
+
+	// now remove parentheses from the declaration
+	for i := 0; i != len(f.Decls); i++ {
+		f.Decls[i].(*ast.GenDecl).Lparen = token.NoPos
+	}
+	buf.Reset()
+
+	err = Fprint(&buf, lfset, f)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if noparen := buf.String(); noparen != original {
+		t.Errorf("got %q, want %q", noparen, original)
+	}
+}
+
+func TestSourcePosNewline(t *testing.T) {
+	// We don't provide a syntax for escaping or unescaping characters in line
+	// directives (see https://go.dev/issue/24183#issuecomment-372449628).
+	// As a result, we cannot write a line directive with the correct path for a
+	// filename containing newlines. We should return an error rather than
+	// silently dropping or mangling it.
+
+	fname := "foo\nbar/bar.go"
+	src := `package bar`
+	lfset := token.NewFileSet()
+	f, err := parser.ParseFile(lfset, fname, src, parser.ParseComments|parser.AllErrors|parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &Config{
+		Mode: SourcePos, // emit line comments
+		Tabwidth: 8,
+	}
+
+	var buf bytes.Buffer
+
+	if err := cfg.Fprint(&buf, lfset, f); err == nil {
+		t.Errorf("Fprint did not error for source file path containing newline")
+	}
+
+	if buf.Len() != 0 {
+		t.Errorf("unexpected Fprint output:\n%s", buf.Bytes())
+	}
+}
+
+func TestStmtLists(t *testing.T) {
+	for _, src := range stmts {
+		file, err := parser.ParseFile(fset, "", "package p; func _() {"+src+"}", parser.ParseComments|parser.SkipObjectResolution)
+		if err != nil {
+			panic(err) // error in test
+		}
+
+		var buf bytes.Buffer
+
+		err = Fprint(&buf, fset, file.Decls[0].(*ast.FuncDecl).Body.List) // only print statements
+		if err != nil {
+			panic(err) // error in test
+		}
+
+		if out := buf.String(); out != src {
+			t.Errorf("\ngot : %q\nwant: %q\n", out, src)
+		}
+	}
+}
+
+var decls = []string{
+	`import "fmt"`,
+	"const pi = 3.1415\nconst e = 2.71828\n\nvar x = pi",
+	"func sum(x, y int) int {\n\treturn x + y\n}",
+}
+
+// Test whether the printer stops writing after the first error
+func TestWriteErrors(t *testing.T) {
+	t.Parallel()
+
+	const filename = "printer.go"
+
+	src, err := os.ReadFile(filename)
+	if err != nil {
+		panic(err) // error in test
+	}
+
+	file, err := parser.ParseFile(fset, filename, src, parser.SkipObjectResolution)
+	if err != nil {
+		panic(err) // error in test
+	}
+
+	for i := range 20 {
+		lw := &limitWriter{
+			remaining: i,
+		}
+		err := (&Config{
+			Mode: RawFormat,
+		}).Fprint(lw, fset, file)
+
+		if lw.errCount > 1 {
+			t.Fatal("Writes continued after first error returned")
+		}
+		// We expect errCount be 1 iff err is set
+		if lw.errCount != 0 != (err != nil) {
+			t.Fatal("Expected err when errCount != 0")
+		}
+	}
+}
+
+var stmts = []string{"i := 0", "select {}\nvar a, b = 1, 2\nreturn a + b", "go f()\ndefer func() {}()"}
+
+// checkEqual compares a and b.
+func checkEqual(aname, bname string, a, b []byte) error {
+	if bytes.Equal(a, b) {
+		return nil
+	}
+
+	return errors.New(string(diff.Diff(aname, a, bname, b)))
+}
+
+// format parses src, prints the corresponding AST, verifies the resulting
+// src is syntactically correct, and returns the resulting src or an error
+// if any.
+func format(src []byte, mode checkMode) ([]byte, error) {
+	// parse src
+	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		return nil, fmt.Errorf("parse: %s\n%s", err, src)
+	}
+
+	// filter exports if necessary
+	if mode&export != 0 {
+		ast.FileExports(f) // ignore result
+		f.Comments = nil // don't print comments that are not in AST
+	}
+
+	// determine printer configuration
+	cfg := Config{
+		Tabwidth: tabwidth,
+	}
+
+	if mode&rawFormat != 0 {
+		cfg.Mode |= RawFormat
+	}
+
+	if mode&normNumber != 0 {
+		cfg.Mode |= normalizeNumbers
+	}
+
+	if mode&strictLayout != 0 {
+		cfg.Mode |= StrictLayout
+	}
+
+	// print AST
+	var buf bytes.Buffer
+
+	if err := cfg.Fprint(&buf, fset, f); err != nil {
+		return nil, fmt.Errorf("print: %s", err)
+	}
+
+	// make sure formatted output is syntactically correct
+	res := buf.Bytes()
+
+	if _, err := parser.ParseFile(fset, "", res, parser.ParseComments|parser.SkipObjectResolution); err != nil {
+		return nil, fmt.Errorf("re-parse: %s\n%s", err, buf.Bytes())
+	}
+
+	return res, nil
+}
+
+// TestIssue7195 checks that go/printer does not add an extra level of indentation
+// when printing a return statement with multiple multi-line composite literals.
+func TestIssue7195(t *testing.T) {
+	const (
+		src = `package p
+type T struct{ x int }
+func _() (T, *T) {
+	return T{
+			x: 1,
+		}, &T{
+			x: 2,
+		}
+}
+`
+		want = `package p
+
+type T struct{ x int }
+
+func _() (T, *T) {
+	return T{
+		x: 1,
+	}, &T{
+		x: 2,
+	}
+}
+`
+	)
+
+	got, err := format([]byte(src), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := string(got); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s\n", got, want)
+	}
+}
+
+// TestX is a skeleton test that can be filled in for debugging one-off cases.
+// Do not remove.
+func TestX(t *testing.T) {
+	const src = `
+package p
+func _() {}
+`
+
+	if _, err := format([]byte(src), 0); err != nil {
+		t.Error(err)
 	}
 }
 
@@ -580,174 +867,6 @@ func (t *t) foo(a, b, c int) int {
 	}
 }
 
-var decls = []string{
-	`import "fmt"`,
-	"const pi = 3.1415\nconst e = 2.71828\n\nvar x = pi",
-	"func sum(x, y int) int {\n\treturn x + y\n}",
-}
-
-func TestDeclLists(t *testing.T) {
-	for _, src := range decls {
-		file, err := parser.ParseFile(fset, "", "package p;"+src, parser.ParseComments|parser.SkipObjectResolution)
-		if err != nil {
-			panic(err) // error in test
-		}
-
-		var buf bytes.Buffer
-
-		err = Fprint(&buf, fset, file.Decls) // only print declarations
-		if err != nil {
-			panic(err) // error in test
-		}
-
-		if out := buf.String(); out != src {
-			t.Errorf("\ngot : %q\nwant: %q\n", out, src)
-		}
-	}
-}
-
-var stmts = []string{"i := 0", "select {}\nvar a, b = 1, 2\nreturn a + b", "go f()\ndefer func() {}()"}
-
-func TestBaseIndent(t *testing.T) {
-	t.Parallel()
-	// The testfile must not contain multi-line raw strings since those
-	// are not indented (because their values must not change) and make
-	// this test fail.
-	const filename = "printer.go"
-
-	src, err := os.ReadFile(filename)
-	if err != nil {
-		panic(err) // error in test
-	}
-
-	file, err := parser.ParseFile(fset, filename, src, parser.SkipObjectResolution)
-	if err != nil {
-		panic(err) // error in test
-	}
-
-	for indent := range 4 {
-		t.Run(fmt.Sprint(indent), func(t *testing.T) {
-			t.Parallel()
-
-			var buf bytes.Buffer
-
-			(&Config{
-				Tabwidth: tabwidth,
-				Indent: indent,
-			}).Fprint(&buf, fset, file)
-			// all code must be indented by at least 'indent' tabs
-			lines := bytes.Split(buf.Bytes(), []byte{'\n'})
-
-			for i, line := range lines {
-				if len(line) == 0 {
-					continue // empty lines don't have indentation
-				}
-
-				var n int
-
-				for j, b := range line {
-					if b != '\t' {
-						// end of indentation
-						n = j
-						break
-					}
-				}
-
-				if n < indent {
-					t.Errorf("line %d: got only %d tabs; want at least %d: %q", i, n, indent, line)
-				}
-			}
-		})
-	}
-}
-
-// TestChanType tests that the tree for <-(<-chan int), without
-// ParenExpr, is correctly formatted with parens.
-// Test case for issue #63362.
-func TestChanType(t *testing.T) {
-	expr := &ast.UnaryExpr{
-		Op: token.ARROW,
-		X: &ast.CallExpr{
-			Fun: &ast.ChanType{
-				Dir: ast.RECV,
-				Value: &ast.Ident{
-					Name: "int",
-				},
-			},
-			Args: []ast.Expr{
-				&ast.Ident{
-					Name: "nil",
-				},
-			},
-		},
-	}
-
-	var buf bytes.Buffer
-
-	if err := Fprint(&buf, fset, expr); err != nil {
-		t.Fatal(err)
-	}
-
-	if got, want := buf.String(), `<-(<-chan int)(nil)`; got != want {
-		t.Fatalf("got:\n%s\nwant:\n%s\n", got, want)
-	}
-}
-
-// TestFuncType tests that an ast.FuncType with a nil Params field
-// can be printed (per go/ast specification). Test case for issue 3870.
-func TestFuncType(t *testing.T) {
-	src := &ast.File{
-		Name: &ast.Ident{
-			Name: "p",
-		},
-		Decls: []ast.Decl{
-			&ast.FuncDecl{
-				Name: &ast.Ident{
-					Name: "f",
-				},
-				Type: &ast.FuncType{},
-			},
-		},
-	}
-
-	var buf bytes.Buffer
-
-	if err := Fprint(&buf, fset, src); err != nil {
-		t.Fatal(err)
-	}
-
-	got := buf.String()
-
-	const want = `package p
-
-func f()
-`
-
-	if got != want {
-		t.Fatalf("got:\n%s\nwant:\n%s\n", got, want)
-	}
-}
-
-func TestStmtLists(t *testing.T) {
-	for _, src := range stmts {
-		file, err := parser.ParseFile(fset, "", "package p; func _() {"+src+"}", parser.ParseComments|parser.SkipObjectResolution)
-		if err != nil {
-			panic(err) // error in test
-		}
-
-		var buf bytes.Buffer
-
-		err = Fprint(&buf, fset, file.Decls[0].(*ast.FuncDecl).Body.List) // only print statements
-		if err != nil {
-			panic(err) // error in test
-		}
-
-		if out := buf.String(); out != src {
-			t.Errorf("\ngot : %q\nwant: %q\n", out, src)
-		}
-	}
-}
-
 func (l *limitWriter) Write(buf []byte) (n int, err error) {
 	n = len(buf)
 
@@ -762,293 +881,174 @@ func (l *limitWriter) Write(buf []byte) (n int, err error) {
 	return n, err
 }
 
-func TestCommentedNode(t *testing.T) {
-	const (
-		input = `package main
-
-func foo() {
-	// comment inside func
-}
-
-// leading comment
-type bar int // comment2
-
-`
-		foo = `func foo() {
-	// comment inside func
-}`
-		bar = `// leading comment
-type bar int // comment2
-`
-	)
-
-	lfset := token.NewFileSet()
-	f, err := parser.ParseFile(lfset, "input.go", input, parser.ParseComments|parser.SkipObjectResolution)
+func runcheck(t *testing.T, source, golden string, mode checkMode) {
+	src, err := os.ReadFile(source)
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
+		return
 	}
 
-	var buf bytes.Buffer
-
-	err = Fprint(&buf, lfset, &CommentedNode{
-		Node: f.Decls[0],
-		Comments: f.Comments,
-	})
-
+	res, err := format(src, mode)
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
+		return
 	}
 
-	if buf.String() != foo {
-		t.Errorf("got %q, want %q", buf.String(), foo)
+	// update golden files if necessary
+	if *update {
+		if werr := os.WriteFile(golden, res, 0o644); werr != nil {
+			t.Error(werr)
+		}
+
+		return
 	}
-	buf.Reset()
 
-	err = Fprint(&buf, lfset, &CommentedNode{
-		Node: f.Decls[1],
-		Comments: f.Comments,
-	})
-
+	// get golden
+	gld, err := os.ReadFile(golden)
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
+		return
 	}
 
-	if buf.String() != bar {
-		t.Errorf("got %q, want %q", buf.String(), bar)
+	// formatted source and golden must be the same
+	if cerr := checkEqual(fmt.Sprintf("format(%v)", source), golden, res, gld); cerr != nil {
+		t.Error(cerr)
+		return
+	}
+
+	if mode&idempotent != 0 {
+		// formatting golden must be idempotent
+		// (This is very difficult to achieve in general and for now
+		// it is only checked for files explicitly marked as such.)
+		res, err = format(gld, mode)
+
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		if err := checkEqual(golden, fmt.Sprintf("format(%s)", golden), gld, res); err != nil {
+			t.Errorf("golden is not idempotent: %s", err)
+		}
 	}
 }
 
-// TestEmptyDecl tests that empty decls for const, var, import are printed with
-// valid syntax e.g "var ()" instead of just "var", which is invalid and cannot
-// be parsed.
-func TestEmptyDecl(t *testing.T) { // issue 63566
-	for _, tok := range []token.Token{token.IMPORT, token.CONST, token.TYPE, token.VAR} {
-		var buf bytes.Buffer
+func check(t *testing.T, source, golden string, mode checkMode) {
+	// run the test
+	cc := make(chan int, 1)
 
-		Fprint(&buf, token.NewFileSet(), &ast.GenDecl{
-			Tok: tok,
+	go func() {
+		runcheck(t, source, golden, mode)
+		cc <- 0
+	}()
+
+	// wait with timeout
+	select {
+	case <-time.After(10 * time.Second): // plenty of a safety margin, even for very slow machines
+		// test running past time out
+		t.Errorf("%s: running too slowly", source)
+	case <-cc:
+		// test finished within allotted time margin
+	}
+}
+
+func TestFiles(t *testing.T) {
+	t.Parallel()
+	for _, e := range data {
+		source := filepath.Join(dataDir, e.source)
+		golden := filepath.Join(dataDir, e.golden)
+		mode := e.mode
+
+		t.Run(e.source, func(t *testing.T) {
+			t.Parallel()
+			check(t, source, golden, mode)
+			// TODO(gri) check that golden is idempotent
+			//check(t, golden, golden, e.mode)
 		})
+	}
+}
 
-		got := buf.String()
-		if want := tok.String() + " ()"; got != want {
-			t.Errorf("got %q, want %q", got, want)
+// testComment verifies that f can be parsed again after printing it
+// with its first comment set to comment at any possible source offset.
+func testComment(t *testing.T, f *ast.File, srclen int, comment *ast.Comment) {
+	f.Comments[0].List[0] = comment
+
+	var buf bytes.Buffer
+
+	for offs := 0; offs <= srclen; offs++ {
+		buf.Reset()
+		// Printing f should result in a correct program no
+		// matter what the (incorrect) comment position is.
+		if err := Fprint(&buf, fset, f); err != nil {
+			t.Error(err)
 		}
-	}
-}
 
-func TestIssue11151(t *testing.T) {
-	const src = "package p\t/*\r/1\r*\r/2*\r\r\r\r/3*\r\r+\r\r/4*/\n"
-
-	lfset := token.NewFileSet()
-	f, err := parser.ParseFile(lfset, "", src, parser.ParseComments|parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var buf bytes.Buffer
-
-	Fprint(&buf, lfset, f)
-
-	got := buf.String()
-
-	const want = "package p /*/1*\r/2*\r/3*+/4*/\n" // \r following opening /* should be stripped
-	if got != want {
-		t.Errorf("\ngot : %q\nwant: %q", got, want)
-	}
-
-	// the resulting program must be valid
-	_, err = parser.ParseFile(lfset, "", got, parser.SkipObjectResolution)
-
-	if err != nil {
-		t.Errorf("%v\norig: %q\ngot : %q", err, src, got)
-	}
-}
-
-// Verify that we don't print a newline between "return" and its results, as
-// that would incorrectly cause a naked return.
-func TestIssue32854(t *testing.T) {
-	src := `package foo
-
-func f() {
-        return Composite{
-                call(),
-        }
-}`
-	lfset := token.NewFileSet()
-	file, err := parser.ParseFile(lfset, "", src, parser.SkipObjectResolution)
-	if err != nil {
-		panic(err)
-	}
-
-	// Replace the result with call(), which is on the next line.
-	fd := file.Decls[0].(*ast.FuncDecl)
-	ret := fd.Body.List[0].(*ast.ReturnStmt)
-	ret.Results[0] = ret.Results[0].(*ast.CompositeLit).Elts[0]
-
-	var buf bytes.Buffer
-
-	if err := Fprint(&buf, lfset, ret); err != nil {
-		t.Fatal(err)
-	}
-
-	want := "return call()"
-	if got := buf.String(); got != want {
-		t.Fatalf("got %q, want %q", got, want)
-	}
-}
-
-// TestIssue7195 checks that go/printer does not add an extra level of indentation
-// when printing a return statement with multiple multi-line composite literals.
-func TestIssue7195(t *testing.T) {
-	const (
-		src = `package p
-type T struct{ x int }
-func _() (T, *T) {
-	return T{
-			x: 1,
-		}, &T{
-			x: 2,
+		if _, err := parser.ParseFile(fset, "", buf.Bytes(), parser.SkipObjectResolution); err != nil {
+			t.Fatalf("incorrect program for pos = %d:\n%s", comment.Slash, buf.String())
 		}
-}
-`
-		want = `package p
-
-type T struct{ x int }
-
-func _() (T, *T) {
-	return T{
-		x: 1,
-	}, &T{
-		x: 2,
-	}
-}
-`
-	)
-
-	got, err := format([]byte(src), 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if got := string(got); got != want {
-		t.Fatalf("got:\n%s\nwant:\n%s\n", got, want)
+		// Position information is just an offset.
+		// Move comment one byte down in the source.
+		comment.Slash++
 	}
 }
 
-// If a declaration has multiple specifications, a parenthesized
-// declaration must be printed even if Lparen is token.NoPos.
-func TestParenthesizedDecl(t *testing.T) {
-	// a package with multiple specs in a single declaration
-	const src = "package p; var ( a float64; b int )"
-
-	lfset := token.NewFileSet()
-	f, err := parser.ParseFile(lfset, "", src, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// print the original package
-	var buf bytes.Buffer
-
-	err = Fprint(&buf, lfset, f)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	original := buf.String()
-
-	// now remove parentheses from the declaration
-	for i := 0; i != len(f.Decls); i++ {
-		f.Decls[i].(*ast.GenDecl).Lparen = token.NoPos
-	}
-	buf.Reset()
-
-	err = Fprint(&buf, lfset, f)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if noparen := buf.String(); noparen != original {
-		t.Errorf("got %q, want %q", noparen, original)
-	}
-}
-
-func TestSourcePosNewline(t *testing.T) {
-	// We don't provide a syntax for escaping or unescaping characters in line
-	// directives (see https://go.dev/issue/24183#issuecomment-372449628).
-	// As a result, we cannot write a line directive with the correct path for a
-	// filename containing newlines. We should return an error rather than
-	// silently dropping or mangling it.
-
-	fname := "foo\nbar/bar.go"
-	src := `package bar`
-	lfset := token.NewFileSet()
-	f, err := parser.ParseFile(lfset, fname, src, parser.ParseComments|parser.AllErrors|parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cfg := &Config{
-		Mode: SourcePos, // emit line comments
-		Tabwidth: 8,
-	}
-
-	var buf bytes.Buffer
-
-	if err := cfg.Fprint(&buf, lfset, f); err == nil {
-		t.Errorf("Fprint did not error for source file path containing newline")
-	}
-
-	if buf.Len() != 0 {
-		t.Errorf("unexpected Fprint output:\n%s", buf.Bytes())
-	}
-}
-
-// Test whether the printer stops writing after the first error
-func TestWriteErrors(t *testing.T) {
+// Verify that the printer produces a correct program
+// even if the position information of comments introducing newlines
+// is incorrect.
+func TestBadComments(t *testing.T) {
 	t.Parallel()
 
-	const filename = "printer.go"
-
-	src, err := os.ReadFile(filename)
-	if err != nil {
-		panic(err) // error in test
-	}
-
-	file, err := parser.ParseFile(fset, filename, src, parser.SkipObjectResolution)
-	if err != nil {
-		panic(err) // error in test
-	}
-
-	for i := range 20 {
-		lw := &limitWriter{
-			remaining: i,
-		}
-		err := (&Config{
-			Mode: RawFormat,
-		}).Fprint(lw, fset, file)
-
-		if lw.errCount > 1 {
-			t.Fatal("Writes continued after first error returned")
-		}
-		// We expect errCount be 1 iff err is set
-		if lw.errCount != 0 != (err != nil) {
-			t.Fatal("Expected err when errCount != 0")
-		}
-	}
-}
-
-// TestX is a skeleton test that can be filled in for debugging one-off cases.
-// Do not remove.
-func TestX(t *testing.T) {
 	const src = `
+// first comment - text and position changed by test
 package p
-func _() {}
+import "fmt"
+const pi = 3.14 // rough circle
+var (
+	x, y, z int = 1, 2, 3
+	u, v float64
+)
+func fibo(n int) {
+	if n < 2 {
+		return n /* seed values */
+	}
+	return fibo(n-1) + fibo(n-2)
+}
 `
 
-	if _, err := format([]byte(src), 0); err != nil {
-		t.Error(err)
+	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		t.Error(err) // error in test
 	}
+
+	comment := f.Comments[0].List[0]
+	pos := comment.Pos()
+	if fset.PositionFor(
+		pos,
+		false, /* absolute position */).Offset != 1 {
+		t.Error("expected offset 1") // error in test
+	}
+	testComment(t, f, len(src), &ast.Comment{
+		Slash: pos,
+		Text: "//-style comment",
+	})
+	testComment(t, f, len(src), &ast.Comment{
+		Slash: pos,
+		Text: "/*-style comment */",
+	})
+	testComment(t, f, len(src), &ast.Comment{
+		Slash: pos,
+		Text: "/*-style \n comment */",
+	})
+	testComment(t, f, len(src), &ast.Comment{
+		Slash: pos,
+		Text: "/*-style comment \n\n\n */",
+	})
+}
+
+func (v visitor) Visit(n ast.Node) (w ast.Visitor) {
+	if ident, ok := n.(*ast.Ident); ok {
+		v <- ident
+	}
+
+	return v
 }

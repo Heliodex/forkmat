@@ -115,9 +115,143 @@ const (
 	noExtraLinebreak // disables extra line break after /*-style comment
 )
 
+// commonPrefix returns the common prefix of a and b.
+func commonPrefix(a, b string) string {
+	var i int
+
+	for i < len(a) && i < len(b) && a[i] == b[i] && (a[i] <= ' ' || a[i] == '*') {
+		i++
+	}
+
+	return a[0:i]
+}
+
+// getDoc returns the ast.CommentGroup associated with n, if any.
+func getDoc(n ast.Node) *ast.CommentGroup {
+	switch n := n.(type) {
+	case *ast.Field:
+		return n.Doc
+	case *ast.File:
+		return n.Doc
+	case *ast.FuncDecl:
+		return n.Doc
+	case *ast.GenDecl:
+		return n.Doc
+	case *ast.ImportSpec:
+		return n.Doc
+	case *ast.TypeSpec:
+		return n.Doc
+	case *ast.ValueSpec:
+		return n.Doc
+	}
+
+	return nil
+}
+
+func getLastComment(n ast.Node) *ast.CommentGroup {
+	switch n := n.(type) {
+	case *ast.Field:
+		return n.Comment
+	case *ast.File:
+		if len(n.Comments) > 0 {
+			return n.Comments[len(n.Comments)-1]
+		}
+	case *ast.GenDecl:
+		if len(n.Specs) > 0 {
+			return getLastComment(n.Specs[len(n.Specs)-1])
+		}
+	case *ast.ImportSpec:
+		return n.Comment
+	case *ast.TypeSpec:
+		return n.Comment
+	case *ast.ValueSpec:
+		return n.Comment
+	}
+
+	return nil
+}
+
+// Returns true if s contains only white space (only tabs and blanks can appear in the printer's context).
+func isBlank(s string) bool {
+	for i := range len(s) {
+		if s[i] > ' ' {
+			return false
+		}
+	}
+
+	return true
+}
+
+func mayCombine(prev token.Token, next byte) (b bool) {
+	switch prev {
+	case token.INT:
+		b = next == '.' // 1.
+	case token.ADD:
+		b = next == '+' // ++
+	case token.SUB:
+		b = next == '-' // --
+	case token.QUO:
+		b = next == '*' // /*
+	case token.LSS:
+		b = next == '-' || next == '<' // <- or <<
+	case token.AND:
+		b = next == '&' || next == '^' // && or &^
+	}
+
+	return
+}
+
+func newPrinter(cfg *Config, fset *token.FileSet, nodeSizes map[ast.Node]int) *printer {
+	p := printerPool.Get().(*printer)
+	*p = printer{
+		fset: fset,
+		nodeSizes: nodeSizes,
+		output: p.output[:0],
+		wsbuf: p.wsbuf[:0],
+		out: token.Position{
+			Line: 1,
+			Column: 1,
+		},
+		pos: token.Position{
+			Line: 1,
+			Column: 1,
+		},
+		Config: *cfg,
+		cachedPos: -1,
+	}
+
+	return p
+}
+
+// ---------------------------------------------------------------------------- Printing interface
+
+// nlimit limits n to maxNewlines.
+func nlimit(n int) int {
+	return min(n, maxNewlines)
+}
+
 // commentBefore reports whether the current comment group occurs before the next position in the source code and printing it does not introduce implicit semicolons.
 func (p *printer) commentBefore(next token.Position) bool {
 	return p.commentOffset < next.Offset && (!p.impliedSemi || !p.commentNewline)
+}
+
+// containsLinebreak reports whether the whitespace buffer contains any line breaks.
+func (p *printer) containsLinebreak() bool {
+	for _, ch := range p.wsbuf {
+		if ch == newline || ch == formfeed {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (p *printer) free() {
+	// Hard limit on buffer size; see https://golang.org/issue/23199.
+	if cap(p.output) > 64<<10 {
+		return
+	}
+	printerPool.Put(p)
 }
 
 func (p *printer) internalError(msg ...any) {
@@ -214,6 +348,12 @@ func (p *printer) recordLine(linePtr *int) {
 	p.linePtr = linePtr
 }
 
+func (p *printer) setPos(pos token.Pos) {
+	if pos.IsValid() {
+		p.pos = p.posFor(pos) // accurate position of next item
+	}
+}
+
 // writeIndent writes indentation.
 func (p *printer) writeIndent() {
 	// use "hard" htabs - indentation columns must not be discarded by the tabwriter
@@ -264,6 +404,125 @@ func (p *printer) writeByte(ch byte, n int) {
 
 	p.pos.Column += n
 	p.out.Column += n
+}
+
+// writeLineDirective writes a //line directive if necessary.
+func (p *printer) writeLineDirective(pos token.Position) {
+	if pos.IsValid() && (p.out.Line != pos.Line || p.out.Filename != pos.Filename) {
+		if strings.ContainsAny(pos.Filename, "\r\n") {
+			if p.sourcePosErr == nil {
+				p.sourcePosErr = fmt.Errorf("go/printer: source filename contains unexpected newline character: %q", pos.Filename)
+			}
+
+			return
+		}
+
+		p.output = append(p.output, tabwriter.Escape) // protect '\n' in //line from tabwriter interpretation
+		p.output = append(p.output, fmt.Sprintf("//line %s:%d\n", pos.Filename, pos.Line)...)
+		p.output = append(p.output, tabwriter.Escape)
+		// p.out must match the //line directive
+		p.out.Filename = pos.Filename
+		p.out.Line = pos.Line
+	}
+}
+
+// writeString writes the string s to p.output and updates p.pos, p.out, and p.last. If isLit is set, s is escaped w/ tabwriter.Escape characters to protect s from being interpreted by the tabwriter.
+//
+// Note: writeString is only used to write Go tokens, literals, and comments, all of which must be written literally. Thus, it is correct to always set isLit = true. However, setting it explicitly only when needed (i.e., when we don't know that s contains no tabs or line breaks) avoids processing extra escape characters and reduces run time of the printer benchmark by up to 10%.
+func (p *printer) writeString(pos token.Position, s string, isLit bool) {
+	if p.out.Column == 1 {
+		if p.Config.Mode&SourcePos != 0 {
+			p.writeLineDirective(pos)
+		}
+		p.writeIndent()
+	}
+
+	if pos.IsValid() {
+		// update p.pos (if pos is invalid, continue with existing p.pos) Note: Must do this after handling line beginnings because writeIndent updates p.pos if there's indentation, but p.pos is the position of s.
+		p.pos = pos
+	}
+
+	if isLit {
+		// Protect s such that is passes through the tabwriter unchanged. Note that valid Go programs cannot contain tabwriter.Escape bytes since they do not appear in legal UTF-8 sequences.
+		p.output = append(p.output, tabwriter.Escape)
+	}
+
+	if debug {
+		p.output = append(p.output, fmt.Sprintf("/*%s*/", pos)...) // do not update p.pos!
+	}
+
+	p.output = append(p.output, s...)
+
+	// update positions
+	var nlines int
+
+	var li int // index of last newline; valid if nlines > 0
+	for i := range len(s) {
+		// Raw string literals may contain any character except back quote (`).
+		if ch := s[i]; ch == '\n' || ch == '\f' {
+			// account for line break
+			nlines++
+			li = i
+			// A line break inside a literal will break whatever column formatting is in place; ignore any further alignment through the end of the line.
+			p.endAlignment = true
+		}
+	}
+
+	p.pos.Offset += len(s)
+
+	if nlines > 0 {
+		p.pos.Line += nlines
+		p.out.Line += nlines
+		c := len(s) - li
+		p.pos.Column = c
+		p.out.Column = c
+	} else {
+		p.pos.Column += len(s)
+		p.out.Column += len(s)
+	}
+
+	if isLit {
+		p.output = append(p.output, tabwriter.Escape)
+	}
+
+	p.last = p.pos
+}
+
+// writeWhitespace writes the first n whitespace entries.
+func (p *printer) writeWhitespace(n int) {
+	// write entries
+	for i := 0; i < n; i++ {
+		switch ch := p.wsbuf[i]; ch {
+		case ignore:
+			// ignore!
+		case indent:
+			p.indent++
+		case unindent:
+			p.indent--
+
+			if p.indent < 0 {
+				p.internalError("negative indentation:", p.indent)
+
+				p.indent = 0
+			}
+		case newline, formfeed:
+			// A line break immediately followed by a "correcting" unindent is swapped with the unindent - this permits proper label positioning. If a comment is between the line break and the label, the unindent is not part of the comment whitespace prefix and the comment will be positioned correctly indented.
+			if i+1 < n && p.wsbuf[i+1] == unindent {
+				// Use a formfeed to terminate the current section. Otherwise, a long label name on the next line leading to a wide column may increase the indentation column of lines before the label; effectively leading to wrong indentation.
+				p.wsbuf[i], p.wsbuf[i+1] = unindent, formfeed
+				i-- // do it again
+				continue
+			}
+
+			fallthrough
+		default:
+			p.writeByte(byte(ch), 1)
+		}
+	}
+
+	// shift remaining entries down
+	l := copy(p.wsbuf, p.wsbuf[n:])
+	p.wsbuf = p.wsbuf[:l]
 }
 
 // writeCommentPrefix writes the whitespace before a comment. If there is any pending whitespace, it consumes as much of it as is likely to help position the comment nicely. pos is the comment position, next the position of the item after all pending comments, prev is the previous comment in a group of comments (or nil), and tok is the next token.
@@ -375,108 +634,39 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 	}
 }
 
-// writeLineDirective writes a //line directive if necessary.
-func (p *printer) writeLineDirective(pos token.Position) {
-	if pos.IsValid() && (p.out.Line != pos.Line || p.out.Filename != pos.Filename) {
-		if strings.ContainsAny(pos.Filename, "\r\n") {
-			if p.sourcePosErr == nil {
-				p.sourcePosErr = fmt.Errorf("go/printer: source filename contains unexpected newline character: %q", pos.Filename)
+// writeCommentSuffix writes a line break after a comment if indicated and processes any leftover indentation information. If a line break is needed, the kind of break (newline vs formfeed) depends on the pending whitespace. The writeCommentSuffix result indicates if a newline was written or if a formfeed was dropped from the whitespace buffer.
+func (p *printer) writeCommentSuffix(needsLinebreak bool) (wroteNewline, droppedFF bool) {
+	for i, ch := range p.wsbuf {
+		switch ch {
+		case blank, vtab:
+			// ignore trailing whitespace
+			p.wsbuf[i] = ignore
+		case indent, unindent:
+			// don't lose indentation information
+		case newline, formfeed:
+			// if we need a line break, keep exactly one but remember if we dropped any formfeeds
+			if needsLinebreak {
+				needsLinebreak = false
+				wroteNewline = true
+			} else {
+				if ch == formfeed {
+					droppedFF = true
+				}
+
+				p.wsbuf[i] = ignore
 			}
-
-			return
-		}
-
-		p.output = append(p.output, tabwriter.Escape) // protect '\n' in //line from tabwriter interpretation
-		p.output = append(p.output, fmt.Sprintf("//line %s:%d\n", pos.Filename, pos.Line)...)
-		p.output = append(p.output, tabwriter.Escape)
-		// p.out must match the //line directive
-		p.out.Filename = pos.Filename
-		p.out.Line = pos.Line
-	}
-}
-
-// writeString writes the string s to p.output and updates p.pos, p.out, and p.last. If isLit is set, s is escaped w/ tabwriter.Escape characters to protect s from being interpreted by the tabwriter.
-//
-// Note: writeString is only used to write Go tokens, literals, and comments, all of which must be written literally. Thus, it is correct to always set isLit = true. However, setting it explicitly only when needed (i.e., when we don't know that s contains no tabs or line breaks) avoids processing extra escape characters and reduces run time of the printer benchmark by up to 10%.
-func (p *printer) writeString(pos token.Position, s string, isLit bool) {
-	if p.out.Column == 1 {
-		if p.Config.Mode&SourcePos != 0 {
-			p.writeLineDirective(pos)
-		}
-		p.writeIndent()
-	}
-
-	if pos.IsValid() {
-		// update p.pos (if pos is invalid, continue with existing p.pos) Note: Must do this after handling line beginnings because writeIndent updates p.pos if there's indentation, but p.pos is the position of s.
-		p.pos = pos
-	}
-
-	if isLit {
-		// Protect s such that is passes through the tabwriter unchanged. Note that valid Go programs cannot contain tabwriter.Escape bytes since they do not appear in legal UTF-8 sequences.
-		p.output = append(p.output, tabwriter.Escape)
-	}
-
-	if debug {
-		p.output = append(p.output, fmt.Sprintf("/*%s*/", pos)...) // do not update p.pos!
-	}
-
-	p.output = append(p.output, s...)
-
-	// update positions
-	var nlines int
-
-	var li int // index of last newline; valid if nlines > 0
-	for i := 0; i < len(s); i++ {
-		// Raw string literals may contain any character except back quote (`).
-		if ch := s[i]; ch == '\n' || ch == '\f' {
-			// account for line break
-			nlines++
-			li = i
-			// A line break inside a literal will break whatever column formatting is in place; ignore any further alignment through the end of the line.
-			p.endAlignment = true
 		}
 	}
+	p.writeWhitespace(len(p.wsbuf))
 
-	p.pos.Offset += len(s)
+	// make sure we have a line break
+	if needsLinebreak {
+		p.writeByte('\n', 1)
 
-	if nlines > 0 {
-		p.pos.Line += nlines
-		p.out.Line += nlines
-		c := len(s) - li
-		p.pos.Column = c
-		p.out.Column = c
-	} else {
-		p.pos.Column += len(s)
-		p.out.Column += len(s)
+		wroteNewline = true
 	}
 
-	if isLit {
-		p.output = append(p.output, tabwriter.Escape)
-	}
-
-	p.last = p.pos
-}
-
-// commonPrefix returns the common prefix of a and b.
-func commonPrefix(a, b string) string {
-	var i int
-
-	for i < len(a) && i < len(b) && a[i] == b[i] && (a[i] <= ' ' || a[i] == '*') {
-		i++
-	}
-
-	return a[0:i]
-}
-
-// Returns true if s contains only white space (only tabs and blanks can appear in the printer's context).
-func isBlank(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] > ' ' {
-			return false
-		}
-	}
-
-	return true
+	return
 }
 
 // stripCommonPrefix removes a common prefix from /*-style comment lines (unless no comment line is indented, all but the first line have some form of space prefix). The prefix is computed using heuristics such that is likely that the comment contents are nicely laid out after re-printing each line using the printer's current indentation.
@@ -592,17 +782,6 @@ func trimRight(s string) string {
 	return strings.TrimRightFunc(s, unicode.IsSpace)
 }
 
-// containsLinebreak reports whether the whitespace buffer contains any line breaks.
-func (p *printer) containsLinebreak() bool {
-	for _, ch := range p.wsbuf {
-		if ch == newline || ch == formfeed {
-			return true
-		}
-	}
-
-	return false
-}
-
 func (p *printer) writeComment(comment *ast.Comment) {
 	text := comment.Text
 	pos := p.posFor(comment.Pos())
@@ -652,78 +831,6 @@ func (p *printer) writeComment(comment *ast.Comment) {
 			p.writeString(pos, trimRight(line), true)
 		}
 	}
-}
-
-// writeWhitespace writes the first n whitespace entries.
-func (p *printer) writeWhitespace(n int) {
-	// write entries
-	for i := 0; i < n; i++ {
-		switch ch := p.wsbuf[i]; ch {
-		case ignore:
-			// ignore!
-		case indent:
-			p.indent++
-		case unindent:
-			p.indent--
-
-			if p.indent < 0 {
-				p.internalError("negative indentation:", p.indent)
-
-				p.indent = 0
-			}
-		case newline, formfeed:
-			// A line break immediately followed by a "correcting" unindent is swapped with the unindent - this permits proper label positioning. If a comment is between the line break and the label, the unindent is not part of the comment whitespace prefix and the comment will be positioned correctly indented.
-			if i+1 < n && p.wsbuf[i+1] == unindent {
-				// Use a formfeed to terminate the current section. Otherwise, a long label name on the next line leading to a wide column may increase the indentation column of lines before the label; effectively leading to wrong indentation.
-				p.wsbuf[i], p.wsbuf[i+1] = unindent, formfeed
-				i-- // do it again
-				continue
-			}
-
-			fallthrough
-		default:
-			p.writeByte(byte(ch), 1)
-		}
-	}
-
-	// shift remaining entries down
-	l := copy(p.wsbuf, p.wsbuf[n:])
-	p.wsbuf = p.wsbuf[:l]
-}
-
-// writeCommentSuffix writes a line break after a comment if indicated and processes any leftover indentation information. If a line break is needed, the kind of break (newline vs formfeed) depends on the pending whitespace. The writeCommentSuffix result indicates if a newline was written or if a formfeed was dropped from the whitespace buffer.
-func (p *printer) writeCommentSuffix(needsLinebreak bool) (wroteNewline, droppedFF bool) {
-	for i, ch := range p.wsbuf {
-		switch ch {
-		case blank, vtab:
-			// ignore trailing whitespace
-			p.wsbuf[i] = ignore
-		case indent, unindent:
-			// don't lose indentation information
-		case newline, formfeed:
-			// if we need a line break, keep exactly one but remember if we dropped any formfeeds
-			if needsLinebreak {
-				needsLinebreak = false
-				wroteNewline = true
-			} else {
-				if ch == formfeed {
-					droppedFF = true
-				}
-
-				p.wsbuf[i] = ignore
-			}
-		}
-	}
-	p.writeWhitespace(len(p.wsbuf))
-
-	// make sure we have a line break
-	if needsLinebreak {
-		p.writeByte('\n', 1)
-
-		wroteNewline = true
-	}
-
-	return
 }
 
 // intersperseComments consumes all comments that appear before the next token tok and prints it together with the buffered whitespace (i.e., the whitespace that needs to be written before the next token). A heuristic is used to mix the comments and whitespace. The intersperseComments result indicates if a newline was written or if a formfeed was dropped from the whitespace buffer.
@@ -792,32 +899,6 @@ func (p *printer) intersperseComments(next token.Position, tok token.Token) (wro
 	return
 }
 
-func mayCombine(prev token.Token, next byte) (b bool) {
-	switch prev {
-	case token.INT:
-		b = next == '.' // 1.
-	case token.ADD:
-		b = next == '+' // ++
-	case token.SUB:
-		b = next == '-' // --
-	case token.QUO:
-		b = next == '*' // /*
-	case token.LSS:
-		b = next == '-' || next == '<' // <- or <<
-	case token.AND:
-		b = next == '&' || next == '^' // && or &^
-	}
-
-	return
-}
-
-// ---------------------------------------------------------------------------- Printing interface
-
-// nlimit limits n to maxNewlines.
-func nlimit(n int) int {
-	return min(n, maxNewlines)
-}
-
 // flush prints any pending comments and whitespace occurring textually before the position of the next token tok. The flush result indicates if a newline was written or if a formfeed was dropped from the whitespace buffer.
 func (p *printer) flush(next token.Position, tok token.Token) (wroteNewline, droppedFF bool) {
 	if p.commentBefore(next) {
@@ -830,6 +911,13 @@ func (p *printer) flush(next token.Position, tok token.Token) (wroteNewline, dro
 
 	return
 }
+
+// trimmer is implemented as a state machine. It can be in one of the following states:
+const (
+	inSpace = iota // inside space
+	inEscape // inside text bracketed by tabwriter.Escapes
+	inText // inside text
+)
 
 // print prints a list of "items" (roughly corresponding to syntactic tokens, but also including whitespace and formatting information). It is the only print function that should be called directly from any of the AST printing functions in nodes.go.
 //
@@ -958,56 +1046,13 @@ func (p *printer) print(args ...any) {
 	}
 }
 
-func (p *printer) setPos(pos token.Pos) {
-	if pos.IsValid() {
-		p.pos = p.posFor(pos) // accurate position of next item
-	}
-}
+// Design note: It is tempting to eliminate extra blanks occurring in
+//              whitespace in this function as it could simplify some
+//              of the blanks logic in the node printing functions.
+//              However, this would mess up any formatting done by
+//              the tabwriter.
 
-// getDoc returns the ast.CommentGroup associated with n, if any.
-func getDoc(n ast.Node) *ast.CommentGroup {
-	switch n := n.(type) {
-	case *ast.Field:
-		return n.Doc
-	case *ast.File:
-		return n.Doc
-	case *ast.FuncDecl:
-		return n.Doc
-	case *ast.GenDecl:
-		return n.Doc
-	case *ast.ImportSpec:
-		return n.Doc
-	case *ast.TypeSpec:
-		return n.Doc
-	case *ast.ValueSpec:
-		return n.Doc
-	}
-
-	return nil
-}
-
-func getLastComment(n ast.Node) *ast.CommentGroup {
-	switch n := n.(type) {
-	case *ast.Field:
-		return n.Comment
-	case *ast.File:
-		if len(n.Comments) > 0 {
-			return n.Comments[len(n.Comments)-1]
-		}
-	case *ast.GenDecl:
-		if len(n.Specs) > 0 {
-			return getLastComment(n.Specs[len(n.Specs)-1])
-		}
-	case *ast.ImportSpec:
-		return n.Comment
-	case *ast.TypeSpec:
-		return n.Comment
-	case *ast.ValueSpec:
-		return n.Comment
-	}
-
-	return nil
-}
+var aNewline = []byte("\n")
 
 func (p *printer) printNode(node any) error {
 	// unpack *CommentedNode, if any
@@ -1104,25 +1149,39 @@ unsupported:
 	return fmt.Errorf("go/printer: unsupported node type %T", node)
 }
 
-// trimmer is implemented as a state machine. It can be in one of the following states:
 const (
-	inSpace = iota // inside space
-	inEscape // inside text bracketed by tabwriter.Escapes
-	inText // inside text
+	RawFormat Mode = 1 << iota // do not use a tabwriter; if set, UseSpaces is ignored
+	TabIndent // use tabs for indentation independent of UseSpaces
+	UseSpaces // use spaces instead of tabs for alignment
+	SourcePos // emit //line directives to preserve original source positions
+
+	// StrictLayout ignores the line structure of the source when deciding where to break lines, and lays code out from the AST alone. Comments and the number of blank lines around them still follow the source. See strict.go for the rules.
+	StrictLayout Mode = 1 << 29
 )
+
+// The mode below is not included in printer's public API because editing code text is deemed out of scope. Because this mode is unexported, it's also possible to modify or remove it based on the evolving needs of go/format and cmd/gofmt without breaking users. See discussion in CL 240683.
+const (
+	// normalizeNumbers means to canonicalize number literal prefixes and exponents while printing.
+	//
+	// This value is known in and used by go/format and cmd/gofmt. It is currently more convenient and performant for those packages to apply number normalization during printing, rather than by modifying the AST in advance.
+	normalizeNumbers Mode = 1 << 30
+)
+
+var printerPool = sync.Pool{
+	New: func() any {
+		return &printer{
+			// Whitespace sequences are short.
+			wsbuf: make([]whiteSpace, 0, 16),
+			// We start the printer with a 16K output buffer, which is currently larger than about 80% of Go files in the standard library.
+			output: make([]byte, 0, 16<<10),
+		}
+	},
+}
 
 func (p *trimmer) resetSpace() {
 	p.state = inSpace
 	p.space = p.space[0:0]
 }
-
-// Design note: It is tempting to eliminate extra blanks occurring in
-//              whitespace in this function as it could simplify some
-//              of the blanks logic in the node printing functions.
-//              However, this would mess up any formatting done by
-//              the tabwriter.
-
-var aNewline = []byte("\n")
 
 func (p *trimmer) Write(data []byte) (n int, err error) {
 	// invariants: p.state == inSpace:
@@ -1201,65 +1260,6 @@ func (p *trimmer) Write(data []byte) (n int, err error) {
 	}
 
 	return
-}
-
-const (
-	RawFormat Mode = 1 << iota // do not use a tabwriter; if set, UseSpaces is ignored
-	TabIndent // use tabs for indentation independent of UseSpaces
-	UseSpaces // use spaces instead of tabs for alignment
-	SourcePos // emit //line directives to preserve original source positions
-
-	// StrictLayout ignores the line structure of the source when deciding where to break lines, and lays code out from the AST alone. Comments and the number of blank lines around them still follow the source. See strict.go for the rules.
-	StrictLayout Mode = 1 << 29
-)
-
-// The mode below is not included in printer's public API because editing code text is deemed out of scope. Because this mode is unexported, it's also possible to modify or remove it based on the evolving needs of go/format and cmd/gofmt without breaking users. See discussion in CL 240683.
-const (
-	// normalizeNumbers means to canonicalize number literal prefixes and exponents while printing.
-	//
-	// This value is known in and used by go/format and cmd/gofmt. It is currently more convenient and performant for those packages to apply number normalization during printing, rather than by modifying the AST in advance.
-	normalizeNumbers Mode = 1 << 30
-)
-
-var printerPool = sync.Pool{
-	New: func() any {
-		return &printer{
-			// Whitespace sequences are short.
-			wsbuf: make([]whiteSpace, 0, 16),
-			// We start the printer with a 16K output buffer, which is currently larger than about 80% of Go files in the standard library.
-			output: make([]byte, 0, 16<<10),
-		}
-	},
-}
-
-func newPrinter(cfg *Config, fset *token.FileSet, nodeSizes map[ast.Node]int) *printer {
-	p := printerPool.Get().(*printer)
-	*p = printer{
-		fset: fset,
-		nodeSizes: nodeSizes,
-		output: p.output[:0],
-		wsbuf: p.wsbuf[:0],
-		out: token.Position{
-			Line: 1,
-			Column: 1,
-		},
-		pos: token.Position{
-			Line: 1,
-			Column: 1,
-		},
-		Config: *cfg,
-		cachedPos: -1,
-	}
-
-	return p
-}
-
-func (p *printer) free() {
-	// Hard limit on buffer size; see https://golang.org/issue/23199.
-	if cap(p.output) > 64<<10 {
-		return
-	}
-	printerPool.Put(p)
 }
 
 // fprint implements Fprint and takes a nodesSizes map for setting up the printer state.

@@ -7,7 +7,6 @@ import "flag"
 
 type dummyCounter struct{}
 
-func (dc dummyCounter) Inc() {}
 func CountFlagValue(prefix string, flagSet flag.FlagSet, flagName string) {}
 func CountFlags(name string, flagSet flag.FlagSet) {}
 func Inc(name string) {}
@@ -21,3 +20,4 @@ func NewStack(name string, depth int) dummyCounter {
 }
 
 func Open() {}
+func (dc dummyCounter) Inc() {}

@@ -8,6 +8,40 @@ import (
 
 type simplifier struct{}
 
+func isBlank(x ast.Expr) bool {
+	ident, ok := x.(*ast.Ident)
+
+	return ok && ident.Name == "_"
+}
+
+func isEmpty(f *ast.File, g *ast.GenDecl) bool {
+	if g.Doc != nil || g.Specs != nil {
+		return false
+	}
+
+	for _, c := range f.Comments {
+		// if there is a comment in the declaration, it is not considered empty
+		if g.Pos() <= c.Pos() && c.End() <= g.End() {
+			return false
+		}
+	}
+
+	return true
+}
+
+func removeEmptyDeclGroups(f *ast.File) {
+	var i int
+
+	for _, d := range f.Decls {
+		if g, ok := d.(*ast.GenDecl); !ok || !isEmpty(f, g) {
+			f.Decls[i] = d
+			i++
+		}
+	}
+
+	f.Decls = f.Decls[:i]
+}
+
 func (s simplifier) simplifyLiteral(typ reflect.Value, astType, x ast.Expr, px *ast.Expr) {
 	ast.Walk(s, x) // simplify x
 
@@ -121,40 +155,6 @@ func (s simplifier) Visit(node ast.Node) ast.Visitor {
 	}
 
 	return s
-}
-
-func isBlank(x ast.Expr) bool {
-	ident, ok := x.(*ast.Ident)
-
-	return ok && ident.Name == "_"
-}
-
-func isEmpty(f *ast.File, g *ast.GenDecl) bool {
-	if g.Doc != nil || g.Specs != nil {
-		return false
-	}
-
-	for _, c := range f.Comments {
-		// if there is a comment in the declaration, it is not considered empty
-		if g.Pos() <= c.Pos() && c.End() <= g.End() {
-			return false
-		}
-	}
-
-	return true
-}
-
-func removeEmptyDeclGroups(f *ast.File) {
-	var i int
-
-	for _, d := range f.Decls {
-		if g, ok := d.(*ast.GenDecl); !ok || !isEmpty(f, g) {
-			f.Decls[i] = d
-			i++
-		}
-	}
-
-	f.Decls = f.Decls[:i]
 }
 
 func simplify(f *ast.File) {

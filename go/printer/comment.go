@@ -8,7 +8,7 @@ import (
 
 // allStars reports whether text is the interior of an old-style /* */ comment with a star at the start of each line.
 func allStars(text string) bool {
-	for i := 0; i < len(text); i++ {
+	for i := range len(text) {
 		if text[i] == '\n' {
 			j := i + 1
 

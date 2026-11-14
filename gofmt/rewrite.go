@@ -12,143 +12,6 @@ import (
 	"unicode/utf8"
 )
 
-// parseExpr parses s as an expression. It might make sense to expand this to allow statement patterns, but there are problems with preserving formatting and also with what a wildcard for a statement looks like.
-func parseExpr(s, what string) ast.Expr {
-	x, err := parser.ParseExpr(s)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "parsing %s %s at %s\n", what, s, err)
-		os.Exit(2)
-	}
-
-	return x
-}
-
-// Keep this function for debugging.
-/*
-func dump(msg string, val reflect.Value) {
-	fmt.Printf("%s:\n", msg)
-	ast.Print(fileSet, val.Interface())
-	fmt.Println()
-}
-*/
-
-// rewriteFile applies the rewrite rule 'pattern -> replace' to an entire file.
-func rewriteFile(fileSet *token.FileSet, pattern, replace ast.Expr, p *ast.File) *ast.File {
-	cmap := ast.NewCommentMap(fileSet, p, p.Comments)
-	m := make(map[string]reflect.Value)
-	pat := reflect.ValueOf(pattern)
-	repl := reflect.ValueOf(replace)
-
-	var rewriteVal func(val reflect.Value) reflect.Value
-
-	rewriteVal = func(val reflect.Value) reflect.Value {
-		// don't bother if val is invalid to start with
-		if !val.IsValid() {
-			return reflect.Value{}
-		}
-
-		val = apply(rewriteVal, val)
-
-		clear(m)
-		if match(m, pat, val) {
-			val = subst(m, repl, reflect.ValueOf(val.Interface().(ast.Node).Pos()))
-		}
-
-		return val
-	}
-	r := apply(rewriteVal, reflect.ValueOf(p)).Interface().(*ast.File)
-	r.Comments = cmap.Filter(r).Comments() // recreate comments list
-	return r
-}
-
-func initRewrite() {
-	if *rewriteRule == "" {
-		rewrite = nil // disable any previous rewrite
-		return
-	}
-
-	f := strings.Split(*rewriteRule, "->")
-	if len(f) != 2 {
-		fmt.Fprintf(os.Stderr, "rewrite rule must be of the form 'pattern -> replacement'\n")
-		os.Exit(2)
-	}
-
-	pattern := parseExpr(f[0], "pattern")
-	replace := parseExpr(f[1], "replacement")
-	rewrite = func(fset *token.FileSet, p *ast.File) *ast.File {
-		return rewriteFile(fset, pattern, replace, p)
-	}
-}
-
-// set is a wrapper for x.Set(y); it protects the caller from panics if x cannot be changed to y.
-func set(x, y reflect.Value) {
-	// don't bother if x cannot be set or y is invalid
-	if !x.CanSet() || !y.IsValid() {
-		return
-	}
-
-	defer func() {
-		if x := recover(); x != nil {
-			if s, ok := x.(string); ok && (strings.Contains(s, "type mismatch") || strings.Contains(s, "not assignable")) {
-				// x cannot be set to y - ignore this rewrite
-				return
-			}
-			panic(x)
-		}
-	}()
-
-	x.Set(y)
-}
-
-// Values/types for special cases.
-var (
-	identType = reflect.TypeFor[*ast.Ident]()
-	positionType = reflect.TypeFor[token.Pos]()
-	callExprType = reflect.TypeFor[*ast.CallExpr]()
-
-	// The types of ast.Ident.Obj and ast.File.Scope, reached through their fields so that the deprecated ast.Object and ast.Scope names are not used. Parsing skips object resolution, so these fields are always nil.
-	objectPtrType = fieldType[ast.Ident]("Obj")
-	scopePtrType = fieldType[ast.File]("Scope")
-	objectPtrNil = reflect.Zero(objectPtrType)
-	scopePtrNil = reflect.Zero(scopePtrType)
-)
-
-// apply replaces each AST field x in val with f(x), returning val. To avoid extra conversions, f operates on the reflect.Value form.
-func apply(f func(reflect.Value) reflect.Value, val reflect.Value) reflect.Value {
-	if !val.IsValid() {
-		return reflect.Value{}
-	}
-
-	// *ast.Objects introduce cycles and are likely incorrect after rewrite; don't follow them but replace with nil instead
-	if val.Type() == objectPtrType {
-		return objectPtrNil
-	}
-
-	// similarly for scopes: they are likely incorrect after a rewrite; replace them with nil
-	if val.Type() == scopePtrType {
-		return scopePtrNil
-	}
-
-	switch v := reflect.Indirect(val); v.Kind() {
-	case reflect.Slice:
-		for i := 0; i < v.Len(); i++ {
-			e := v.Index(i)
-
-			set(e, f(e))
-		}
-	case reflect.Struct:
-		for _, e := range v.Fields() {
-			set(e, f(e))
-		}
-	case reflect.Interface:
-		e := v.Elem()
-
-		set(v, f(e))
-	}
-
-	return val
-}
-
 // fieldType returns the type of the field called name in T.
 func fieldType[T any](name string) reflect.Type {
 	f, ok := reflect.TypeFor[T]().FieldByName(name)
@@ -224,7 +87,7 @@ func match(m map[string]reflect.Value, pattern, val reflect.Value) bool {
 			return false
 		}
 
-		for i := 0; i < p.Len(); i++ {
+		for i := range p.Len() {
 			if !match(m, p.Index(i), v.Index(i)) {
 				return false
 			}
@@ -232,7 +95,7 @@ func match(m map[string]reflect.Value, pattern, val reflect.Value) bool {
 
 		return true
 	case reflect.Struct:
-		for i := 0; i < p.NumField(); i++ {
+		for i := range p.NumField() {
 			if !match(m, p.Field(i), v.Field(i)) {
 				return false
 			}
@@ -245,6 +108,86 @@ func match(m map[string]reflect.Value, pattern, val reflect.Value) bool {
 
 	// Handle token integers, etc.
 	return p.Interface() == v.Interface()
+}
+
+// parseExpr parses s as an expression. It might make sense to expand this to allow statement patterns, but there are problems with preserving formatting and also with what a wildcard for a statement looks like.
+func parseExpr(s, what string) ast.Expr {
+	x, err := parser.ParseExpr(s)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "parsing %s %s at %s\n", what, s, err)
+		os.Exit(2)
+	}
+
+	return x
+}
+
+// Values/types for special cases.
+var (
+	identType = reflect.TypeFor[*ast.Ident]()
+	positionType = reflect.TypeFor[token.Pos]()
+	callExprType = reflect.TypeFor[*ast.CallExpr]()
+
+	// The types of ast.Ident.Obj and ast.File.Scope, reached through their fields so that the deprecated ast.Object and ast.Scope names are not used. Parsing skips object resolution, so these fields are always nil.
+	objectPtrType = fieldType[ast.Ident]("Obj")
+	scopePtrType = fieldType[ast.File]("Scope")
+	objectPtrNil = reflect.Zero(objectPtrType)
+	scopePtrNil = reflect.Zero(scopePtrType)
+)
+
+// set is a wrapper for x.Set(y); it protects the caller from panics if x cannot be changed to y.
+func set(x, y reflect.Value) {
+	// don't bother if x cannot be set or y is invalid
+	if !x.CanSet() || !y.IsValid() {
+		return
+	}
+
+	defer func() {
+		if x := recover(); x != nil {
+			if s, ok := x.(string); ok && (strings.Contains(s, "type mismatch") || strings.Contains(s, "not assignable")) {
+				// x cannot be set to y - ignore this rewrite
+				return
+			}
+			panic(x)
+		}
+	}()
+
+	x.Set(y)
+}
+
+// apply replaces each AST field x in val with f(x), returning val. To avoid extra conversions, f operates on the reflect.Value form.
+func apply(f func(reflect.Value) reflect.Value, val reflect.Value) reflect.Value {
+	if !val.IsValid() {
+		return reflect.Value{}
+	}
+
+	// *ast.Objects introduce cycles and are likely incorrect after rewrite; don't follow them but replace with nil instead
+	if val.Type() == objectPtrType {
+		return objectPtrNil
+	}
+
+	// similarly for scopes: they are likely incorrect after a rewrite; replace them with nil
+	if val.Type() == scopePtrType {
+		return scopePtrNil
+	}
+
+	switch v := reflect.Indirect(val); v.Kind() {
+	case reflect.Slice:
+		for i := range v.Len() {
+			e := v.Index(i)
+
+			set(e, f(e))
+		}
+	case reflect.Struct:
+		for _, e := range v.Fields() {
+			set(e, f(e))
+		}
+	case reflect.Interface:
+		e := v.Elem()
+
+		set(v, f(e))
+	}
+
+	return val
 }
 
 // subst returns a copy of pattern with values from m substituted in place of wildcards and pos used as the position of tokens from the pattern. if m == nil, subst returns a copy of pattern and doesn't change the line number information.
@@ -281,7 +224,7 @@ func subst(m map[string]reflect.Value, pattern, pos reflect.Value) reflect.Value
 
 		v := reflect.MakeSlice(p.Type(), p.Len(), p.Len())
 
-		for i := 0; i < p.Len(); i++ {
+		for i := range p.Len() {
 			v.Index(i).Set(subst(m, p.Index(i), pos))
 		}
 
@@ -289,7 +232,7 @@ func subst(m map[string]reflect.Value, pattern, pos reflect.Value) reflect.Value
 	case reflect.Struct:
 		v := reflect.New(p.Type()).Elem()
 
-		for i := 0; i < p.NumField(); i++ {
+		for i := range p.NumField() {
 			v.Field(i).Set(subst(m, p.Field(i), pos))
 		}
 
@@ -313,4 +256,61 @@ func subst(m map[string]reflect.Value, pattern, pos reflect.Value) reflect.Value
 	}
 
 	return pattern
+}
+
+// Keep this function for debugging.
+/*
+func dump(msg string, val reflect.Value) {
+	fmt.Printf("%s:\n", msg)
+	ast.Print(fileSet, val.Interface())
+	fmt.Println()
+}
+*/
+
+// rewriteFile applies the rewrite rule 'pattern -> replace' to an entire file.
+func rewriteFile(fileSet *token.FileSet, pattern, replace ast.Expr, p *ast.File) *ast.File {
+	cmap := ast.NewCommentMap(fileSet, p, p.Comments)
+	m := make(map[string]reflect.Value)
+	pat := reflect.ValueOf(pattern)
+	repl := reflect.ValueOf(replace)
+
+	var rewriteVal func(val reflect.Value) reflect.Value
+
+	rewriteVal = func(val reflect.Value) reflect.Value {
+		// don't bother if val is invalid to start with
+		if !val.IsValid() {
+			return reflect.Value{}
+		}
+
+		val = apply(rewriteVal, val)
+
+		clear(m)
+		if match(m, pat, val) {
+			val = subst(m, repl, reflect.ValueOf(val.Interface().(ast.Node).Pos()))
+		}
+
+		return val
+	}
+	r := apply(rewriteVal, reflect.ValueOf(p)).Interface().(*ast.File)
+	r.Comments = cmap.Filter(r).Comments() // recreate comments list
+	return r
+}
+
+func initRewrite() {
+	if *rewriteRule == "" {
+		rewrite = nil // disable any previous rewrite
+		return
+	}
+
+	f := strings.Split(*rewriteRule, "->")
+	if len(f) != 2 {
+		fmt.Fprintf(os.Stderr, "rewrite rule must be of the form 'pattern -> replacement'\n")
+		os.Exit(2)
+	}
+
+	pattern := parseExpr(f[0], "pattern")
+	replace := parseExpr(f[1], "replacement")
+	rewrite = func(fset *token.FileSet, p *ast.File) *ast.File {
+		return rewriteFile(fset, pattern, replace, p)
+	}
 }

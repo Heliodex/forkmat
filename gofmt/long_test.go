@@ -166,12 +166,12 @@ func TestAll(t *testing.T) {
 	// launch test goroutines
 	done := make(chan int)
 
-	for i := 0; i < *ngo; i++ {
+	for range *ngo {
 		go testFiles(t, filenames, done)
 	}
 
 	// wait for all test goroutines to complete
-	for i := 0; i < *ngo; i++ {
+	for range *ngo {
 		<-done
 	}
 

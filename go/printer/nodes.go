@@ -22,6 +22,198 @@ type (
 	}
 )
 
+// ---------------------------------------------------------------------------- Files
+
+func declToken(decl ast.Decl) (tok token.Token) {
+	tok = token.ILLEGAL
+
+	switch d := decl.(type) {
+	case *ast.FuncDecl:
+		tok = token.FUNC
+	case *ast.GenDecl:
+		tok = d.Tok
+	}
+
+	return
+}
+
+func diffPrec(expr ast.Expr, prec int) int {
+	if x, ok := expr.(*ast.BinaryExpr); !ok || prec != x.Op.Precedence() {
+		return 1
+	}
+
+	return 0
+}
+
+const (
+	commaTerm exprListMode = 1 << iota // list is optionally terminated by a comma
+	noIndent // no extra indentation in multi-line lists
+	strictBreak // under StrictLayout, put each element on its own line
+)
+
+func identListSize(list []*ast.Ident, maxSize int) (size int) {
+	for i, x := range list {
+		if i > 0 {
+			size += len(", ")
+		}
+
+		size += utf8.RuneCountInString(x.Name)
+
+		if size >= maxSize {
+			break
+		}
+	}
+
+	return
+}
+
+const filteredMsg = "contains filtered or unexported fields"
+
+func isBinary(expr ast.Expr) bool {
+	_, ok := expr.(*ast.BinaryExpr)
+
+	return ok
+}
+
+const (
+	funcParam paramMode = iota
+	funcTParam
+	typeTParam
+)
+
+// isLegacyOctal reports whether x is an integer literal in the old leading-zero octal notation, such as 0777 or 0_777. A lone 0 is not legacy octal, and neither are the decimal or floating-point literals that merely start with a zero (0.5, 0e3, 0123.5).
+func isLegacyOctal(x string) bool {
+	if len(x) < 2 || x[0] != '0' {
+		return false
+	}
+
+	for i := 1; i < len(x); i++ {
+		if c := x[i]; (c < '0' || c > '7') && c != '_' {
+			return false
+		}
+	}
+
+	return true
+}
+
+// isTypeElem reports whether x is a (possibly parenthesized) type element expression. The result is false if x could be a type element OR an ordinary (value) expression.
+func isTypeElem(x ast.Expr) bool {
+	switch x := x.(type) {
+	case *ast.ArrayType, *ast.StructType, *ast.FuncType, *ast.InterfaceType, *ast.MapType, *ast.ChanType:
+		return true
+	case *ast.BinaryExpr:
+		return isTypeElem(x.X) || isTypeElem(x.Y)
+	case *ast.ParenExpr:
+		return isTypeElem(x.X)
+	case *ast.UnaryExpr:
+		return x.Op == token.TILDE
+	}
+
+	return false
+}
+
+// combinesWithName reports whether a name followed by the expression x syntactically combines to another valid (value) expression. For instance using *T for x, "name *T" syntactically appears as the expression x*T. On the other hand, using  P|Q or *P|~Q for x, "name P|Q" or "name *P|~Q" cannot be combined into a valid (value) expression.
+func combinesWithName(x ast.Expr) bool {
+	switch x := x.(type) {
+	case *ast.StarExpr:
+		// name *x.X combines to name*x.X if x.X is not a type element
+		return !isTypeElem(x.X)
+	case *ast.BinaryExpr:
+		return combinesWithName(x.X) && !isTypeElem(x.Y)
+	case *ast.ParenExpr:
+		return !isTypeElem(x.X)
+	}
+
+	return false
+}
+
+func isTypeName(x ast.Expr) bool {
+	switch t := x.(type) {
+	case *ast.Ident:
+		return true
+	case *ast.SelectorExpr:
+		return isTypeName(t.X)
+	}
+
+	return false
+}
+
+// normalizedNumber rewrites base prefixes and exponents of numbers to use lower-case letters (0X123 to 0x123 and 1.2E3 to 1.2e3), spells octal literals with an explicit 0o prefix (0765 to 0o765), and removes leading 0's from integer imaginary literals (0765i to 765i). It leaves hexadecimal digits alone.
+//
+// normalizedNumber doesn't modify the ast.BasicLit value lit points to. If lit is not a number or a number in canonical format already, lit is returned as is. Otherwise a new ast.BasicLit is created.
+func normalizedNumber(lit *ast.BasicLit) *ast.BasicLit {
+	if lit.Kind != token.INT && lit.Kind != token.FLOAT && lit.Kind != token.IMAG {
+		return lit // not a number - nothing to do
+	}
+
+	if len(lit.Value) < 2 {
+		return lit // only one digit (common case) - nothing to do
+	}
+	// len(lit.Value) >= 2
+
+	// We ignore lit.Kind because for lit.Kind == token.IMAG the literal may be an integer or floating-point value, decimal or not. Instead, just consider the literal pattern.
+	x := lit.Value
+
+	switch x[:2] {
+	default:
+		// 0-prefix octal, decimal int, or float (possibly with 'i' suffix)
+		if i := strings.LastIndexByte(x, 'E'); i >= 0 {
+			x = x[:i] + "e" + x[i+1:]
+			break
+		}
+		// Spell octal literals with an explicit 0o prefix. Only plain integers qualify: leading zeros in an imaginary literal are decimal (imaginary_lit admits decimal_digits), so 0777i is the decimal 777i and must not become 0o777i.
+		if lit.Kind == token.INT && isLegacyOctal(x) {
+			x = "0o" + x[1:]
+			break
+		}
+		// remove leading 0's from integer (but not floating-point) imaginary literals
+		if x[len(x)-1] == 'i' && !strings.ContainsAny(x, ".e") {
+			x = strings.TrimLeft(x, "0_")
+
+			if x == "i" {
+				x = "0i"
+			}
+		}
+	case "0X":
+		x = "0x" + x[2:]
+		// possibly a hexadecimal float
+		if i := strings.LastIndexByte(x, 'P'); i >= 0 {
+			x = x[:i] + "p" + x[i+1:]
+		}
+	case "0x":
+		// possibly a hexadecimal float
+		i := strings.LastIndexByte(x, 'P')
+		if i == -1 {
+			return lit // nothing to do
+		}
+
+		x = x[:i] + "p" + x[i+1:]
+	case "0O":
+		x = "0o" + x[2:]
+	case "0o":
+		return lit // nothing to do
+	case "0B":
+		x = "0b" + x[2:]
+	case "0b":
+		return lit // nothing to do
+	}
+
+	return &ast.BasicLit{
+		ValuePos: lit.ValuePos,
+		Kind: lit.Kind,
+		Value: x,
+	}
+}
+
+// distanceFrom returns the column difference between p.out (the current output position) and startOutCol. If the start position is on a different line from the current position (or either is unknown), the result is infinity.
+func (p *printer) distanceFrom(startPos token.Pos, startOutCol int) int {
+	if startPos.IsValid() && p.pos.IsValid() && (p.strict() || p.posFor(startPos).Line == p.pos.Line) {
+		return p.out.Column - startOutCol
+	}
+
+	return infinity
+}
+
 // Formatting issues:
 // - better comment formatting for /*-style comments at the end of a line (e.g. a declaration) when the comment spans multiple lines; if such a comment is just two lines, formatting is not idempotent
 // - formatting of expression lists
@@ -52,6 +244,102 @@ func (p *printer) linebreak(line, min int, ws whiteSpace, newSection bool) (nbre
 	return
 }
 
+// nodeSize determines the size of n in chars after formatting. The result is <= maxSize if the node fits on one line with at most maxSize chars and the formatted output doesn't contain any control chars. Otherwise, the result is > maxSize.
+func (p *printer) nodeSize(n ast.Node, maxSize int) (size int) {
+	// nodeSize invokes the printer, which may invoke nodeSize recursively. For deep composite literal nests, this can lead to an exponential algorithm. Remember previous results to prune the recursion (was issue 1628).
+	if cached, found := p.nodeSizes[n]; found {
+		return cached
+	}
+
+	size = maxSize + 1 // assume n doesn't fit
+	p.nodeSizes[n] = size
+
+	// nodeSize computation must be independent of particular style so that we always get the same decision; print in RawFormat
+	cfg := p.sizeConfig()
+
+	var counter sizeCounter
+
+	if err := cfg.fprint(&counter, p.fset, p.measured(n), p.nodeSizes); err != nil {
+		return
+	}
+
+	if counter.size <= maxSize && !counter.hasNewline {
+		// n fits in a single line
+		size = counter.size
+		p.nodeSizes[n] = size
+	}
+
+	return
+}
+
+// bodySize is like nodeSize but it is specialized for *ast.BlockStmt's.
+func (p *printer) bodySize(b *ast.BlockStmt, maxSize int) int {
+	pos1 := b.Pos()
+	pos2 := b.Rbrace
+	if p.strict() && p.commentIn(pos1, pos2) {
+		// a comment inside the braces needs lines of its own
+		return maxSize + 1
+	}
+
+	if !p.strict() && pos1.IsValid() && pos2.IsValid() && p.lineFor(pos1) != p.lineFor(pos2) {
+		// opening and closing brace are on different lines - don't make it a one-liner
+		return maxSize + 1
+	}
+
+	if len(b.List) > 5 {
+		// too many statements - don't make it a one-liner
+		return maxSize + 1
+	}
+	// otherwise, estimate body size
+	bodySize := p.commentSizeBefore(p.posFor(pos2))
+
+	for i, s := range b.List {
+		if bodySize > maxSize {
+			break // no need to continue
+		}
+
+		if i > 0 {
+			bodySize += 2 // space for a semicolon and blank
+		}
+
+		bodySize += p.nodeSize(s, maxSize)
+	}
+
+	return bodySize
+}
+
+func (p *printer) isOneLineFieldList(list []*ast.Field) bool {
+	if len(list) != 1 {
+		return false // allow only one field
+	}
+
+	f := list[0]
+	if f.Tag != nil || f.Comment != nil {
+		return false // don't allow tags or comments
+	}
+	// only name(s) and type
+	const maxSize = 30 // adjust as appropriate, this is an approximate value
+	namesSize := identListSize(f.Names, maxSize)
+	if namesSize > 0 {
+		namesSize = 1 // blank between names and types
+	}
+
+	typeSize := p.nodeSize(f.Type, maxSize)
+
+	return namesSize+typeSize <= maxSize
+}
+
+// numLines returns the number of lines spanned by node n in the original source.
+func (p *printer) numLines(n ast.Node) int {
+	if from := n.Pos(); from.IsValid() {
+		if to := n.End(); to.IsValid() {
+			return p.lineFor(to) - p.lineFor(from) + 1
+		}
+	}
+
+	return infinity
+}
+
 // setComment sets g as the next comment if g != nil and if node comments are enabled - this mode is used when printing source code fragments such as exports only. It assumes that there is no pending comment in p.comments and at most one pending comment in the p.comment cache.
 func (p *printer) setComment(g *ast.CommentGroup) {
 	if g == nil || !p.useNodeComments {
@@ -78,11 +366,248 @@ func (p *printer) setComment(g *ast.CommentGroup) {
 	}
 }
 
-const (
-	commaTerm exprListMode = 1 << iota // list is optionally terminated by a comma
-	noIndent // no extra indentation in multi-line lists
-	strictBreak // under StrictLayout, put each element on its own line
-)
+func (p *printer) setLineComment(text string) {
+	p.setComment(&ast.CommentGroup{
+		List: []*ast.Comment{
+			{
+				Slash: token.NoPos,
+				Text: text,
+			},
+		},
+	})
+}
+
+func reduceDepth(depth int) int {
+	depth--
+
+	if depth < 1 {
+		depth = 1
+	}
+
+	return depth
+}
+
+func sanitizeImportPath(lit *ast.BasicLit) *ast.BasicLit {
+	// Note: An unmodified AST generated by go/parser will already contain a backward- or double-quoted path string that does not contain any invalid characters, and most of the work here is not needed. However, a modified or generated AST may possibly contain non-canonical paths. Do the work in all cases since it's not too hard and not speed-critical.
+
+	// if we don't have a proper string, be conservative and return whatever we have
+	if lit.Kind != token.STRING {
+		return lit
+	}
+
+	s, err := strconv.Unquote(lit.Value)
+	if err != nil {
+		return lit
+	}
+
+	// if the string is an invalid path, return whatever we have
+	//
+	// spec: "Implementation restriction: A compiler may restrict ImportPaths to non-empty strings using only characters belonging to Unicode's L, M, N, P, and S general categories (the Graphic characters without spaces) and may also exclude the characters !"#$%&'()*,:;<=>?[\]^`{|} and the Unicode replacement character U+FFFD."
+	if s == "" {
+		return lit
+	}
+
+	const illegalChars = `!"#$%&'()*,:;<=>?[\]^{|}` + "`\uFFFD"
+
+	for _, r := range s {
+		if !unicode.IsGraphic(r) || unicode.IsSpace(r) || strings.ContainsRune(illegalChars, r) {
+			return lit
+		}
+	}
+
+	// otherwise, return the double-quoted path
+	s = strconv.Quote(s)
+
+	if s == lit.Value {
+		return lit // nothing wrong with lit
+	}
+
+	return &ast.BasicLit{
+		ValuePos: lit.ValuePos,
+		Kind: token.STRING,
+		Value: s,
+	}
+}
+
+func (c *sizeCounter) Write(p []byte) (int, error) {
+	if !c.hasNewline {
+		for _, b := range p {
+			if b == '\n' || b == '\f' {
+				c.hasNewline = true
+				break
+			}
+		}
+	}
+
+	c.size += len(p)
+
+	return len(p), nil
+}
+
+func stripParens(x ast.Expr) ast.Expr {
+	if px, strip := x.(*ast.ParenExpr); strip {
+		// parentheses must not be stripped if there are any unparenthesized composite literals starting with a type name
+		ast.Inspect(px.X, func(node ast.Node) bool {
+			switch x := node.(type) {
+			case *ast.ParenExpr:
+				// parentheses protect enclosed composite literals
+				return false
+			case *ast.CompositeLit:
+				if isTypeName(x.Type) {
+					strip = false // do not strip parentheses
+				}
+
+				return false
+			}
+			// in all other cases, keep inspecting
+			return true
+		})
+		if strip {
+			return stripParens(px.X)
+		}
+	}
+
+	return x
+}
+
+func stripParensAlways(x ast.Expr) ast.Expr {
+	if x, ok := x.(*ast.ParenExpr); ok {
+		return stripParensAlways(x.X)
+	}
+
+	return x
+}
+
+// isCompositeLitLike reports whether x is a composite literal or an expression whose core is a composite literal (e.g. &T{...}), ignoring parentheses.
+func isCompositeLitLike(x ast.Expr) bool {
+	switch x := stripParensAlways(x).(type) {
+	case *ast.CompositeLit:
+		return true
+	case *ast.UnaryExpr:
+		_, ok := stripParensAlways(x.X).(*ast.CompositeLit)
+
+		return x.Op == token.AND && ok
+	}
+
+	return false
+}
+
+// indentList reports whether an expression list would look better if it were indented wholesale (starting with the very first element, rather than starting at the first line break). Currently this function is only used to improve formatting of return statements.
+func (p *printer) indentList(list []ast.Expr) bool {
+	// Heuristic: indentList reports whether there are more than one multi- line element (such as a complex expression, but excluding composite literals) in the list, or if there is any element that is not starting on the same line as the previous one ends. Under StrictLayout lists are never broken, so there is nothing to indent.
+	if p.strict() {
+		return false
+	}
+
+	if len(list) >= 2 {
+		b := p.lineFor(list[0].Pos())
+		e := p.lineFor(list[len(list)-1].End())
+		if 0 < b && b < e {
+			line := b
+			// list spans multiple lines
+			var n int // multi-line element count
+			for _, x := range list {
+				xb := p.lineFor(x.Pos())
+				xe := p.lineFor(x.End())
+
+				if line < xb {
+					// x is not starting on the same line as the previous one ended
+					return true
+				}
+
+				if xb < xe && !isCompositeLitLike(x) {
+					// x is a multi-line element but not a composite literal (composite literals have their own field indentation already, see go.dev/issue/7195)
+					n++
+				}
+
+				line = xe
+			}
+
+			return n > 1
+		}
+	}
+
+	return false
+}
+
+// ---------------------------------------------------------------------------- Expressions
+
+func walkBinary(e *ast.BinaryExpr, strict bool) (has4, has5 bool, maxProblem int) {
+	switch e.Op.Precedence() {
+	case 4:
+		has4 = true
+	case 5:
+		has5 = true
+	}
+
+	x := e.X
+	y := e.Y
+
+	if strict {
+		x = strictOperand(x, e.Op.Precedence())
+		y = strictOperand(y, e.Op.Precedence()+1)
+	}
+
+	switch l := x.(type) {
+	case *ast.BinaryExpr:
+		if l.Op.Precedence() < e.Op.Precedence() {
+			// parens will be inserted. pretend this is an *ast.ParenExpr and do nothing.
+			break
+		}
+
+		h4, h5, mp := walkBinary(l, strict)
+		has4 = has4 || h4
+		has5 = has5 || h5
+		maxProblem = max(maxProblem, mp)
+	}
+
+	switch r := y.(type) {
+	case *ast.BinaryExpr:
+		if r.Op.Precedence() <= e.Op.Precedence() {
+			// parens will be inserted. pretend this is an *ast.ParenExpr and do nothing.
+			break
+		}
+
+		h4, h5, mp := walkBinary(r, strict)
+		has4 = has4 || h4
+		has5 = has5 || h5
+		maxProblem = max(maxProblem, mp)
+	case *ast.StarExpr:
+		if e.Op == token.QUO { // `*/`
+			maxProblem = 5
+		}
+	case *ast.UnaryExpr:
+		switch e.Op.String() + r.Op.String() {
+		case "/*", "&&", "&^":
+			maxProblem = 5
+		case "++", "--":
+			maxProblem = max(maxProblem, 4)
+		}
+	}
+
+	return
+}
+
+func cutoff(e *ast.BinaryExpr, depth int, strict bool) int {
+	has4, has5, maxProblem := walkBinary(e, strict)
+	if maxProblem > 0 {
+		return maxProblem + 1
+	}
+
+	if has4 && has5 {
+		if depth == 1 {
+			return 5
+		}
+
+		return 4
+	}
+
+	if depth == 1 {
+		return 6
+	}
+
+	return 4
+}
 
 // If indent is set, a multi-line identifier list is indented after the first linebreak encountered.
 func (p *printer) identList(list []*ast.Ident, indent bool) {
@@ -100,8 +625,6 @@ func (p *printer) identList(list []*ast.Ident, indent bool) {
 	}
 	p.exprList(token.NoPos, xlist, 1, mode, token.NoPos, false)
 }
-
-const filteredMsg = "contains filtered or unexported fields"
 
 // Print a list of expressions. If the list spans multiple source lines, the original line breaks are respected between expressions.
 //
@@ -291,12 +814,6 @@ func (p *printer) exprList(prev0 token.Pos, list []ast.Expr, depth int, mode exp
 	}
 }
 
-const (
-	funcParam paramMode = iota
-	funcTParam
-	typeTParam
-)
-
 func (p *printer) parameters(fields *ast.FieldList, mode paramMode) {
 	openTok, closeTok := token.LPAREN, token.RPAREN
 
@@ -362,37 +879,6 @@ func (p *printer) parameters(fields *ast.FieldList, mode paramMode) {
 	p.print(closeTok)
 }
 
-// isTypeElem reports whether x is a (possibly parenthesized) type element expression. The result is false if x could be a type element OR an ordinary (value) expression.
-func isTypeElem(x ast.Expr) bool {
-	switch x := x.(type) {
-	case *ast.ArrayType, *ast.StructType, *ast.FuncType, *ast.InterfaceType, *ast.MapType, *ast.ChanType:
-		return true
-	case *ast.BinaryExpr:
-		return isTypeElem(x.X) || isTypeElem(x.Y)
-	case *ast.ParenExpr:
-		return isTypeElem(x.X)
-	case *ast.UnaryExpr:
-		return x.Op == token.TILDE
-	}
-
-	return false
-}
-
-// combinesWithName reports whether a name followed by the expression x syntactically combines to another valid (value) expression. For instance using *T for x, "name *T" syntactically appears as the expression x*T. On the other hand, using  P|Q or *P|~Q for x, "name P|Q" or "name *P|~Q" cannot be combined into a valid (value) expression.
-func combinesWithName(x ast.Expr) bool {
-	switch x := x.(type) {
-	case *ast.StarExpr:
-		// name *x.X combines to name*x.X if x.X is not a type element
-		return !isTypeElem(x.X)
-	case *ast.BinaryExpr:
-		return combinesWithName(x.X) && !isTypeElem(x.Y)
-	case *ast.ParenExpr:
-		return !isTypeElem(x.X)
-	}
-
-	return false
-}
-
 func (p *printer) signature(sig *ast.FuncType) {
 	if sig.TypeParams != nil {
 		p.parameters(sig.TypeParams, funcTParam)
@@ -416,54 +902,6 @@ func (p *printer) signature(sig *ast.FuncType) {
 		}
 		p.parameters(res, funcParam)
 	}
-}
-
-func identListSize(list []*ast.Ident, maxSize int) (size int) {
-	for i, x := range list {
-		if i > 0 {
-			size += len(", ")
-		}
-
-		size += utf8.RuneCountInString(x.Name)
-
-		if size >= maxSize {
-			break
-		}
-	}
-
-	return
-}
-
-func (p *printer) isOneLineFieldList(list []*ast.Field) bool {
-	if len(list) != 1 {
-		return false // allow only one field
-	}
-
-	f := list[0]
-	if f.Tag != nil || f.Comment != nil {
-		return false // don't allow tags or comments
-	}
-	// only name(s) and type
-	const maxSize = 30 // adjust as appropriate, this is an approximate value
-	namesSize := identListSize(f.Names, maxSize)
-	if namesSize > 0 {
-		namesSize = 1 // blank between names and types
-	}
-
-	typeSize := p.nodeSize(f.Type, maxSize)
-
-	return namesSize+typeSize <= maxSize
-}
-
-func (p *printer) setLineComment(text string) {
-	p.setComment(&ast.CommentGroup{
-		List: []*ast.Comment{
-			{
-				Slash: token.NoPos,
-				Text: text,
-			},
-		},
-	})
 }
 
 func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) {
@@ -619,103 +1057,6 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 	p.print(token.RBRACE)
 }
 
-func diffPrec(expr ast.Expr, prec int) int {
-	if x, ok := expr.(*ast.BinaryExpr); !ok || prec != x.Op.Precedence() {
-		return 1
-	}
-
-	return 0
-}
-
-func reduceDepth(depth int) int {
-	depth--
-
-	if depth < 1 {
-		depth = 1
-	}
-
-	return depth
-}
-
-// ---------------------------------------------------------------------------- Expressions
-
-func walkBinary(e *ast.BinaryExpr, strict bool) (has4, has5 bool, maxProblem int) {
-	switch e.Op.Precedence() {
-	case 4:
-		has4 = true
-	case 5:
-		has5 = true
-	}
-
-	x := e.X
-	y := e.Y
-
-	if strict {
-		x = strictOperand(x, e.Op.Precedence())
-		y = strictOperand(y, e.Op.Precedence()+1)
-	}
-
-	switch l := x.(type) {
-	case *ast.BinaryExpr:
-		if l.Op.Precedence() < e.Op.Precedence() {
-			// parens will be inserted. pretend this is an *ast.ParenExpr and do nothing.
-			break
-		}
-
-		h4, h5, mp := walkBinary(l, strict)
-		has4 = has4 || h4
-		has5 = has5 || h5
-		maxProblem = max(maxProblem, mp)
-	}
-
-	switch r := y.(type) {
-	case *ast.BinaryExpr:
-		if r.Op.Precedence() <= e.Op.Precedence() {
-			// parens will be inserted. pretend this is an *ast.ParenExpr and do nothing.
-			break
-		}
-
-		h4, h5, mp := walkBinary(r, strict)
-		has4 = has4 || h4
-		has5 = has5 || h5
-		maxProblem = max(maxProblem, mp)
-	case *ast.StarExpr:
-		if e.Op == token.QUO { // `*/`
-			maxProblem = 5
-		}
-	case *ast.UnaryExpr:
-		switch e.Op.String() + r.Op.String() {
-		case "/*", "&&", "&^":
-			maxProblem = 5
-		case "++", "--":
-			maxProblem = max(maxProblem, 4)
-		}
-	}
-
-	return
-}
-
-func cutoff(e *ast.BinaryExpr, depth int, strict bool) int {
-	has4, has5, maxProblem := walkBinary(e, strict)
-	if maxProblem > 0 {
-		return maxProblem + 1
-	}
-
-	if has4 && has5 {
-		if depth == 1 {
-			return 5
-		}
-
-		return 4
-	}
-
-	if depth == 1 {
-		return 6
-	}
-
-	return 4
-}
-
 // Format the binary expression: decide the cutoff and then format. Let's call depth == 1 Normal mode, and depth > 1 Compact mode. (Algorithm suggestion by Russ Cox.)
 //
 // The precedences are:
@@ -786,12 +1127,6 @@ func (p *printer) binaryExpr(x *ast.BinaryExpr, prec1, cutoff, depth int) {
 	if ws == ignore {
 		p.print(unindent)
 	}
-}
-
-func isBinary(expr ast.Expr) bool {
-	_, ok := expr.(*ast.BinaryExpr)
-
-	return ok
 }
 
 func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
@@ -1074,88 +1409,6 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 	}
 }
 
-// isLegacyOctal reports whether x is an integer literal in the old leading-zero octal notation, such as 0777 or 0_777. A lone 0 is not legacy octal, and neither are the decimal or floating-point literals that merely start with a zero (0.5, 0e3, 0123.5).
-func isLegacyOctal(x string) bool {
-	if len(x) < 2 || x[0] != '0' {
-		return false
-	}
-
-	for i := 1; i < len(x); i++ {
-		if c := x[i]; (c < '0' || c > '7') && c != '_' {
-			return false
-		}
-	}
-
-	return true
-}
-
-// normalizedNumber rewrites base prefixes and exponents of numbers to use lower-case letters (0X123 to 0x123 and 1.2E3 to 1.2e3), spells octal literals with an explicit 0o prefix (0765 to 0o765), and removes leading 0's from integer imaginary literals (0765i to 765i). It leaves hexadecimal digits alone.
-//
-// normalizedNumber doesn't modify the ast.BasicLit value lit points to. If lit is not a number or a number in canonical format already, lit is returned as is. Otherwise a new ast.BasicLit is created.
-func normalizedNumber(lit *ast.BasicLit) *ast.BasicLit {
-	if lit.Kind != token.INT && lit.Kind != token.FLOAT && lit.Kind != token.IMAG {
-		return lit // not a number - nothing to do
-	}
-
-	if len(lit.Value) < 2 {
-		return lit // only one digit (common case) - nothing to do
-	}
-	// len(lit.Value) >= 2
-
-	// We ignore lit.Kind because for lit.Kind == token.IMAG the literal may be an integer or floating-point value, decimal or not. Instead, just consider the literal pattern.
-	x := lit.Value
-
-	switch x[:2] {
-	default:
-		// 0-prefix octal, decimal int, or float (possibly with 'i' suffix)
-		if i := strings.LastIndexByte(x, 'E'); i >= 0 {
-			x = x[:i] + "e" + x[i+1:]
-			break
-		}
-		// Spell octal literals with an explicit 0o prefix. Only plain integers qualify: leading zeros in an imaginary literal are decimal (imaginary_lit admits decimal_digits), so 0777i is the decimal 777i and must not become 0o777i.
-		if lit.Kind == token.INT && isLegacyOctal(x) {
-			x = "0o" + x[1:]
-			break
-		}
-		// remove leading 0's from integer (but not floating-point) imaginary literals
-		if x[len(x)-1] == 'i' && !strings.ContainsAny(x, ".e") {
-			x = strings.TrimLeft(x, "0_")
-
-			if x == "i" {
-				x = "0i"
-			}
-		}
-	case "0X":
-		x = "0x" + x[2:]
-		// possibly a hexadecimal float
-		if i := strings.LastIndexByte(x, 'P'); i >= 0 {
-			x = x[:i] + "p" + x[i+1:]
-		}
-	case "0x":
-		// possibly a hexadecimal float
-		i := strings.LastIndexByte(x, 'P')
-		if i == -1 {
-			return lit // nothing to do
-		}
-
-		x = x[:i] + "p" + x[i+1:]
-	case "0O":
-		x = "0o" + x[2:]
-	case "0o":
-		return lit // nothing to do
-	case "0B":
-		x = "0b" + x[2:]
-	case "0b":
-		return lit // nothing to do
-	}
-
-	return &ast.BasicLit{
-		ValuePos: lit.ValuePos,
-		Kind: lit.Kind,
-		Value: x,
-	}
-}
-
 func (p *printer) expr(x ast.Expr) {
 	const depth = 1
 
@@ -1264,51 +1517,6 @@ func (p *printer) block(b *ast.BlockStmt, nindent int) {
 	p.print(token.RBRACE)
 }
 
-func isTypeName(x ast.Expr) bool {
-	switch t := x.(type) {
-	case *ast.Ident:
-		return true
-	case *ast.SelectorExpr:
-		return isTypeName(t.X)
-	}
-
-	return false
-}
-
-func stripParens(x ast.Expr) ast.Expr {
-	if px, strip := x.(*ast.ParenExpr); strip {
-		// parentheses must not be stripped if there are any unparenthesized composite literals starting with a type name
-		ast.Inspect(px.X, func(node ast.Node) bool {
-			switch x := node.(type) {
-			case *ast.ParenExpr:
-				// parentheses protect enclosed composite literals
-				return false
-			case *ast.CompositeLit:
-				if isTypeName(x.Type) {
-					strip = false // do not strip parentheses
-				}
-
-				return false
-			}
-			// in all other cases, keep inspecting
-			return true
-		})
-		if strip {
-			return stripParens(px.X)
-		}
-	}
-
-	return x
-}
-
-func stripParensAlways(x ast.Expr) ast.Expr {
-	if x, ok := x.(*ast.ParenExpr); ok {
-		return stripParensAlways(x.X)
-	}
-
-	return x
-}
-
 func (p *printer) controlClause(isForStmt bool, init ast.Stmt, expr ast.Expr, post ast.Stmt) {
 	p.print(blank)
 
@@ -1349,58 +1557,6 @@ func (p *printer) controlClause(isForStmt bool, init ast.Stmt, expr ast.Expr, po
 	if needsBlank {
 		p.print(blank)
 	}
-}
-
-// isCompositeLitLike reports whether x is a composite literal or an expression whose core is a composite literal (e.g. &T{...}), ignoring parentheses.
-func isCompositeLitLike(x ast.Expr) bool {
-	switch x := stripParensAlways(x).(type) {
-	case *ast.CompositeLit:
-		return true
-	case *ast.UnaryExpr:
-		_, ok := stripParensAlways(x.X).(*ast.CompositeLit)
-
-		return x.Op == token.AND && ok
-	}
-
-	return false
-}
-
-// indentList reports whether an expression list would look better if it were indented wholesale (starting with the very first element, rather than starting at the first line break). Currently this function is only used to improve formatting of return statements.
-func (p *printer) indentList(list []ast.Expr) bool {
-	// Heuristic: indentList reports whether there are more than one multi- line element (such as a complex expression, but excluding composite literals) in the list, or if there is any element that is not starting on the same line as the previous one ends. Under StrictLayout lists are never broken, so there is nothing to indent.
-	if p.strict() {
-		return false
-	}
-
-	if len(list) >= 2 {
-		b := p.lineFor(list[0].Pos())
-		e := p.lineFor(list[len(list)-1].End())
-		if 0 < b && b < e {
-			line := b
-			// list spans multiple lines
-			var n int // multi-line element count
-			for _, x := range list {
-				xb := p.lineFor(x.Pos())
-				xe := p.lineFor(x.End())
-
-				if line < xb {
-					// x is not starting on the same line as the previous one ended
-					return true
-				}
-
-				if xb < xe && !isCompositeLitLike(x) {
-					// x is a multi-line element but not a composite literal (composite literals have their own field indentation already, see go.dev/issue/7195)
-					n++
-				}
-
-				line = xe
-			}
-
-			return n > 1
-		}
-	}
-
-	return false
 }
 
 func (p *printer) stmt(stmt ast.Stmt, nextIsRBrace bool) {
@@ -1595,121 +1751,6 @@ func (p *printer) valueSpec(s *ast.ValueSpec) {
 	p.setComment(s.Comment)
 }
 
-func sanitizeImportPath(lit *ast.BasicLit) *ast.BasicLit {
-	// Note: An unmodified AST generated by go/parser will already contain a backward- or double-quoted path string that does not contain any invalid characters, and most of the work here is not needed. However, a modified or generated AST may possibly contain non-canonical paths. Do the work in all cases since it's not too hard and not speed-critical.
-
-	// if we don't have a proper string, be conservative and return whatever we have
-	if lit.Kind != token.STRING {
-		return lit
-	}
-
-	s, err := strconv.Unquote(lit.Value)
-	if err != nil {
-		return lit
-	}
-
-	// if the string is an invalid path, return whatever we have
-	//
-	// spec: "Implementation restriction: A compiler may restrict ImportPaths to non-empty strings using only characters belonging to Unicode's L, M, N, P, and S general categories (the Graphic characters without spaces) and may also exclude the characters !"#$%&'()*,:;<=>?[\]^`{|} and the Unicode replacement character U+FFFD."
-	if s == "" {
-		return lit
-	}
-
-	const illegalChars = `!"#$%&'()*,:;<=>?[\]^{|}` + "`\uFFFD"
-
-	for _, r := range s {
-		if !unicode.IsGraphic(r) || unicode.IsSpace(r) || strings.ContainsRune(illegalChars, r) {
-			return lit
-		}
-	}
-
-	// otherwise, return the double-quoted path
-	s = strconv.Quote(s)
-
-	if s == lit.Value {
-		return lit // nothing wrong with lit
-	}
-
-	return &ast.BasicLit{
-		ValuePos: lit.ValuePos,
-		Kind: token.STRING,
-		Value: s,
-	}
-}
-
-// distanceFrom returns the column difference between p.out (the current output position) and startOutCol. If the start position is on a different line from the current position (or either is unknown), the result is infinity.
-func (p *printer) distanceFrom(startPos token.Pos, startOutCol int) int {
-	if startPos.IsValid() && p.pos.IsValid() && (p.strict() || p.posFor(startPos).Line == p.pos.Line) {
-		return p.out.Column - startOutCol
-	}
-
-	return infinity
-}
-
-// nodeSize determines the size of n in chars after formatting. The result is <= maxSize if the node fits on one line with at most maxSize chars and the formatted output doesn't contain any control chars. Otherwise, the result is > maxSize.
-func (p *printer) nodeSize(n ast.Node, maxSize int) (size int) {
-	// nodeSize invokes the printer, which may invoke nodeSize recursively. For deep composite literal nests, this can lead to an exponential algorithm. Remember previous results to prune the recursion (was issue 1628).
-	if cached, found := p.nodeSizes[n]; found {
-		return cached
-	}
-
-	size = maxSize + 1 // assume n doesn't fit
-	p.nodeSizes[n] = size
-
-	// nodeSize computation must be independent of particular style so that we always get the same decision; print in RawFormat
-	cfg := p.sizeConfig()
-
-	var counter sizeCounter
-
-	if err := cfg.fprint(&counter, p.fset, p.measured(n), p.nodeSizes); err != nil {
-		return
-	}
-
-	if counter.size <= maxSize && !counter.hasNewline {
-		// n fits in a single line
-		size = counter.size
-		p.nodeSizes[n] = size
-	}
-
-	return
-}
-
-// bodySize is like nodeSize but it is specialized for *ast.BlockStmt's.
-func (p *printer) bodySize(b *ast.BlockStmt, maxSize int) int {
-	pos1 := b.Pos()
-	pos2 := b.Rbrace
-	if p.strict() && p.commentIn(pos1, pos2) {
-		// a comment inside the braces needs lines of its own
-		return maxSize + 1
-	}
-
-	if !p.strict() && pos1.IsValid() && pos2.IsValid() && p.lineFor(pos1) != p.lineFor(pos2) {
-		// opening and closing brace are on different lines - don't make it a one-liner
-		return maxSize + 1
-	}
-
-	if len(b.List) > 5 {
-		// too many statements - don't make it a one-liner
-		return maxSize + 1
-	}
-	// otherwise, estimate body size
-	bodySize := p.commentSizeBefore(p.posFor(pos2))
-
-	for i, s := range b.List {
-		if bodySize > maxSize {
-			break // no need to continue
-		}
-
-		if i > 0 {
-			bodySize += 2 // space for a semicolon and blank
-		}
-
-		bodySize += p.nodeSize(s, maxSize)
-	}
-
-	return bodySize
-}
-
 // funcBody prints a function body following a function header of given headerSize. If the header's and block's size are "small enough" and the block is "simple enough", the block is printed on the current line, without line breaks, spaced from the header by sep. Otherwise the block's opening "{" is printed on the current line, followed by lines for the block's statements and its closing "}".
 //
 // In this tree the one-line form is reserved for empty bodies: as soon as the block holds a statement, it is spelled out over multiple lines.
@@ -1769,17 +1810,6 @@ func (p *printer) funcDecl(d *ast.FuncDecl) {
 	p.signature(d.Type)
 	// A blank before the body keeps consecutive one-line functions from having their { padded into a column.
 	p.funcBody(p.distanceFrom(d.Pos(), startCol), blank, d.Body)
-}
-
-// numLines returns the number of lines spanned by node n in the original source.
-func (p *printer) numLines(n ast.Node) int {
-	if from := n.Pos(); from.IsValid() {
-		if to := n.End(); to.IsValid() {
-			return p.lineFor(to) - p.lineFor(from) + 1
-		}
-	}
-
-	return infinity
 }
 
 // The parameter n is the number of specs in the group. If doIndent is set, multi-line identifier lists in the spec are indented when the first linebreak is encountered.
@@ -1907,36 +1937,6 @@ func (p *printer) decl(decl ast.Decl) {
 	default:
 		panic("unreachable")
 	}
-}
-
-func (c *sizeCounter) Write(p []byte) (int, error) {
-	if !c.hasNewline {
-		for _, b := range p {
-			if b == '\n' || b == '\f' {
-				c.hasNewline = true
-				break
-			}
-		}
-	}
-
-	c.size += len(p)
-
-	return len(p), nil
-}
-
-// ---------------------------------------------------------------------------- Files
-
-func declToken(decl ast.Decl) (tok token.Token) {
-	tok = token.ILLEGAL
-
-	switch d := decl.(type) {
-	case *ast.FuncDecl:
-		tok = token.FUNC
-	case *ast.GenDecl:
-		tok = d.Tok
-	}
-
-	return
 }
 
 func (p *printer) declList(list []ast.Decl) {

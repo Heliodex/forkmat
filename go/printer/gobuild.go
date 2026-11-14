@@ -6,6 +6,48 @@ import (
 	"text/tabwriter"
 )
 
+func isNL(b byte) bool {
+	return b == '\n' || b == '\f'
+}
+
+// appendLines is like append(x, y...) but it avoids creating doubled blank lines, which would not be gofmt-standard output. It assumes that only whole blocks of lines are being appended, not line fragments.
+func appendLines(x, y []byte) []byte {
+	if len(y) > 0 && isNL(y[0]) && // y starts in blank line
+	(len(x) == 0 || len(x) >= 2 && isNL(x[len(x)-1]) && isNL(x[len(x)-2])) { // x is empty or ends in blank line
+		y = y[1:] // delete y's leading blank line
+	}
+
+	return append(x, y...)
+}
+
+func (p *printer) commentTextAt(start int) string {
+	if start < len(p.output) && p.output[start] == tabwriter.Escape {
+		start++
+	}
+
+	pos := start
+
+	for pos < len(p.output) && p.output[pos] != tabwriter.Escape && !isNL(p.output[pos]) {
+		pos++
+	}
+
+	return string(p.output[start:pos])
+}
+
+func (p *printer) lineAt(start int) []byte {
+	pos := start
+
+	for pos < len(p.output) && !isNL(p.output[pos]) {
+		pos++
+	}
+
+	if pos < len(p.output) {
+		pos++
+	}
+
+	return p.output[start:pos]
+}
+
 func (p *printer) fixGoBuildLines() {
 	if len(p.goBuild)+len(p.plusBuild) == 0 {
 		return
@@ -135,46 +177,4 @@ func (p *printer) fixGoBuildLines() {
 	p.output = p.output[:insert]
 	p.output = append(p.output, block...)
 	p.output = append(p.output, after...)
-}
-
-// appendLines is like append(x, y...) but it avoids creating doubled blank lines, which would not be gofmt-standard output. It assumes that only whole blocks of lines are being appended, not line fragments.
-func appendLines(x, y []byte) []byte {
-	if len(y) > 0 && isNL(y[0]) && // y starts in blank line
-	(len(x) == 0 || len(x) >= 2 && isNL(x[len(x)-1]) && isNL(x[len(x)-2])) { // x is empty or ends in blank line
-		y = y[1:] // delete y's leading blank line
-	}
-
-	return append(x, y...)
-}
-
-func (p *printer) commentTextAt(start int) string {
-	if start < len(p.output) && p.output[start] == tabwriter.Escape {
-		start++
-	}
-
-	pos := start
-
-	for pos < len(p.output) && p.output[pos] != tabwriter.Escape && !isNL(p.output[pos]) {
-		pos++
-	}
-
-	return string(p.output[start:pos])
-}
-
-func (p *printer) lineAt(start int) []byte {
-	pos := start
-
-	for pos < len(p.output) && !isNL(p.output[pos]) {
-		pos++
-	}
-
-	if pos < len(p.output) {
-		pos++
-	}
-
-	return p.output[start:pos]
-}
-
-func isNL(b byte) bool {
-	return b == '\n' || b == '\f'
 }

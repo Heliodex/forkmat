@@ -95,6 +95,29 @@ var (
 	rewrite func(*token.FileSet, *ast.File) *ast.File
 )
 
+func fileWeight(path string, info fs.FileInfo) int64 {
+	if info == nil {
+		return exclusive
+	}
+
+	if info.Mode().Type() == fs.ModeSymlink {
+		var err error
+
+		info, err = os.Stat(path)
+
+		if err != nil {
+			return exclusive
+		}
+	}
+
+	if !info.Mode().IsRegular() {
+		// For non-regular files, FileInfo.Size is system-dependent and thus not a reliable indicator of weight.
+		return exclusive
+	}
+
+	return info.Size()
+}
+
 func initParserMode() {
 	parserMode = parser.ParseComments | parser.SkipObjectResolution
 
@@ -127,13 +150,70 @@ func newSequencer(maxWeight int64, out, err io.Writer) *sequencer {
 	}
 }
 
-func usage() {
-	fmt.Fprintf(os.Stderr, "usage: gofmt [flags] [path ...]\n")
-	flag.PrintDefaults()
-}
-
 // exclusive is a weight that can be passed to a sequencer to cause a task to be executed without any other concurrent tasks.
 const exclusive = -1
+
+// readFile reads the contents of filename, described by info. If in is non-nil, readFile reads directly from it. Otherwise, readFile opens and reads the file itself, with the number of concurrently-open files limited by fdSem.
+func readFile(filename string, info fs.FileInfo, in io.Reader) ([]byte, error) {
+	if in == nil {
+		fdSem <- true
+		var err error
+
+		f, err := os.Open(filename)
+		if err != nil {
+			return nil, err
+		}
+
+		in = f
+
+		defer func() {
+			f.Close()
+			<-fdSem
+		}()
+	}
+
+	// Compute the file's size and read its contents with minimal allocations.
+	//
+	// If we have the FileInfo from filepath.WalkDir, use it to make a buffer of the right size and avoid ReadAll's reallocations.
+	//
+	// If the size is unknown (or bogus, or overflows an int), fall back to a size-independent ReadAll.
+	size := -1
+
+	if info != nil && info.Mode().IsRegular() && int64(int(info.Size())) == info.Size() {
+		size = int(info.Size())
+	}
+
+	if size+1 <= 0 {
+		// The file is not known to be regular, so we don't have a reliable size for it.
+		var err error
+
+		src, err := io.ReadAll(in)
+		if err != nil {
+			return nil, err
+		}
+
+		return src, nil
+	}
+
+	// We try to read size+1 bytes so that we can detect modifications: if we read more than size bytes, then the file was modified concurrently. (If that happens, we could, say, append to src to finish the read, or proceed with a truncated buffer – but the fact that it changed at all indicates a possible race with someone editing the file, so we prefer to stop to avoid corrupting it.)
+	src := make([]byte, size+1)
+	n, err := io.ReadFull(in, src)
+
+	switch err {
+	case nil, io.EOF, io.ErrUnexpectedEOF:
+		// io.ReadFull returns io.EOF (for an empty file) or io.ErrUnexpectedEOF (for a non-empty file) if the file was changed unexpectedly. Continue with comparing file sizes in those cases.
+	default:
+		return nil, err
+	}
+
+	if n < size {
+		return nil, fmt.Errorf("error: size of %s changed during reading (from %d to %d bytes)", filename, size, n)
+	} else if n > size {
+		return nil, fmt.Errorf("error: size of %s changed during reading (from %d to >=%d bytes)", filename, size, len(src))
+	}
+
+	return src[:n], nil
+}
 
 // getState blocks until any prior reporters are finished with the reporter state, then returns the state for manipulation.
 func (r *reporter) getState() *reporterState {
@@ -173,6 +253,49 @@ func (r *reporter) Warnf(format string, args ...any) {
 // Any error is returned to the caller, and does not otherwise affect the reporter's exit code.
 func (r *reporter) Write(p []byte) (int, error) {
 	return r.getState().out.Write(p)
+}
+
+// backupFile writes data to a new file named filename<number> with permissions perm, with <number> randomly chosen such that the file name is unique. backupFile returns the chosen file name.
+func backupFile(filename string, data []byte, perm fs.FileMode) (string, error) {
+	fdSem <- true
+
+	defer func() {
+		<-fdSem
+	}()
+
+	nextRandom := func() string {
+		return strconv.Itoa(rand.Int())
+	}
+	dir, base := filepath.Split(filename)
+
+	var (
+		bakname string
+		f *os.File
+	)
+
+	for {
+		bakname = filepath.Join(dir, base+"."+nextRandom())
+
+		var err error
+
+		f, err = os.OpenFile(bakname, os.O_RDWR|os.O_CREATE|os.O_EXCL, perm)
+
+		if err == nil {
+			break
+		}
+
+		if !os.IsExist(err) {
+			return "", err
+		}
+	}
+
+	// write data to backup file
+	_, err := f.Write(data)
+	if err1 := f.Close(); err == nil {
+		err = err1
+	}
+
+	return bakname, err
 }
 
 // Add blocks until the sequencer has enough weight to spare, then adds f as a task to be executed concurrently.
@@ -233,132 +356,9 @@ func (s *sequencer) GetExitCode() int {
 	return <-c
 }
 
-// backupFile writes data to a new file named filename<number> with permissions perm, with <number> randomly chosen such that the file name is unique. backupFile returns the chosen file name.
-func backupFile(filename string, data []byte, perm fs.FileMode) (string, error) {
-	fdSem <- true
-
-	defer func() {
-		<-fdSem
-	}()
-
-	nextRandom := func() string {
-		return strconv.Itoa(rand.Int())
-	}
-	dir, base := filepath.Split(filename)
-
-	var (
-		bakname string
-		f *os.File
-	)
-
-	for {
-		bakname = filepath.Join(dir, base+"."+nextRandom())
-
-		var err error
-
-		f, err = os.OpenFile(bakname, os.O_RDWR|os.O_CREATE|os.O_EXCL, perm)
-
-		if err == nil {
-			break
-		}
-
-		if !os.IsExist(err) {
-			return "", err
-		}
-	}
-
-	// write data to backup file
-	_, err := f.Write(data)
-	if err1 := f.Close(); err == nil {
-		err = err1
-	}
-
-	return bakname, err
-}
-
-func fileWeight(path string, info fs.FileInfo) int64 {
-	if info == nil {
-		return exclusive
-	}
-
-	if info.Mode().Type() == fs.ModeSymlink {
-		var err error
-
-		info, err = os.Stat(path)
-
-		if err != nil {
-			return exclusive
-		}
-	}
-
-	if !info.Mode().IsRegular() {
-		// For non-regular files, FileInfo.Size is system-dependent and thus not a reliable indicator of weight.
-		return exclusive
-	}
-
-	return info.Size()
-}
-
-// readFile reads the contents of filename, described by info. If in is non-nil, readFile reads directly from it. Otherwise, readFile opens and reads the file itself, with the number of concurrently-open files limited by fdSem.
-func readFile(filename string, info fs.FileInfo, in io.Reader) ([]byte, error) {
-	if in == nil {
-		fdSem <- true
-		var err error
-
-		f, err := os.Open(filename)
-		if err != nil {
-			return nil, err
-		}
-
-		in = f
-
-		defer func() {
-			f.Close()
-			<-fdSem
-		}()
-	}
-
-	// Compute the file's size and read its contents with minimal allocations.
-	//
-	// If we have the FileInfo from filepath.WalkDir, use it to make a buffer of the right size and avoid ReadAll's reallocations.
-	//
-	// If the size is unknown (or bogus, or overflows an int), fall back to a size-independent ReadAll.
-	size := -1
-
-	if info != nil && info.Mode().IsRegular() && int64(int(info.Size())) == info.Size() {
-		size = int(info.Size())
-	}
-
-	if size+1 <= 0 {
-		// The file is not known to be regular, so we don't have a reliable size for it.
-		var err error
-
-		src, err := io.ReadAll(in)
-		if err != nil {
-			return nil, err
-		}
-
-		return src, nil
-	}
-
-	// We try to read size+1 bytes so that we can detect modifications: if we read more than size bytes, then the file was modified concurrently. (If that happens, we could, say, append to src to finish the read, or proceed with a truncated buffer — but the fact that it changed at all indicates a possible race with someone editing the file, so we prefer to stop to avoid corrupting it.)
-	src := make([]byte, size+1)
-	n, err := io.ReadFull(in, src)
-
-	switch err {
-	case nil, io.EOF, io.ErrUnexpectedEOF:
-		// io.ReadFull returns io.EOF (for an empty file) or io.ErrUnexpectedEOF (for a non-empty file) if the file was changed unexpectedly. Continue with comparing file sizes in those cases.
-	default:
-		return nil, err
-	}
-
-	if n < size {
-		return nil, fmt.Errorf("error: size of %s changed during reading (from %d to %d bytes)", filename, size, n)
-	} else if n > size {
-		return nil, fmt.Errorf("error: size of %s changed during reading (from %d to >=%d bytes)", filename, size, len(src))
-	}
-
-	return src[:n], nil
+func usage() {
+	fmt.Fprintf(os.Stderr, "usage: gofmt [flags] [path ...]\n")
+	flag.PrintDefaults()
 }
 
 // writeFile updates a file with the new formatted data.

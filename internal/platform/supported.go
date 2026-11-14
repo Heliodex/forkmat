@@ -14,10 +14,6 @@ type (
 	}
 )
 
-func (p OSArch) String() string {
-	return p.GOOS + "/" + p.GOARCH
-}
-
 // ASanSupported reports whether goos/goarch supports the address sanitizer option.
 func ASanSupported(goos, goarch string) bool {
 	switch goos {
@@ -227,6 +223,10 @@ func MustLinkExternal(goos, goarch string, withCgo bool) bool {
 	}
 
 	return false
+}
+
+func (p OSArch) String() string {
+	return p.GOOS + "/" + p.GOARCH
 }
 
 // RaceDetectorSupported reports whether goos/goarch supports the race detector. There is a copy of this function in cmd/dist/test.go. Race detector only supports 48-bit VMA on arm64. But it will always return true for arm64, because we don't have VMA size information during the compile time.

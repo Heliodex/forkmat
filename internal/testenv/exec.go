@@ -14,21 +14,28 @@ import (
 	"time"
 )
 
-// MustHaveExec checks that the current system can start new processes using os.StartProcess or (more commonly) exec.Command. If not, MustHaveExec calls t.Skip with an explanation.
+// CleanCmdEnv will fill cmd.Env with the environment, excluding certain variables that could modify the behavior of the Go tools such as GODEBUG and GOTRACEBACK.
 //
-// On some platforms MustHaveExec checks for exec support by re-executing the current executable, which must be a binary built by 'go test'. We intentionally do not provide a HasExec function because of the risk of inappropriate recursion in TestMain functions.
-//
-// To check for exec support outside of a test, just try to exec the command. If exec is not supported, testenv.SyscallIsNotSupported will return true for the resulting error.
-func MustHaveExec(t testing.TB) {
-	if err := tryExec(); err != nil {
-		msg := fmt.Sprintf("cannot exec subprocess on %s/%s: %v", runtime.GOOS, runtime.GOARCH, err)
-
-		if t == nil {
-			panic(msg)
-		}
-		t.Helper()
-		t.Skip("skipping test:", msg)
+// If the caller wants to set cmd.Dir, set it before calling this function, so PWD will be set correctly in the environment.
+func CleanCmdEnv(cmd *exec.Cmd) *exec.Cmd {
+	if cmd.Env != nil {
+		panic("environment already set")
 	}
+
+	for _, env := range cmd.Environ() {
+		// Exclude GODEBUG from the environment to prevent its output from breaking tests that are trying to parse other command output.
+		if strings.HasPrefix(env, "GODEBUG=") {
+			continue
+		}
+		// Exclude GOTRACEBACK for the same reason.
+		if strings.HasPrefix(env, "GOTRACEBACK=") {
+			continue
+		}
+
+		cmd.Env = append(cmd.Env, env)
+	}
+
+	return cmd
 }
 
 var tryExec = sync.OnceValue(func() error {
@@ -60,21 +67,21 @@ var tryExec = sync.OnceValue(func() error {
 	return cmd.Run()
 })
 
-// Executable is a wrapper around [MustHaveExec] and [os.Executable]. It returns the path name for the executable that started the current process, or skips the test if the current system can't start new processes, or fails the test if the path can not be obtained.
-func Executable(t testing.TB) string {
-	MustHaveExec(t)
-
-	exe, err := exePath()
-	if err != nil {
-		msg := fmt.Sprintf("os.Executable error: %v", err)
+// MustHaveExec checks that the current system can start new processes using os.StartProcess or (more commonly) exec.Command. If not, MustHaveExec calls t.Skip with an explanation.
+//
+// On some platforms MustHaveExec checks for exec support by re-executing the current executable, which must be a binary built by 'go test'. We intentionally do not provide a HasExec function because of the risk of inappropriate recursion in TestMain functions.
+//
+// To check for exec support outside of a test, just try to exec the command. If exec is not supported, testenv.SyscallIsNotSupported will return true for the resulting error.
+func MustHaveExec(t testing.TB) {
+	if err := tryExec(); err != nil {
+		msg := fmt.Sprintf("cannot exec subprocess on %s/%s: %v", runtime.GOOS, runtime.GOARCH, err)
 
 		if t == nil {
 			panic(msg)
 		}
-		t.Fatal(msg)
+		t.Helper()
+		t.Skip("skipping test:", msg)
 	}
-
-	return exe
 }
 
 var exePath = sync.OnceValues(func() (string, error) {
@@ -82,30 +89,6 @@ var exePath = sync.OnceValues(func() (string, error) {
 })
 
 var execPaths sync.Map // path -> error
-
-// CleanCmdEnv will fill cmd.Env with the environment, excluding certain variables that could modify the behavior of the Go tools such as GODEBUG and GOTRACEBACK.
-//
-// If the caller wants to set cmd.Dir, set it before calling this function, so PWD will be set correctly in the environment.
-func CleanCmdEnv(cmd *exec.Cmd) *exec.Cmd {
-	if cmd.Env != nil {
-		panic("environment already set")
-	}
-
-	for _, env := range cmd.Environ() {
-		// Exclude GODEBUG from the environment to prevent its output from breaking tests that are trying to parse other command output.
-		if strings.HasPrefix(env, "GODEBUG=") {
-			continue
-		}
-		// Exclude GOTRACEBACK for the same reason.
-		if strings.HasPrefix(env, "GOTRACEBACK=") {
-			continue
-		}
-
-		cmd.Env = append(cmd.Env, env)
-	}
-
-	return cmd
-}
 
 // CommandContext is like exec.CommandContext, but:
 //   - skips t if the platform does not support os/exec,
@@ -159,7 +142,7 @@ func CommandContext(t testing.TB, ctx context.Context, name string, args ...stri
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Cancel = func() error {
 		if cancelCtx != nil && ctx.Err() == context.DeadlineExceeded {
-			// The command timed out due to running too close to the test's deadline. There is no way the test did that intentionally — it's too close to the wire! — so mark it as a test failure. That way, if the test expects the command to fail for some other reason, it doesn't have to distinguish between that reason and a timeout.
+			// The command timed out due to running too close to the test's deadline. There is no way the test did that intentionally – it's too close to the wire! – so mark it as a test failure. That way, if the test expects the command to fail for some other reason, it doesn't have to distinguish between that reason and a timeout.
 			t.Errorf("test timed out while running command: %v", cmd)
 		} else {
 			// The command is being terminated due to ctx being canceled, but apparently not due to an explicit test deadline that we added. Log that information in case it is useful for diagnosing a failure, but don't actually fail the test because of it.
@@ -186,6 +169,23 @@ func CommandContext(t testing.TB, ctx context.Context, name string, args ...stri
 func Command(t testing.TB, name string, args ...string) *exec.Cmd {
 	t.Helper()
 	return CommandContext(t, context.Background(), name, args...)
+}
+
+// Executable is a wrapper around [MustHaveExec] and [os.Executable]. It returns the path name for the executable that started the current process, or skips the test if the current system can't start new processes, or fails the test if the path can not be obtained.
+func Executable(t testing.TB) string {
+	MustHaveExec(t)
+
+	exe, err := exePath()
+	if err != nil {
+		msg := fmt.Sprintf("os.Executable error: %v", err)
+
+		if t == nil {
+			panic(msg)
+		}
+		t.Fatal(msg)
+	}
+
+	return exe
 }
 
 // MustHaveExecPath checks that the current system can start the named executable using os.StartProcess or (more commonly) exec.Command. If not, MustHaveExecPath calls t.Skip with an explanation.

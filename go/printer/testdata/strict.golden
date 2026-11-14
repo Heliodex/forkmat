@@ -179,8 +179,8 @@ type Point struct {
 	x, y, z, w int
 	name string
 	tagged int `json:"t"`
-	other int
-	left int // comment
+	other,
+	left, // comment
 	right int
 	p, q *int
 }

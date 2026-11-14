@@ -580,11 +580,35 @@ func (p *printer) sameType(a, b ast.Expr) bool {
 
 // mergeable reports whether field cur can join the names of prev.
 func (p *printer) mergeable(prev, cur *ast.Field) bool {
-	if len(prev.Names) == 0 || len(cur.Names) == 0 || prev.Tag != nil || cur.Tag != nil || prev.Comment != nil || cur.Comment != nil || cur.Doc != nil {
+	if len(prev.Names) == 0 || len(cur.Names) == 0 || prev.Tag != nil || cur.Tag != nil || cur.Doc != nil {
 		return false
 	}
 
-	return !p.commentIn(prev.End(), cur.Pos()) && p.sameType(prev.Type, cur.Type)
+	// the trailing comment of prev may sit between the names; it keeps its place
+	return !p.commentInExcept(prev.End(), cur.Pos(), prev.Comment) && p.sameType(prev.Type, cur.Type)
+}
+
+// commentInExcept reports whether a comment starts in the source range [from, to),
+// other than the comment group except, which is printed where it stands.
+func (p *printer) commentInExcept(from, to token.Pos, except *ast.CommentGroup) bool {
+	return p.commentInExcepts(from, to, []*ast.CommentGroup{except})
+}
+
+// commentInExcepts reports whether a comment starts in the source range [from, to),
+// other than the comment groups in except, which are printed where they stand.
+func (p *printer) commentInExcepts(from, to token.Pos, except []*ast.CommentGroup) bool {
+	cs := p.allComments
+	i := sort.Search(len(cs), func(i int) bool {
+		return cs[i].Pos() >= from
+	})
+
+	for ; i < len(cs) && cs[i].Pos() < to; i++ {
+		if !slices.Contains(except, cs[i]) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // strictFields returns the fields of a parameter or struct list as they print
@@ -604,7 +628,8 @@ func (p *printer) strictFields(list []*ast.Field) []*ast.Field {
 			out[n-1] = &ast.Field{
 				Doc: prev.Doc,
 				Names: append(append([]*ast.Ident{}, prev.Names...), f.Names...),
-				Type: prev.Type,
+				// the type is f's: it then sits on f's line, with f's comment
+				Type: f.Type,
 				Comment: f.Comment,
 			}
 			continue
@@ -843,7 +868,7 @@ func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, tok token.Toke
 // mergeableVars reports whether var spec cur can join the names of prev: both
 // have the same type written out, and neither has values or comments.
 func (p *printer) mergeableVars(prev, cur *ast.ValueSpec) bool {
-	return prev.Type != nil && cur.Type != nil && len(prev.Values) == 0 && len(cur.Values) == 0 && prev.Doc == nil && cur.Doc == nil && prev.Comment == nil && cur.Comment == nil && p.sameType(prev.Type, cur.Type)
+	return prev.Type != nil && cur.Type != nil && len(prev.Values) == 0 && len(cur.Values) == 0 && prev.Doc == nil && cur.Doc == nil && p.sameType(prev.Type, cur.Type)
 }
 
 // mergeVarSpecs joins consecutive specs of a var declaration that name the same
@@ -851,7 +876,19 @@ func (p *printer) mergeableVars(prev, cur *ast.ValueSpec) bool {
 // var pc, top int32. A declaration with a comment inside is left alone. When one
 // spec is left, the parentheses of the group are dropped.
 func (p *printer) mergeVarSpecs(d *ast.GenDecl) *ast.GenDecl {
-	if d.Tok != token.VAR || p.commentIn(d.Pos(), d.End()) {
+	// a comment inside the group keeps it, unless it is the trailing comment of a spec
+	if d.Tok != token.VAR {
+		return d
+	}
+
+	var trailing []*ast.CommentGroup
+	for _, sp := range d.Specs {
+		if vs := sp.(*ast.ValueSpec); vs.Comment != nil {
+			trailing = append(trailing, vs.Comment)
+		}
+	}
+
+	if p.commentInExcepts(d.Pos(), d.End(), trailing) {
 		return d
 	}
 
@@ -867,7 +904,8 @@ func (p *printer) mergeVarSpecs(d *ast.GenDecl) *ast.GenDecl {
 			if prev := specs[n-1].(*ast.ValueSpec); p.mergeableVars(prev, vs) {
 				specs[n-1] = &ast.ValueSpec{
 					Names: append(append([]*ast.Ident{}, prev.Names...), vs.Names...),
-					Type: prev.Type,
+					// the type is vs's: it then sits on vs's line, with its comment
+					Type: vs.Type,
 				}
 				merged = true
 				continue

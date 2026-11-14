@@ -260,8 +260,12 @@ The rules:
 - Binary expressions and selector chains are never broken.
 - Consecutive named struct fields and parameters of the same type share one
   type: `x int, y int` prints as `x, y int`, and `struct{ x int; y int }` as
-  a struct over three lines holding `x, y int`. Fields with a tag or a comment are not merged. Interface
-  methods are never merged.
+  a struct over three lines holding `x, y int`. A field's type is omitted when
+  the field after it has the same type, and a trailing comment on the first
+  field stays on its line between the names: `start, // comment` followed by
+  `end token.Pos`, and a trailing comment on the second field stays on its
+  line. Fields with a tag, or a doc comment on the second field, are not merged. Interface methods are never merged. The
+  same applies to `var` specs in a group.
 - Struct and interface bodies with members are always multi-line, even with a
   single simple field or method. An empty body stays `struct{}`.
 - Statements are one per line. A blank line goes before and after a block

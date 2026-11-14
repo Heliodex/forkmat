@@ -16,13 +16,13 @@ func embeddedName(t ast.Expr) string {
 	switch x := t.(type) {
 	case *ast.Ident:
 		return x.Name
-	case *ast.StarExpr:
-		return embeddedName(x.X)
-	case *ast.SelectorExpr:
-		return x.Sel.Name
 	case *ast.IndexExpr:
 		return embeddedName(x.X)
 	case *ast.IndexListExpr:
+		return embeddedName(x.X)
+	case *ast.SelectorExpr:
+		return x.Sel.Name
+	case *ast.StarExpr:
 		return embeddedName(x.X)
 	}
 
@@ -157,9 +157,11 @@ func sortStructLiteral(x *ast.CompositeLit, names []string, comments []*ast.Comm
 func structLiteralOrder(filename string, file *ast.File) {
 	// named types by name, in this file and the package's other files
 	dir := filepath.Dir(filename)
+
 	if !onDisk(filename) {
 		dir = "" // read from standard input, there are no sibling files
 	}
+
 	types := packageTypes(dir, filepath.Base(filename), file.Name.Name)
 
 	for _, d := range file.Decls {

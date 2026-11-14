@@ -443,12 +443,12 @@ func isTypeElem(x ast.Expr) bool {
 	switch x := x.(type) {
 	case *ast.ArrayType, *ast.StructType, *ast.FuncType, *ast.InterfaceType, *ast.MapType, *ast.ChanType:
 		return true
-	case *ast.UnaryExpr:
-		return x.Op == token.TILDE
 	case *ast.BinaryExpr:
 		return isTypeElem(x.X) || isTypeElem(x.Y)
 	case *ast.ParenExpr:
 		return isTypeElem(x.X)
+	case *ast.UnaryExpr:
+		return x.Op == token.TILDE
 	}
 
 	return false

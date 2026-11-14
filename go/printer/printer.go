@@ -1144,17 +1144,17 @@ func getDoc(n ast.Node) *ast.CommentGroup {
 	switch n := n.(type) {
 	case *ast.Field:
 		return n.Doc
-	case *ast.ImportSpec:
-		return n.Doc
-	case *ast.ValueSpec:
-		return n.Doc
-	case *ast.TypeSpec:
-		return n.Doc
-	case *ast.GenDecl:
+	case *ast.File:
 		return n.Doc
 	case *ast.FuncDecl:
 		return n.Doc
-	case *ast.File:
+	case *ast.GenDecl:
+		return n.Doc
+	case *ast.ImportSpec:
+		return n.Doc
+	case *ast.TypeSpec:
+		return n.Doc
+	case *ast.ValueSpec:
 		return n.Doc
 	}
 

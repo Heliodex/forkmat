@@ -217,16 +217,16 @@ func leftmostPos(e ast.Expr, prec int) token.Pos {
 	switch x := e.(type) {
 	case *ast.BinaryExpr:
 		return leftmostPos(x.X, x.Op.Precedence())
-	case *ast.SelectorExpr:
-		return leftmostPos(x.X, token.HighestPrec)
+	case *ast.CallExpr:
+		return leftmostPos(x.Fun, token.HighestPrec)
 	case *ast.IndexExpr:
+		return leftmostPos(x.X, token.HighestPrec)
+	case *ast.SelectorExpr:
 		return leftmostPos(x.X, token.HighestPrec)
 	case *ast.SliceExpr:
 		return leftmostPos(x.X, token.HighestPrec)
 	case *ast.TypeAssertExpr:
 		return leftmostPos(x.X, token.HighestPrec)
-	case *ast.CallExpr:
-		return leftmostPos(x.Fun, token.HighestPrec)
 	}
 
 	return e.Pos()

@@ -1142,6 +1142,7 @@ func reorderAssignRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 // use it and still move; a constant, variable or function of a sibling is not.
 func siblingTypes(filename, pkg string) map[string]bool {
 	types := map[string]bool{}
+
 	if !onDisk(filename) {
 		return types // read from standard input, there are no sibling files
 	}

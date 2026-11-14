@@ -227,6 +227,11 @@ The rules:
 - Parentheses are dropped where operator precedence already groups the
   expression (`(a * b) + c` prints as `a*b + c`). Types, composite and function
   literals, and unary `<-` and `~` keep theirs.
+- Imports are sorted by path within two groups: standard library packages
+  first, then the rest, with one blank line between the groups and none inside
+  them. A package is in the standard library when the first element of its
+  path has no dot, so a module path such as `forkmat/...` counts as standard
+  library. A block with a comment inside keeps its order.
 - Top-level declarations get a blank line when the token changes, when the next
   one has a doc comment, or when either spans several lines.
 - A function body holding a statement is always multi-line.

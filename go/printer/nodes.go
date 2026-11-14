@@ -1762,17 +1762,27 @@ func (p *printer) genDecl(d *ast.GenDecl) {
 				}
 			} else {
 				var line int
-				for i, s := range d.Specs {
+				specs := d.Specs
+				if p.strict() && d.Tok == token.IMPORT {
+					specs = p.strictImportSpecs(d)
+				}
+				for i, s := range specs {
 					if i > 0 {
 						// Import groups are separated by blank lines in the source,
 						// and gofmt sorts within each group, so keep the source's
-						// blank lines here even under StrictLayout.
+						// blank lines here when StrictLayout is off.
 						srcLine := p.lineFor(s.Pos())
-						if d.Tok != token.IMPORT {
-							// as at package level, a spec spanning several lines
-							// is set off from its neighbours by a blank line
+						if p.strict() {
 							gap := 1
-							if p.strict() && (p.printsLines(d.Specs[i-1]) || p.printsLines(s)) {
+							if d.Tok == token.IMPORT {
+								// standard library packages are a group of their own
+								prev, cur := specs[i-1].(*ast.ImportSpec), s.(*ast.ImportSpec)
+								if stdImport(prev) != stdImport(cur) {
+									gap = 2
+								}
+							} else if p.printsLines(specs[i-1]) || p.printsLines(s) {
+								// as at package level, a spec spanning several lines
+								// is set off from its neighbours by a blank line
 								gap = 2
 							}
 							srcLine = p.layoutLine(s.Pos(), gap)

@@ -7,6 +7,8 @@ import (
 	"go/token"
 	"slices"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 // Rules for StrictLayout. The source's line breaks are never consulted, except
@@ -664,6 +666,52 @@ func shortVarOK(vs *ast.ValueSpec) bool {
 		}
 	}
 	return false
+}
+
+// importPath returns the path of an import spec, without its quotes.
+func importPath(s *ast.ImportSpec) string {
+	if p, err := strconv.Unquote(s.Path.Value); err == nil {
+		return p
+	}
+	return s.Path.Value
+}
+
+// stdImport reports whether an import spec names a standard library package:
+// the first element of its path has no dot.
+func stdImport(s *ast.ImportSpec) bool {
+	first, _, _ := strings.Cut(importPath(s), "/")
+	return !strings.Contains(first, ".")
+}
+
+// strictImportSpecs returns the specs of an import declaration in the order
+// StrictLayout prints them: standard library packages first, then the rest,
+// each sorted by path and then by name. A declaration with a comment inside
+// keeps its order.
+func (p *printer) strictImportSpecs(d *ast.GenDecl) []ast.Spec {
+	if p.commentIn(d.Pos(), d.End()) {
+		return d.Specs
+	}
+	specs := slices.Clone(d.Specs)
+	slices.SortStableFunc(specs, func(a, b ast.Spec) int {
+		sa, sb := a.(*ast.ImportSpec), b.(*ast.ImportSpec)
+		if std, other := stdImport(sa), stdImport(sb); std != other {
+			if std {
+				return -1
+			}
+			return 1
+		}
+		if c := strings.Compare(importPath(sa), importPath(sb)); c != 0 {
+			return c
+		}
+		name := func(s *ast.ImportSpec) string {
+			if s.Name == nil {
+				return ""
+			}
+			return s.Name.Name
+		}
+		return strings.Compare(name(sa), name(sb))
+	})
+	return specs
 }
 
 // numericTypes are the predeclared numeric types, which a conversion of a zero

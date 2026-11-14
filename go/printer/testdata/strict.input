@@ -1,8 +1,10 @@
 package p
 
 import (
-	"fmt"
 	"os"
+
+	"golang.org/x/sync/errgroup"
+	"fmt"
 )
 
 // The source's breaks inside expressions, lists and selectors are ignored.
@@ -309,3 +311,5 @@ func localTypes() {
     type lB = int
     _ = lA(lB(1))
 }
+
+var _ = errgroup.Group{}

@@ -247,9 +247,10 @@ The rules:
 - Adjacent `type` declarations, at package level or in a block, are joined
   into one `type (...)` group, including declarations that are already in a
   group. A declaration's doc comment moves onto its spec inside the group, and
-  the doc comment of the first declaration becomes the group's. A comment that
-  is not a doc comment, or another statement, between two of them keeps them
-  apart. A group holds one keyword only, and a spec that spans several lines is
+  the doc comment of the first declaration becomes the group's. A comment
+  between two of them stays where it is, inside the group, so section comments
+  do not split a run. Another statement between two of them keeps them apart.
+  A group holds one keyword only, and a spec that spans several lines is
   set off from its neighbours by a blank line.
 - Adjacent single `var` declarations, at package level or in a block, are
   joined into one `var (...)` group, as before. A doc comment or another

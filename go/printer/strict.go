@@ -574,14 +574,6 @@ func groupDecls(run []*ast.GenDecl) *ast.GenDecl {
 	}
 }
 
-// startPos returns where d starts, including its doc comment.
-func startPos(d *ast.GenDecl) token.Pos {
-	if d.Doc != nil {
-		return d.Doc.Pos()
-	}
-	return d.Pos()
-}
-
 // withDoc returns spec s with the comment group doc placed before it, merged
 // with any doc comment s already has.
 func withDoc(s ast.Spec, doc *ast.CommentGroup) ast.Spec {
@@ -635,8 +627,8 @@ func joinTypeDecls(run []*ast.GenDecl) *ast.GenDecl {
 
 // groupTypes joins each run of adjacent type declarations into one type (...)
 // declaration. A declaration may be a single one or a group already, and may
-// carry doc comments. A comment that is not the doc comment of the next
-// declaration keeps two declarations apart.
+// carry doc comments. Comments between two declarations stay where they are,
+// inside the block.
 func groupTypes[T ast.Node](p *printer, list []T, decl func(T) *ast.GenDecl, wrap func(*ast.GenDecl) T) []T {
 	var out []T
 	for i := 0; i < len(list); {
@@ -646,7 +638,7 @@ func groupTypes[T ast.Node](p *printer, list []T, decl func(T) *ast.GenDecl, wra
 			run = append(run, d)
 			for j < len(list) {
 				d := decl(list[j])
-				if d == nil || d.Tok != token.TYPE || p.commentIn(list[j-1].End(), startPos(d)) {
+				if d == nil || d.Tok != token.TYPE {
 					break
 				}
 				run = append(run, d)

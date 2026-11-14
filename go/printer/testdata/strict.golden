@@ -391,4 +391,39 @@ type (
 
 	// Env represents a global Luau environment.
 	Env map[string]Val
+
+	// Val represents any possible VM stack/register value.
+	Val any
+
+	// VM internals types
+
+	OpInfo struct {
+		Mode, KMode uint8
+		HasAux bool
+	}
+
+	Inst struct {
+		K Val
+		// K0, K1, K2 for imports (up to 3 lay.ers.deep)
+		K0, K1, K2 string
+		A, D int32
+	}
+
+	// simpler compilation, deserialisation, and loading API
+
+	Deserialised struct {
+		MainProto *Proto
+	}
+
+	Deserpath struct {
+		Deserialised
+		Dbgpath string
+	}
+
+	// Coroutine types
+
+	// Status represents the status of a coroutine.
+	Status uint8
 )
+
+var x = 1

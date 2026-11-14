@@ -452,3 +452,23 @@ const (
     cgD = 9
     cgE = 8
 )
+
+// Map literals with string or number keys are sorted by key. A literal with a call
+// in a value, or with keys of mixed kinds, keeps its order.
+var mapWords = map[string]int{
+    "pear": 3,
+    "apple": 1,
+}
+
+var mapNums = map[int]string{
+    10: "ten",
+    -2: "minus two",
+    3: "three",
+}
+
+var mapCall = map[string]int{
+    "b": mapF(),
+    "a": 1,
+}
+
+func mapF() int { return 0 }

@@ -237,6 +237,157 @@ func (p *printer) commentIn(from, to token.Pos) bool {
 	return i < len(cs) && cs[i].Pos() < to
 }
 
+// strictSortedMapElts returns the elements of a map literal ordered by key: string
+// keys alphabetically, number keys numerically. The literal is a map when its keys
+// are all string literals or all number literals, since a struct names its fields
+// with identifiers. The elements are reordered only when the literal has no
+// comment, and every value is free of calls and receives, which Go evaluates in
+// order. Otherwise the elements are returned as they are.
+func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
+	if len(x.Elts) < 2 || p.commentIn(x.Lbrace, x.Rbrace) {
+		return x.Elts
+	}
+
+	type keyed struct {
+		key  any // a string, or a constant.Value
+		elt  ast.Expr
+	}
+
+	var (
+		kind  string
+		elts  []keyed
+	)
+
+	for _, e := range x.Elts {
+		kv, ok := e.(*ast.KeyValueExpr)
+		if !ok || !pureValue(kv.Value) {
+			return x.Elts
+		}
+
+		var (
+			k  string
+			key any
+		)
+
+		switch lit := kv.Key.(type) {
+		case *ast.BasicLit:
+			if lit.Kind == token.STRING {
+				s, err := strconv.Unquote(lit.Value)
+				if err != nil {
+					return x.Elts
+				}
+
+				k, key = "string", s
+			} else if v := numberLiteral(lit); v != nil {
+				k, key = "number", v
+			} else {
+				return x.Elts
+			}
+		case *ast.UnaryExpr:
+			v := numberLiteral(lit)
+			if v == nil {
+				return x.Elts
+			}
+
+			k, key = "number", v
+		default:
+			return x.Elts
+		}
+
+		if kind != "" && k != kind {
+			return x.Elts
+		}
+
+		kind = k
+		elts = append(elts, keyed{key: key, elt: e})
+	}
+
+	slices.SortStableFunc(elts, func(a, b keyed) int {
+		if s, ok := a.key.(string); ok {
+			return strings.Compare(s, b.key.(string))
+		}
+
+		av, bv := a.key.(constant.Value), b.key.(constant.Value)
+		switch {
+		case constant.Compare(av, token.LSS, bv):
+			return -1
+		case constant.Compare(bv, token.LSS, av):
+			return 1
+		}
+
+		return 0
+	})
+
+	out := make([]ast.Expr, len(elts))
+	for i, k := range elts {
+		out[i] = k.elt
+	}
+
+	return out
+}
+
+// pureValue reports whether evaluating e has no side effects: it has no call,
+// other than a conversion to a predeclared type, make or new, no receive, and no
+// function literal.
+func pureValue(e ast.Expr) bool {
+	pure := true
+
+	ast.Inspect(e, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.CallExpr:
+			if id, ok := x.Fun.(*ast.Ident); !ok || !(pureTypeNames[id.Name] || id.Name == "make" || id.Name == "new") {
+				pure = false
+			}
+		case *ast.UnaryExpr:
+			if x.Op == token.ARROW {
+				pure = false
+			}
+		case *ast.FuncLit:
+			pure = false
+		}
+
+		return pure
+	})
+
+	return pure
+}
+
+// pureTypeNames are the predeclared types, whose conversions have no side effects.
+var pureTypeNames = map[string]bool{
+	"bool": true, "string": true, "byte": true, "rune": true, "uintptr": true,
+	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
+	"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true,
+	"float32": true, "float64": true, "complex64": true, "complex128": true,
+}
+
+// numberLiteral returns the value of an integer or floating-point literal, with an
+// optional minus sign, or nil if e is anything else.
+func numberLiteral(e ast.Expr) constant.Value {
+	switch x := e.(type) {
+	case *ast.BasicLit:
+		if x.Kind != token.INT && x.Kind != token.FLOAT {
+			return nil
+		}
+
+		v := constant.MakeFromLiteral(x.Value, x.Kind, 0)
+		if k := v.Kind(); k != constant.Int && k != constant.Float {
+			return nil
+		}
+
+		return v
+	case *ast.UnaryExpr:
+		if x.Op != token.SUB {
+			return nil
+		}
+
+		if v := numberLiteral(x.X); v != nil {
+			return constant.UnaryOp(token.SUB, v, 0)
+		}
+	}
+
+	return nil
+}
+
 // strictFitsOneLine reports whether a composite literal is printed on one
 // line under StrictLayout: it has no comments, and its type and elements each
 // fit, with the whole literal within strictMaxSize. A literal that initialises

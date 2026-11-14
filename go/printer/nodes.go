@@ -1113,7 +1113,11 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 		if p.strict() && !p.strictFitsOneLine(x) {
 			listMode |= strictBreak
 		}
-		p.exprList(x.Lbrace, x.Elts, 1, listMode, x.Rbrace, x.Incomplete)
+		elts := x.Elts
+		if p.strict() {
+			elts = p.strictSortedMapElts(x)
+		}
+		p.exprList(x.Lbrace, elts, 1, listMode, x.Rbrace, x.Incomplete)
 		// do not insert extra line break following a /*-style comment
 		// before the closing '}' as it might break the code if there
 		// is no trailing ','

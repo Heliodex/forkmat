@@ -266,6 +266,11 @@ The rules:
   `end token.Pos`, and a trailing comment on the second field stays on its
   line. Fields with a tag, or a doc comment on the second field, are not merged. Interface methods are never merged. The
   same applies to `var` specs in a group.
+- A map literal whose keys are all string literals is sorted alphabetically by
+  key, and one whose keys are all number literals numerically (a minus sign is
+  allowed). A struct literal names its fields with identifiers, so it is not
+  reordered. A literal is reordered only if it has no comment and no value calls
+  a function or receives from a channel, since Go evaluates them in order.
 - Struct and interface bodies with members are always multi-line, even with a
   single simple field or method. An empty body stays `struct{}`.
 - Statements are one per line. A blank line goes before and after a block

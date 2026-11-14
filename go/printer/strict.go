@@ -11,6 +11,11 @@ import (
 	"strings"
 )
 
+// stmtKind classifies a statement for the blank lines of StrictLayout. A run
+// of statements of one kind is printed without blank lines; two adjacent
+// statements of different kinds are set off by one.
+type stmtKind int
+
 // Rules for StrictLayout. The source's line breaks are never consulted, except
 // for comments:
 //
@@ -37,42 +42,49 @@ import (
 // stay on one line.
 const strictMaxSize = 100
 
+// elemSpan returns the source range of e as it prints under StrictLayout.
+func (p *printer) elemSpan(e ast.Expr) (token.Pos, token.Pos) {
+	return leftmostPos(e, token.LowestPrec), e.End()
+}
+
+// listHasComment reports whether a comment sits between the tokens of a list:
+// after the opening token prev0 (if known), between two elements, or before
+// the closing token next0 (if known). Comments nested inside an element do not
+// count, since they are that element's business.
+func (p *printer) listHasComment(list []ast.Expr, prev0, next0 token.Pos) bool {
+	// Each element is measured as it prints: a parenthesized element whose
+	// parentheses are dropped starts at its content.
+	first, _ := p.elemSpan(list[0])
+	from := first
+
+	if prev0.IsValid() {
+		from = prev0
+	}
+
+	if p.commentIn(from, first) {
+		return true
+	}
+
+	for i := 1; i < len(list); i++ {
+		_, end := p.elemSpan(list[i-1])
+		if start, _ := p.elemSpan(list[i]); p.commentIn(end, start) {
+			return true
+		}
+	}
+
+	_, last := p.elemSpan(list[len(list)-1])
+	to := last
+
+	if next0.IsValid() {
+		to = next0
+	}
+
+	return p.commentIn(last, to)
+}
+
 // strict reports whether the printer lays out code with StrictLayout.
 func (p *printer) strict() bool {
 	return p.Mode&StrictLayout != 0
-}
-
-// measured returns what to print to measure n. Under StrictLayout that is n
-// with the comments inside it: a comment can force line breaks, so a node
-// without its comments would be measured too small. Without StrictLayout it
-// is n itself, so the default layout is unchanged.
-func (p *printer) measured(n ast.Node) any {
-	if !p.strict() {
-		return n
-	}
-	cs := p.allComments
-	i := sort.Search(len(cs), func(i int) bool {
-		return cs[i].Pos() >= n.Pos()
-	})
-	j := i
-	for j < len(cs) && cs[j].Pos() < n.End() {
-		j++
-	}
-	if i == j {
-		return n
-	}
-	return &CommentedNode{Node: n, Comments: cs[i:j]}
-}
-
-// sizeConfig is the configuration nodes are printed with to measure them.
-// Sizes are cached per node (p.nodeSizes), so every measurement must use the
-// same configuration. Under StrictLayout the measured text is that of the
-// output, so number literals are spelled as they will be printed.
-func (p *printer) sizeConfig() Config {
-	if p.strict() {
-		return Config{Mode: RawFormat | StrictLayout | p.Mode&normalizeNumbers}
-	}
-	return Config{Mode: RawFormat}
 }
 
 // layoutLine returns the line argument for linebreak. Without StrictLayout it
@@ -83,7 +95,53 @@ func (p *printer) layoutLine(pos token.Pos, gap int) int {
 	if p.strict() {
 		return p.pos.Line + gap
 	}
+
 	return p.lineFor(pos)
+}
+
+// measured returns what to print to measure n. Under StrictLayout that is n
+// with the comments inside it: a comment can force line breaks, so a node
+// without its comments would be measured too small. Without StrictLayout it
+// is n itself, so the default layout is unchanged.
+func (p *printer) measured(n ast.Node) any {
+	if !p.strict() {
+		return n
+	}
+
+	cs := p.allComments
+	i := sort.Search(len(cs), func(i int) bool {
+		return cs[i].Pos() >= n.Pos()
+	})
+	j := i
+
+	for j < len(cs) && cs[j].Pos() < n.End() {
+		j++
+	}
+
+	if i == j {
+		return n
+	}
+
+	return &CommentedNode{
+		Node: n,
+		Comments: cs[i:j],
+	}
+}
+
+// sizeConfig is the configuration nodes are printed with to measure them.
+// Sizes are cached per node (p.nodeSizes), so every measurement must use the
+// same configuration. Under StrictLayout the measured text is that of the
+// output, so number literals are spelled as they will be printed.
+func (p *printer) sizeConfig() Config {
+	if p.strict() {
+		return Config{
+			Mode: RawFormat | StrictLayout | p.Mode&normalizeNumbers,
+		}
+	}
+
+	return Config{
+		Mode: RawFormat,
+	}
 }
 
 // strictExprList prints an expression list under StrictLayout. Without the
@@ -103,13 +161,16 @@ func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode, 
 			}
 			p.expr0(x, depth)
 		}
+
 		return
 	}
 
 	ws := indent
+
 	if mode&noIndent != 0 {
 		ws = ignore
 	}
+
 	for i, x := range list {
 		if i > 0 {
 			p.print(token.COMMA)
@@ -118,55 +179,24 @@ func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode, 
 		// element: after "return" a newline would end the statement.
 		if i > 0 || prev0.IsValid() {
 			p.linebreak(p.pos.Line+1, 1, ws, i == 0)
+
 			ws = ignore
 		}
 		p.expr0(x, depth)
 	}
+
 	if len(list) > 0 && mode&commaTerm != 0 {
 		p.print(token.COMMA)
 	}
+
 	if ws == ignore && mode&noIndent == 0 {
 		p.print(unindent)
 	}
+
 	if mode&commaTerm != 0 {
 		// the closing token starts a new line
 		p.print(formfeed)
 	}
-}
-
-// listHasComment reports whether a comment sits between the tokens of a list:
-// after the opening token prev0 (if known), between two elements, or before
-// the closing token next0 (if known). Comments nested inside an element do not
-// count, since they are that element's business.
-func (p *printer) listHasComment(list []ast.Expr, prev0, next0 token.Pos) bool {
-	// Each element is measured as it prints: a parenthesized element whose
-	// parentheses are dropped starts at its content.
-	first, _ := p.elemSpan(list[0])
-	from := first
-	if prev0.IsValid() {
-		from = prev0
-	}
-	if p.commentIn(from, first) {
-		return true
-	}
-	for i := 1; i < len(list); i++ {
-		_, end := p.elemSpan(list[i-1])
-		start, _ := p.elemSpan(list[i])
-		if p.commentIn(end, start) {
-			return true
-		}
-	}
-	_, last := p.elemSpan(list[len(list)-1])
-	to := last
-	if next0.IsValid() {
-		to = next0
-	}
-	return p.commentIn(last, to)
-}
-
-// elemSpan returns the source range of e as it prints under StrictLayout.
-func (p *printer) elemSpan(e ast.Expr) (token.Pos, token.Pos) {
-	return leftmostPos(e, token.LowestPrec), e.End()
 }
 
 // leftmostPos returns the position of the first token of e when it prints
@@ -174,6 +204,7 @@ func (p *printer) elemSpan(e ast.Expr) (token.Pos, token.Pos) {
 // the leftmost operand are dropped, the operand starts the expression.
 func leftmostPos(e ast.Expr, prec int) token.Pos {
 	e = strictOperand(e, prec)
+
 	switch x := e.(type) {
 	case *ast.BinaryExpr:
 		return leftmostPos(x.X, x.Op.Precedence())
@@ -188,6 +219,7 @@ func leftmostPos(e ast.Expr, prec int) token.Pos {
 	case *ast.CallExpr:
 		return leftmostPos(x.Fun, token.HighestPrec)
 	}
+
 	return e.Pos()
 }
 
@@ -196,10 +228,12 @@ func (p *printer) commentIn(from, to token.Pos) bool {
 	if !from.IsValid() || !to.IsValid() || to <= from {
 		return false
 	}
+
 	cs := p.allComments
 	i := sort.Search(len(cs), func(i int) bool {
 		return cs[i].Pos() >= from
 	})
+
 	return i < len(cs) && cs[i].Pos() < to
 }
 
@@ -212,27 +246,34 @@ func (p *printer) strictFitsOneLine(x *ast.CompositeLit) bool {
 	if x.Incomplete || p.commentBefore(p.posFor(x.Rbrace)) {
 		return false
 	}
+
 	if _, isMap := x.Type.(*ast.MapType); !isMap && hasKeyedElt(x.Elts) {
 		return false
 	}
+
 	size := 2 // the braces
 	if x.Type != nil {
 		n := p.nodeSize(x.Type, strictMaxSize)
 		if n > strictMaxSize {
 			return false
 		}
+
 		size += n
 	}
+
 	for i, e := range x.Elts {
 		n := p.nodeSize(e, strictMaxSize)
 		if n > strictMaxSize {
 			return false
 		}
+
 		size += n
+
 		if i > 0 {
 			size += len(", ")
 		}
 	}
+
 	return size <= strictMaxSize
 }
 
@@ -244,6 +285,7 @@ func hasKeyedElt(elts []ast.Expr) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -251,11 +293,6 @@ func hasKeyedElt(elts []ast.Expr) bool {
 func isCallStmt(s ast.Stmt) bool {
 	return kindOf(s) == kindCall
 }
-
-// stmtKind classifies a statement for the blank lines of StrictLayout. A run
-// of statements of one kind is printed without blank lines; two adjacent
-// statements of different kinds are set off by one.
-type stmtKind int
 
 const (
 	kindNone stmtKind = iota // any other statement, which never sets off a neighbour
@@ -284,6 +321,7 @@ func kindOf(s ast.Stmt) stmtKind {
 			}
 		}
 	}
+
 	return kindNone
 }
 
@@ -291,13 +329,14 @@ func kindOf(s ast.Stmt) stmtKind {
 // StrictLayout (unless its neighbour is a call statement).
 func (p *printer) blankStmt(s ast.Stmt) bool {
 	switch s := s.(type) {
-	case *ast.BlockStmt, *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt,
-		*ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.ReturnStmt:
+	case *ast.BlockStmt, *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.ReturnStmt:
 		return true
 	case *ast.DeclStmt:
 		d, ok := s.Decl.(*ast.GenDecl)
+
 		return ok && d.Tok == token.VAR && p.printsLines(d)
 	}
+
 	return false
 }
 
@@ -314,12 +353,14 @@ func (p *printer) blankLineBetween(prev, next ast.Stmt) bool {
 	if declaresUsedBy(prev, next) {
 		return false
 	}
+
 	if p.blankStmt(prev) || p.blankStmt(next) {
 		return !isCallStmt(prev) && !isCallStmt(next)
 	}
 	// Calls, assignments, and const and var declarations are each set off from
 	// the others. A statement of kindNone is never set off by this rule.
 	kp, kn := kindOf(prev), kindOf(next)
+
 	return kp != kindNone && kn != kindNone && kp != kn
 }
 
@@ -332,7 +373,9 @@ func declaresUsedBy(prev, next ast.Stmt) bool {
 	if !ok {
 		return false
 	}
+
 	names := map[string]bool{}
+
 	switch s := prev.(type) {
 	case *ast.AssignStmt:
 		if s.Tok == token.DEFINE {
@@ -353,14 +396,18 @@ func declaresUsedBy(prev, next ast.Stmt) bool {
 			}
 		}
 	}
+
 	if len(names) == 0 {
 		return false
 	}
-	used := false
+
+	var used bool
+
 	ast.Inspect(is.Cond, func(n ast.Node) bool {
 		if id, ok := n.(*ast.Ident); ok && names[id.Name] {
 			used = true
 		}
+
 		return !used
 	})
 	return used
@@ -372,7 +419,22 @@ func isGoOrDefer(s ast.Stmt) bool {
 	case *ast.GoStmt, *ast.DeferStmt:
 		return true
 	}
+
 	return false
+}
+
+// printsLines reports whether n is printed over several lines under
+// StrictLayout. Unlike nodeSize it is not limited to a width.
+func (p *printer) printsLines(n ast.Node) bool {
+	cfg := p.sizeConfig()
+
+	var counter sizeCounter
+
+	if err := cfg.fprint(&counter, p.fset, p.measured(n), p.nodeSizes); err != nil {
+		return false
+	}
+
+	return counter.hasNewline
 }
 
 // multiLineDecl reports whether a declaration is printed over several lines
@@ -383,18 +445,8 @@ func (p *printer) multiLineDecl(d ast.Decl) bool {
 	if d == nil {
 		return false // no previous declaration
 	}
-	return p.printsLines(d)
-}
 
-// printsLines reports whether n is printed over several lines under
-// StrictLayout. Unlike nodeSize it is not limited to a width.
-func (p *printer) printsLines(n ast.Node) bool {
-	cfg := p.sizeConfig()
-	var counter sizeCounter
-	if err := cfg.fprint(&counter, p.fset, p.measured(n), p.nodeSizes); err != nil {
-		return false
-	}
-	return counter.hasNewline
+	return p.printsLines(d)
 }
 
 // strictParenExpr prints a parenthesized expression under StrictLayout. The
@@ -403,13 +455,16 @@ func (p *printer) printsLines(n ast.Node) bool {
 // a single pair.
 func (p *printer) strictParenExpr(x *ast.ParenExpr, prec1, depth int) {
 	inner := x.X
+
 	for {
 		px, ok := inner.(*ast.ParenExpr)
 		if !ok {
 			break
 		}
+
 		inner = px.X
 	}
+
 	if !needsParens(inner, prec1) {
 		p.expr1(inner, prec1, depth)
 		return
@@ -418,6 +473,24 @@ func (p *printer) strictParenExpr(x *ast.ParenExpr, prec1, depth int) {
 	p.expr0(inner, reduceDepth(depth))
 	p.setPos(x.Rparen)
 	p.print(token.RPAREN)
+}
+
+// hasCompositeLit reports whether x holds a composite literal that is not
+// enclosed in parentheses of its own.
+func hasCompositeLit(x ast.Expr) bool {
+	var found bool
+
+	ast.Inspect(x, func(n ast.Node) bool {
+		switch n.(type) {
+		case *ast.ParenExpr:
+			return false
+		case *ast.CompositeLit:
+			found = true
+		}
+
+		return !found
+	})
+	return found
 }
 
 // needsParens reports whether x, printed where an operator of precedence prec1
@@ -430,9 +503,9 @@ func needsParens(x ast.Expr, prec1 int) bool {
 	if hasCompositeLit(x) {
 		return true
 	}
+
 	switch x := x.(type) {
-	case *ast.Ident, *ast.BasicLit, *ast.CallExpr, *ast.SelectorExpr,
-		*ast.IndexExpr, *ast.IndexListExpr, *ast.SliceExpr, *ast.TypeAssertExpr:
+	case *ast.Ident, *ast.BasicLit, *ast.CallExpr, *ast.SelectorExpr, *ast.IndexExpr, *ast.IndexListExpr, *ast.SliceExpr, *ast.TypeAssertExpr:
 		return false
 	case *ast.BinaryExpr:
 		return x.Op.Precedence() < prec1
@@ -441,23 +514,8 @@ func needsParens(x ast.Expr, prec1 int) bool {
 	case *ast.UnaryExpr:
 		return x.Op == token.ARROW || x.Op == token.TILDE || token.UnaryPrec < prec1
 	}
-	return true
-}
 
-// hasCompositeLit reports whether x holds a composite literal that is not
-// enclosed in parentheses of its own.
-func hasCompositeLit(x ast.Expr) bool {
-	found := false
-	ast.Inspect(x, func(n ast.Node) bool {
-		switch n.(type) {
-		case *ast.ParenExpr:
-			return false
-		case *ast.CompositeLit:
-			found = true
-		}
-		return !found
-	})
-	return found
+	return true
 }
 
 // strictOperand returns the operand e as it prints under StrictLayout when it
@@ -468,67 +526,23 @@ func strictOperand(e ast.Expr, prec1 int) ast.Expr {
 	if !ok {
 		return e
 	}
+
 	inner := px.X
+
 	for {
 		ipx, ok := inner.(*ast.ParenExpr)
 		if !ok {
 			break
 		}
+
 		inner = ipx.X
 	}
+
 	if needsParens(inner, prec1) {
 		return e
 	}
+
 	return inner
-}
-
-// strictFields returns the fields of a parameter or struct list as they print
-// under StrictLayout. Consecutive named fields of the same type are merged into
-// one field with several names: x int, y int becomes x, y int. Fields with a
-// tag or a comment, or with a comment between them, are not merged.
-func (p *printer) strictFields(list []*ast.Field) []*ast.Field {
-	if !p.strict() || len(list) < 2 {
-		return list
-	}
-	out := make([]*ast.Field, 0, len(list))
-	for _, f := range list {
-		if n := len(out); n > 0 && p.mergeable(out[n-1], f) {
-			prev := out[n-1]
-			out[n-1] = &ast.Field{
-				Doc: prev.Doc,
-				Names: append(append([]*ast.Ident{}, prev.Names...), f.Names...),
-				Type: prev.Type,
-				Comment: f.Comment,
-			}
-			continue
-		}
-		out = append(out, f)
-	}
-	return out
-}
-
-// mergeable reports whether field cur can join the names of prev.
-func (p *printer) mergeable(prev, cur *ast.Field) bool {
-	if len(prev.Names) == 0 || len(cur.Names) == 0 ||
-		prev.Tag != nil || cur.Tag != nil ||
-		prev.Comment != nil || cur.Comment != nil || cur.Doc != nil {
-		return false
-	}
-	return !p.commentIn(prev.End(), cur.Pos()) && p.sameType(prev.Type, cur.Type)
-}
-
-// sameType reports whether a and b print the same type, with no comment in
-// either.
-func (p *printer) sameType(a, b ast.Expr) bool {
-	if p.commentIn(a.Pos(), a.End()) || p.commentIn(b.Pos(), b.End()) {
-		return false
-	}
-	cfg := p.sizeConfig()
-	var sa, sb bytes.Buffer
-	if cfg.fprint(&sa, p.fset, a, p.nodeSizes) != nil || cfg.fprint(&sb, p.fset, b, p.nodeSizes) != nil {
-		return false
-	}
-	return sa.String() == sb.String()
 }
 
 // afterOpenBrace reports whether the last token written, ignoring white space,
@@ -540,9 +554,111 @@ func (p *printer) afterOpenBrace() bool {
 		case ' ', '\t', '\n', '\f', '\v', '\r':
 			continue
 		}
+
 		return c == '{'
 	}
+
 	return false
+}
+
+// sameType reports whether a and b print the same type, with no comment in
+// either.
+func (p *printer) sameType(a, b ast.Expr) bool {
+	if p.commentIn(a.Pos(), a.End()) || p.commentIn(b.Pos(), b.End()) {
+		return false
+	}
+
+	cfg := p.sizeConfig()
+
+	var sa, sb bytes.Buffer
+	if cfg.fprint(&sa, p.fset, a, p.nodeSizes) != nil || cfg.fprint(&sb, p.fset, b, p.nodeSizes) != nil {
+		return false
+	}
+
+	return sa.String() == sb.String()
+}
+
+// mergeable reports whether field cur can join the names of prev.
+func (p *printer) mergeable(prev, cur *ast.Field) bool {
+	if len(prev.Names) == 0 || len(cur.Names) == 0 || prev.Tag != nil || cur.Tag != nil || prev.Comment != nil || cur.Comment != nil || cur.Doc != nil {
+		return false
+	}
+
+	return !p.commentIn(prev.End(), cur.Pos()) && p.sameType(prev.Type, cur.Type)
+}
+
+// strictFields returns the fields of a parameter or struct list as they print
+// under StrictLayout. Consecutive named fields of the same type are merged into
+// one field with several names: x int, y int becomes x, y int. Fields with a
+// tag or a comment, or with a comment between them, are not merged.
+func (p *printer) strictFields(list []*ast.Field) []*ast.Field {
+	if !p.strict() || len(list) < 2 {
+		return list
+	}
+
+	out := make([]*ast.Field, 0, len(list))
+
+	for _, f := range list {
+		if n := len(out); n > 0 && p.mergeable(out[n-1], f) {
+			prev := out[n-1]
+			out[n-1] = &ast.Field{
+				Doc: prev.Doc,
+				Names: append(append([]*ast.Ident{}, prev.Names...), f.Names...),
+				Type: prev.Type,
+				Comment: f.Comment,
+			}
+			continue
+		}
+
+		out = append(out, f)
+	}
+
+	return out
+}
+
+// groupDecls joins a run of single var declarations into one parenthesized
+// declaration.
+func groupDecls(run []*ast.GenDecl) *ast.GenDecl {
+	var specs []ast.Spec
+
+	for _, d := range run {
+		specs = append(specs, d.Specs...)
+	}
+
+	first, last := run[0], run[len(run)-1]
+
+	return &ast.GenDecl{
+		TokPos: first.TokPos,
+		Tok: first.Tok,
+		Lparen: first.TokPos,
+		Specs: specs,
+		Rparen: last.End(),
+	}
+}
+
+// mergeDoc returns the comment group of a followed by that of b.
+func mergeDoc(a, b *ast.CommentGroup) *ast.CommentGroup {
+	if b == nil {
+		return a
+	}
+
+	return &ast.CommentGroup{
+		List: append(append([]*ast.Comment{}, a.List...), b.List...),
+	}
+}
+
+// usesIota reports whether a declaration mentions iota.
+func usesIota(d *ast.GenDecl) bool {
+	var found bool
+
+	ast.Inspect(d, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && id.Name == "iota" {
+			found = true
+		}
+
+		return !found
+	})
+	return found
 }
 
 // singleDecl returns d if it can join a run of declarations of its token: an
@@ -555,6 +671,7 @@ func singleDecl(d *ast.GenDecl) *ast.GenDecl {
 	if d == nil || d.Doc != nil {
 		return nil
 	}
+
 	switch d.Tok {
 	case token.VAR:
 		if d.Lparen.IsValid() {
@@ -568,42 +685,16 @@ func singleDecl(d *ast.GenDecl) *ast.GenDecl {
 	default:
 		return nil
 	}
+
 	if len(d.Specs) != 1 {
 		return nil
 	}
+
 	if vs := d.Specs[0].(*ast.ValueSpec); vs.Doc != nil || vs.Comment != nil {
 		return nil
 	}
+
 	return d
-}
-
-// usesIota reports whether a declaration mentions iota.
-func usesIota(d *ast.GenDecl) bool {
-	found := false
-	ast.Inspect(d, func(n ast.Node) bool {
-		if id, ok := n.(*ast.Ident); ok && id.Name == "iota" {
-			found = true
-		}
-		return !found
-	})
-	return found
-}
-
-// groupDecls joins a run of single var declarations into one parenthesized
-// declaration.
-func groupDecls(run []*ast.GenDecl) *ast.GenDecl {
-	var specs []ast.Spec
-	for _, d := range run {
-		specs = append(specs, d.Specs...)
-	}
-	first, last := run[0], run[len(run)-1]
-	return &ast.GenDecl{
-		TokPos: first.TokPos,
-		Tok: first.Tok,
-		Lparen: first.TokPos,
-		Specs: specs,
-		Rparen: last.End(),
-	}
 }
 
 // withDoc returns spec s with the comment group doc placed before it, merged
@@ -612,25 +703,21 @@ func withDoc(s ast.Spec, doc *ast.CommentGroup) ast.Spec {
 	if doc == nil {
 		return s
 	}
+
 	switch s := s.(type) {
 	case *ast.TypeSpec:
 		c := *s
 		c.Doc = mergeDoc(doc, c.Doc)
+
 		return &c
 	case *ast.ValueSpec:
 		c := *s
 		c.Doc = mergeDoc(doc, c.Doc)
+
 		return &c
 	}
-	return s
-}
 
-// mergeDoc returns the comment group of a followed by that of b.
-func mergeDoc(a, b *ast.CommentGroup) *ast.CommentGroup {
-	if b == nil {
-		return a
-	}
-	return &ast.CommentGroup{List: append(append([]*ast.Comment{}, a.List...), b.List...)}
+	return s
 }
 
 // joinTypeDecls joins a run of type declarations into one type (...)
@@ -639,15 +726,19 @@ func mergeDoc(a, b *ast.CommentGroup) *ast.CommentGroup {
 // position of the keyword and the parenthesis (see typeBlockPos).
 func joinTypeDecls(run []*ast.GenDecl, pos token.Pos) *ast.GenDecl {
 	var specs []ast.Spec
+
 	for _, d := range run {
 		for j, sp := range d.Specs {
 			if j == 0 {
 				sp = withDoc(sp, d.Doc)
 			}
+
 			specs = append(specs, sp)
 		}
 	}
+
 	last := run[len(run)-1]
+
 	return &ast.GenDecl{
 		TokPos: pos,
 		Tok: token.TYPE,
@@ -666,17 +757,20 @@ func joinTypeDecls(run []*ast.GenDecl, pos token.Pos) *ast.GenDecl {
 // line before, and the comments come after it, on lines of their own.
 func (p *printer) typeBlockPos(before token.Pos, first *ast.GenDecl) token.Pos {
 	anchor := first.TokPos
+
 	if first.Doc != nil {
 		anchor = first.Doc.Pos()
 	}
+
 	cs := p.allComments
-	i := sort.Search(len(cs), func(i int) bool {
+	if i := sort.Search(len(cs), func(i int) bool {
 		return cs[i].Pos() > before
-	})
-	if i < len(cs) && cs[i].Pos() < anchor {
+	}); i < len(cs) && cs[i].Pos() < anchor {
 		anchor = cs[i].Pos()
 	}
+
 	col := p.fset.Position(anchor).Column
+
 	return token.Pos(int(anchor) - col) // the newline that ends the line above
 }
 
@@ -686,16 +780,21 @@ func (p *printer) typeBlockPos(before token.Pos, first *ast.GenDecl) token.Pos {
 // inside the block.
 func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, decl func(T) *ast.GenDecl, wrap func(*ast.GenDecl) T) []T {
 	var out []T
+
 	for i := 0; i < len(list); {
 		j := i + 1
+
 		var run []*ast.GenDecl
+
 		if d := decl(list[i]); d != nil && d.Tok == token.TYPE {
 			run = append(run, d)
+
 			for j < len(list) {
 				d := decl(list[j])
 				if d == nil || d.Tok != token.TYPE {
 					break
 				}
+
 				run = append(run, d)
 				j++
 			}
@@ -703,119 +802,35 @@ func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, decl func(T) *
 		// the block needs a position before the run (see joinTypeDecls); where
 		// there is none, a run that starts with a doc comment is left alone
 		var before token.Pos
+
 		if i > 0 {
 			before = list[i-1].End()
 		} else {
 			before = head
 		}
+
 		if len(run) > 1 && (before.IsValid() || run[0].Doc == nil) {
 			pos := run[0].TokPos
+
 			if before.IsValid() {
 				pos = p.typeBlockPos(before, run[0])
 			}
+
 			out = append(out, wrap(joinTypeDecls(run, pos)))
 		} else {
 			out = append(out, list[i])
 		}
+
 		i = j
 	}
+
 	return out
 }
 
-// strictGroupDecls groups each run of adjacent single var declarations at
-// package level into one var (...) declaration, and each run of type
-// declarations into one type (...) declaration (see groupTypes). A comment
-// between two var declarations keeps them apart.
-func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
-	list = groupTypes(p, list, p.head,
-		func(d ast.Decl) *ast.GenDecl {
-			g, _ := d.(*ast.GenDecl)
-			return g
-		},
-		func(g *ast.GenDecl) ast.Decl {
-			return g
-		})
-	var out []ast.Decl
-	for i := 0; i < len(list); {
-		j := i + 1
-		var run []*ast.GenDecl
-		if d, ok := list[i].(*ast.GenDecl); ok && singleDecl(d) != nil {
-			run = append(run, d)
-			for j < len(list) {
-				d, ok := list[j].(*ast.GenDecl)
-				if !ok || singleDecl(d) == nil || d.Tok != run[0].Tok || p.commentIn(list[j-1].End(), list[j].Pos()) {
-					break
-				}
-				run = append(run, d)
-				j++
-			}
-		}
-		if len(run) > 1 {
-			out = append(out, groupDecls(run))
-		} else {
-			out = append(out, list[i])
-		}
-		i = j
-	}
-	for i, d := range out {
-		if g, ok := d.(*ast.GenDecl); ok {
-			out[i] = p.mergeVarSpecs(g)
-		}
-	}
-	return out
-}
-
-// strictGroupStmts is strictGroupDecls for the statements of a block.
-func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
-	list = groupTypes(p, list, token.NoPos,
-		func(s ast.Stmt) *ast.GenDecl {
-			if ds, ok := s.(*ast.DeclStmt); ok {
-				g, _ := ds.Decl.(*ast.GenDecl)
-				return g
-			}
-			return nil
-		},
-		func(g *ast.GenDecl) ast.Stmt {
-			return &ast.DeclStmt{Decl: g}
-		})
-	declOf := func(s ast.Stmt) *ast.GenDecl {
-		if ds, ok := s.(*ast.DeclStmt); ok {
-			if d, ok := ds.Decl.(*ast.GenDecl); ok {
-				return singleDecl(d)
-			}
-		}
-		return nil
-	}
-	var out []ast.Stmt
-	for i := 0; i < len(list); {
-		j := i + 1
-		var run []*ast.GenDecl
-		if d := declOf(list[i]); d != nil {
-			run = append(run, d)
-			for j < len(list) {
-				d := declOf(list[j])
-				if d == nil || d.Tok != run[0].Tok || p.commentIn(list[j-1].End(), list[j].Pos()) {
-					break
-				}
-				run = append(run, d)
-				j++
-			}
-		}
-		if len(run) > 1 {
-			out = append(out, &ast.DeclStmt{Decl: groupDecls(run)})
-		} else {
-			out = append(out, list[i])
-		}
-		i = j
-	}
-	for i, s := range out {
-		if ds, ok := s.(*ast.DeclStmt); ok {
-			if g, ok := ds.Decl.(*ast.GenDecl); ok {
-				out[i] = &ast.DeclStmt{Decl: p.mergeVarSpecs(g)}
-			}
-		}
-	}
-	return out
+// mergeableVars reports whether var spec cur can join the names of prev: both
+// have the same type written out, and neither has values or comments.
+func (p *printer) mergeableVars(prev, cur *ast.ValueSpec) bool {
+	return prev.Type != nil && cur.Type != nil && len(prev.Values) == 0 && len(cur.Values) == 0 && prev.Doc == nil && cur.Doc == nil && prev.Comment == nil && cur.Comment == nil && p.sameType(prev.Type, cur.Type)
 }
 
 // mergeVarSpecs joins consecutive specs of a var declaration that name the same
@@ -826,13 +841,17 @@ func (p *printer) mergeVarSpecs(d *ast.GenDecl) *ast.GenDecl {
 	if d.Tok != token.VAR || p.commentIn(d.Pos(), d.End()) {
 		return d
 	}
-	var specs []ast.Spec
-	merged := false
+
+	var (
+		specs []ast.Spec
+		merged bool
+	)
+
 	for _, sp := range d.Specs {
 		vs := sp.(*ast.ValueSpec)
+
 		if n := len(specs); n > 0 {
-			prev := specs[n-1].(*ast.ValueSpec)
-			if p.mergeableVars(prev, vs) {
+			if prev := specs[n-1].(*ast.ValueSpec); p.mergeableVars(prev, vs) {
 				specs[n-1] = &ast.ValueSpec{
 					Names: append(append([]*ast.Ident{}, prev.Names...), vs.Names...),
 					Type: prev.Type,
@@ -841,25 +860,157 @@ func (p *printer) mergeVarSpecs(d *ast.GenDecl) *ast.GenDecl {
 				continue
 			}
 		}
+
 		specs = append(specs, sp)
 	}
+
 	if !merged {
 		return d
 	}
-	out := &ast.GenDecl{TokPos: d.TokPos, Tok: token.VAR, Doc: d.Doc, Specs: specs}
+
+	out := &ast.GenDecl{
+		TokPos: d.TokPos,
+		Tok: token.VAR,
+		Doc: d.Doc,
+		Specs: specs,
+	}
+
 	if len(specs) > 1 {
 		out.Lparen, out.Rparen = d.Lparen, d.Rparen
 	}
+
 	return out
 }
 
-// mergeableVars reports whether var spec cur can join the names of prev: both
-// have the same type written out, and neither has values or comments.
-func (p *printer) mergeableVars(prev, cur *ast.ValueSpec) bool {
-	return prev.Type != nil && cur.Type != nil &&
-		len(prev.Values) == 0 && len(cur.Values) == 0 &&
-		prev.Doc == nil && cur.Doc == nil && prev.Comment == nil && cur.Comment == nil &&
-		p.sameType(prev.Type, cur.Type)
+// strictGroupDecls groups each run of adjacent single var declarations at
+// package level into one var (...) declaration, and each run of type
+// declarations into one type (...) declaration (see groupTypes). A comment
+// between two var declarations keeps them apart.
+func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
+	list = groupTypes(p, list, p.head, func(d ast.Decl) *ast.GenDecl {
+		g, _ := d.(*ast.GenDecl)
+
+		return g
+	}, func(g *ast.GenDecl) ast.Decl {
+		return g
+	})
+
+	var out []ast.Decl
+
+	for i := 0; i < len(list); {
+		j := i + 1
+
+		var run []*ast.GenDecl
+
+		if d, ok := list[i].(*ast.GenDecl); ok && singleDecl(d) != nil {
+			run = append(run, d)
+
+			for j < len(list) {
+				d, ok := list[j].(*ast.GenDecl)
+				if !ok || singleDecl(d) == nil || d.Tok != run[0].Tok || p.commentIn(list[j-1].End(), list[j].Pos()) {
+					break
+				}
+
+				run = append(run, d)
+				j++
+			}
+		}
+
+		if len(run) > 1 {
+			out = append(out, groupDecls(run))
+		} else {
+			out = append(out, list[i])
+		}
+
+		i = j
+	}
+
+	for i, d := range out {
+		if g, ok := d.(*ast.GenDecl); ok {
+			out[i] = p.mergeVarSpecs(g)
+		}
+	}
+
+	return out
+}
+
+// strictGroupStmts is strictGroupDecls for the statements of a block.
+func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
+	list = groupTypes(p, list, token.NoPos, func(s ast.Stmt) *ast.GenDecl {
+		if ds, ok := s.(*ast.DeclStmt); ok {
+			g, _ := ds.Decl.(*ast.GenDecl)
+
+			return g
+		}
+
+		return nil
+	}, func(g *ast.GenDecl) ast.Stmt {
+		return &ast.DeclStmt{
+			Decl: g,
+		}
+	})
+	declOf := func(s ast.Stmt) *ast.GenDecl {
+		if ds, ok := s.(*ast.DeclStmt); ok {
+			if d, ok := ds.Decl.(*ast.GenDecl); ok {
+				return singleDecl(d)
+			}
+		}
+
+		return nil
+	}
+
+	var out []ast.Stmt
+
+	for i := 0; i < len(list); {
+		j := i + 1
+
+		var run []*ast.GenDecl
+
+		if d := declOf(list[i]); d != nil {
+			run = append(run, d)
+
+			for j < len(list) {
+				d := declOf(list[j])
+				if d == nil || d.Tok != run[0].Tok || p.commentIn(list[j-1].End(), list[j].Pos()) {
+					break
+				}
+
+				run = append(run, d)
+				j++
+			}
+		}
+
+		if len(run) > 1 {
+			out = append(out, &ast.DeclStmt{
+				Decl: groupDecls(run),
+			})
+		} else {
+			out = append(out, list[i])
+		}
+
+		i = j
+	}
+
+	for i, s := range out {
+		if ds, ok := s.(*ast.DeclStmt); ok {
+			if g, ok := ds.Decl.(*ast.GenDecl); ok {
+				out[i] = &ast.DeclStmt{
+					Decl: p.mergeVarSpecs(g),
+				}
+			}
+		}
+	}
+
+	return out
+}
+
+// importPath returns the path of an import spec, without its quotes.
+func importPath(s *ast.ImportSpec) string {
+	if p, err := strconv.Unquote(s.Path.Value); err == nil {
+		return p
+	}
+
+	return s.Path.Value
 }
 
 // shortVarOK reports whether a var spec can be written as a := assignment: it
@@ -869,26 +1020,21 @@ func shortVarOK(vs *ast.ValueSpec) bool {
 	if vs.Type != nil || len(vs.Values) == 0 || vs.Doc != nil || vs.Comment != nil {
 		return false
 	}
+
 	for _, n := range vs.Names {
 		if n.Name != "_" {
 			return true
 		}
 	}
-	return false
-}
 
-// importPath returns the path of an import spec, without its quotes.
-func importPath(s *ast.ImportSpec) string {
-	if p, err := strconv.Unquote(s.Path.Value); err == nil {
-		return p
-	}
-	return s.Path.Value
+	return false
 }
 
 // stdImport reports whether an import spec names a standard library package:
 // the first element of its path has no dot.
 func stdImport(s *ast.ImportSpec) bool {
 	first, _, _ := strings.Cut(importPath(s), "/")
+
 	return !strings.Contains(first, ".")
 }
 
@@ -900,24 +1046,32 @@ func (p *printer) strictImportSpecs(d *ast.GenDecl) []ast.Spec {
 	if p.commentIn(d.Pos(), d.End()) {
 		return d.Specs
 	}
+
 	specs := slices.Clone(d.Specs)
+
 	slices.SortStableFunc(specs, func(a, b ast.Spec) int {
 		sa, sb := a.(*ast.ImportSpec), b.(*ast.ImportSpec)
+
 		if std, other := stdImport(sa), stdImport(sb); std != other {
 			if std {
 				return -1
 			}
+
 			return 1
 		}
+
 		if c := strings.Compare(importPath(sa), importPath(sb)); c != 0 {
 			return c
 		}
+
 		name := func(s *ast.ImportSpec) string {
 			if s.Name == nil {
 				return ""
 			}
+
 			return s.Name.Name
 		}
+
 		return strings.Compare(name(sa), name(sb))
 	})
 	return specs
@@ -926,10 +1080,36 @@ func (p *printer) strictImportSpecs(d *ast.GenDecl) []ast.Spec {
 // numericTypes are the predeclared numeric types, which a conversion of a zero
 // value can name.
 var numericTypes = map[string]bool{
-	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
-	"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true,
-	"uintptr": true, "byte": true, "rune": true,
-	"float32": true, "float64": true, "complex64": true, "complex128": true,
+	"int": true,
+	"int8": true,
+	"int16": true,
+	"int32": true,
+	"int64": true,
+	"uint": true,
+	"uint8": true,
+	"uint16": true,
+	"uint32": true,
+	"uint64": true,
+	"uintptr": true,
+	"byte": true,
+	"rune": true,
+	"float32": true,
+	"float64": true,
+	"complex64": true,
+	"complex128": true,
+}
+
+// defaultNumeric returns the type that := gives an untyped numeric literal of
+// the given kind.
+func defaultNumeric(kind token.Token) string {
+	switch kind {
+	case token.FLOAT:
+		return "float64"
+	case token.IMAG:
+		return "complex128"
+	}
+
+	return "int"
 }
 
 // zeroNumber reports whether lit is a numeric literal with the value zero.
@@ -937,8 +1117,10 @@ func zeroNumber(lit *ast.BasicLit) bool {
 	switch lit.Kind {
 	case token.INT, token.FLOAT, token.IMAG:
 		v := constant.MakeFromLiteral(lit.Value, lit.Kind, 0)
+
 		return v.Kind() != constant.Unknown && constant.Sign(v) == 0
 	}
+
 	return false
 }
 
@@ -952,25 +1134,37 @@ func zeroVarType(e ast.Expr) ast.Expr {
 	switch x := e.(type) {
 	case *ast.BasicLit:
 		if zeroNumber(x) {
-			return &ast.Ident{NamePos: x.Pos(), Name: defaultNumeric(x.Kind)}
+			return &ast.Ident{
+				NamePos: x.Pos(),
+				Name: defaultNumeric(x.Kind),
+			}
 		}
+
 		if x.Kind == token.STRING && constant.StringVal(constant.MakeFromLiteral(x.Value, x.Kind, 0)) == "" {
-			return &ast.Ident{NamePos: x.Pos(), Name: "string"}
+			return &ast.Ident{
+				NamePos: x.Pos(),
+				Name: "string",
+			}
 		}
 	case *ast.Ident:
 		if x.Name == "false" {
-			return &ast.Ident{NamePos: x.Pos(), Name: "bool"}
+			return &ast.Ident{
+				NamePos: x.Pos(),
+				Name: "bool",
+			}
 		}
 	case *ast.CallExpr:
 		fun, ok := x.Fun.(*ast.Ident)
 		if !ok || len(x.Args) != 1 || x.Ellipsis.IsValid() {
 			return nil
 		}
+
 		switch arg := x.Args[0].(type) {
 		case *ast.BasicLit:
 			if numericTypes[fun.Name] && zeroNumber(arg) {
 				return fun
 			}
+
 			if fun.Name == "string" && arg.Kind == token.STRING && constant.StringVal(constant.MakeFromLiteral(arg.Value, arg.Kind, 0)) == "" {
 				return fun
 			}
@@ -980,51 +1174,8 @@ func zeroVarType(e ast.Expr) ast.Expr {
 			}
 		}
 	}
+
 	return nil
-}
-
-// defaultNumeric returns the type that := gives an untyped numeric literal of
-// the given kind.
-func defaultNumeric(kind token.Token) string {
-	switch kind {
-	case token.FLOAT:
-		return "float64"
-	case token.IMAG:
-		return "complex128"
-	}
-	return "int"
-}
-
-// strictZeroVars rewrites a := declaration of a block whose value is a zero
-// value (see zeroVarType) as a var declaration that names the type.
-func (p *printer) strictZeroVars(list []ast.Stmt) []ast.Stmt {
-	out := make([]ast.Stmt, 0, len(list))
-	for _, s := range list {
-		as, ok := s.(*ast.AssignStmt)
-		if !ok || as.Tok != token.DEFINE || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-			out = append(out, s)
-			continue
-		}
-		name, ok := as.Lhs[0].(*ast.Ident)
-		if !ok || name.Name == "_" || p.commentIn(as.Pos(), as.End()) {
-			out = append(out, s)
-			continue
-		}
-		typ := zeroVarType(as.Rhs[0])
-		if typ == nil {
-			out = append(out, s)
-			continue
-		}
-		out = append(out, &ast.DeclStmt{Decl: &ast.GenDecl{
-			TokPos: as.Pos(),
-			Tok: token.VAR,
-			Specs: []ast.Spec{&ast.ValueSpec{
-				Names: []*ast.Ident{name},
-				Type: typ,
-			}},
-		}})
-	}
-	return out
 }
 
 // strictIfInits moves an := declaration into the header of the if statement
@@ -1033,20 +1184,71 @@ func (p *printer) strictZeroVars(list []ast.Stmt) []ast.Stmt {
 // no init statement of its own, and no comment may lie between the two.
 func (p *printer) strictIfInits(list []ast.Stmt) []ast.Stmt {
 	out := make([]ast.Stmt, 0, len(list))
+
 	for i := 0; i < len(list); i++ {
 		as, ok := list[i].(*ast.AssignStmt)
 		if !ok || as.Tok != token.DEFINE || i+1 >= len(list) {
 			out = append(out, list[i])
 			continue
 		}
+
 		is, ok := list[i+1].(*ast.IfStmt)
 		if !ok || is.Init != nil || is.Cond == nil || p.commentIn(as.Pos(), is.End()) || !onlyUsedIn(list, i, is) {
 			out = append(out, list[i])
 			continue
 		}
-		out = append(out, &ast.IfStmt{If: is.If, Init: as, Cond: is.Cond, Body: is.Body, Else: is.Else})
+
+		out = append(out, &ast.IfStmt{
+			If: is.If,
+			Init: as,
+			Cond: is.Cond,
+			Body: is.Body,
+			Else: is.Else,
+		})
 		i++
 	}
+
+	return out
+}
+
+// strictZeroVars rewrites a := declaration of a block whose value is a zero
+// value (see zeroVarType) as a var declaration that names the type.
+func (p *printer) strictZeroVars(list []ast.Stmt) []ast.Stmt {
+	out := make([]ast.Stmt, 0, len(list))
+
+	for _, s := range list {
+		as, ok := s.(*ast.AssignStmt)
+		if !ok || as.Tok != token.DEFINE || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+			out = append(out, s)
+			continue
+		}
+
+		name, ok := as.Lhs[0].(*ast.Ident)
+		if !ok || name.Name == "_" || p.commentIn(as.Pos(), as.End()) {
+			out = append(out, s)
+			continue
+		}
+
+		typ := zeroVarType(as.Rhs[0])
+		if typ == nil {
+			out = append(out, s)
+			continue
+		}
+
+		out = append(out, &ast.DeclStmt{
+			Decl: &ast.GenDecl{
+				TokPos: as.Pos(),
+				Tok: token.VAR,
+				Specs: []ast.Spec{
+					&ast.ValueSpec{
+						Names: []*ast.Ident{name},
+						Type: typ,
+					},
+				},
+			},
+		})
+	}
+
 	return out
 }
 
@@ -1056,29 +1258,36 @@ func (p *printer) strictIfInits(list []ast.Stmt) []ast.Stmt {
 // the if statement, so it keeps the declaration where it is.
 func onlyUsedIn(list []ast.Stmt, i int, is *ast.IfStmt) bool {
 	names := map[string]bool{}
+
 	for _, l := range list[i].(*ast.AssignStmt).Lhs {
 		if id, ok := l.(*ast.Ident); ok && id.Name != "_" {
 			names[id.Name] = true
 		}
 	}
+
 	if len(names) == 0 {
 		return false
 	}
+
 	for k, s := range list {
 		if k == i {
 			continue
 		}
-		outside := false
+
+		var outside bool
+
 		ast.Inspect(s, func(n ast.Node) bool {
 			if id, ok := n.(*ast.Ident); ok && names[id.Name] && !(id.Pos() >= is.Pos() && id.Pos() < is.End()) {
 				outside = true
 			}
+
 			return !outside
 		})
 		if outside {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -1086,12 +1295,14 @@ func onlyUsedIn(list []ast.Stmt, i int, is *ast.IfStmt) bool {
 // shortVarOK) as := assignments. A group keeps its other specs as a declaration.
 func (p *printer) strictShortVars(list []ast.Stmt) []ast.Stmt {
 	var out []ast.Stmt
+
 	for _, s := range list {
 		ds, ok := s.(*ast.DeclStmt)
 		if !ok {
 			out = append(out, s)
 			continue
 		}
+
 		g, ok := ds.Decl.(*ast.GenDecl)
 		// a group with a comment inside is left alone: splitting it would
 		// move the comments
@@ -1099,27 +1310,41 @@ func (p *printer) strictShortVars(list []ast.Stmt) []ast.Stmt {
 			out = append(out, s)
 			continue
 		}
-		converted := false
+
+		var converted bool
+
 		for _, sp := range g.Specs {
 			if vs := sp.(*ast.ValueSpec); shortVarOK(vs) {
 				converted = true
 			}
 		}
+
 		if !converted {
 			out = append(out, s)
 			continue
 		}
+
 		var pending []ast.Spec
+
 		flush := func() {
 			if len(pending) > 0 {
-				d := &ast.GenDecl{TokPos: g.TokPos, Tok: token.VAR, Specs: pending}
+				d := &ast.GenDecl{
+					TokPos: g.TokPos,
+					Tok: token.VAR,
+					Specs: pending,
+				}
+
 				if len(pending) > 1 { // a lone declaration needs no parentheses
 					d.Lparen, d.Rparen = g.Lparen, g.Rparen
 				}
-				out = append(out, &ast.DeclStmt{Decl: d})
+
+				out = append(out, &ast.DeclStmt{
+					Decl: d,
+				})
 				pending = nil
 			}
 		}
+
 		for _, sp := range g.Specs {
 			vs := sp.(*ast.ValueSpec)
 			if !shortVarOK(vs) {
@@ -1127,10 +1352,13 @@ func (p *printer) strictShortVars(list []ast.Stmt) []ast.Stmt {
 				continue
 			}
 			flush()
+
 			lhs := make([]ast.Expr, len(vs.Names))
+
 			for i, n := range vs.Names {
 				lhs[i] = n
 			}
+
 			out = append(out, &ast.AssignStmt{
 				Lhs: lhs,
 				TokPos: vs.Names[len(vs.Names)-1].End(),
@@ -1140,5 +1368,6 @@ func (p *printer) strictShortVars(list []ast.Stmt) []ast.Stmt {
 		}
 		flush()
 	}
+
 	return out
 }

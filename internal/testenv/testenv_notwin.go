@@ -28,17 +28,22 @@ var hasSymlink = sync.OnceValues(func() (ok bool, reason string) {
 		if err != nil {
 			return false, ""
 		}
+
 		defer func() {
 			_ = os.RemoveAll(dir)
 		}()
+
 		fpath := filepath.Join(dir, "testfile.txt")
+
 		if err := os.WriteFile(fpath, nil, 0o644); err != nil {
 			return false, ""
 		}
+
 		if err := os.Symlink(fpath, filepath.Join(dir, "testlink")); err != nil {
 			if SyscallIsNotSupported(err) {
 				return false, fmt.Sprintf("symlinks unsupported: %s", err.Error())
 			}
+
 			return false, ""
 		}
 	}

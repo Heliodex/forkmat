@@ -34,6 +34,42 @@ var (
 	nfiles int // number of files processed
 )
 
+func genFilenames(t *testing.T, filenames chan<- string) {
+	defer close(filenames)
+
+	handleFile := func(filename string, d fs.DirEntry, err error) error {
+		if err != nil {
+			t.Error(err)
+			return nil
+		}
+		// don't descend into testdata directories
+		if !d.IsDir() && isGoFilename(d.Name()) && !strings.Contains(filepath.ToSlash(filename), "/testdata/") {
+			filenames <- filename
+			nfiles++
+		}
+
+		return nil
+	}
+
+	// test Go files provided via -files, if any
+	if *files != "" {
+		for filename := range strings.SplitSeq(*files, ",") {
+			fi, err := os.Stat(filename)
+
+			handleFile(filename, fs.FileInfoToDirEntry(fi), err)
+		}
+
+		return // ignore files under -root
+	}
+
+	// otherwise, test all Go files under *root
+	goroot := *root
+	if goroot == "" {
+		goroot = testenv.GOROOT(t)
+	}
+	filepath.WalkDir(goroot, handleFile)
+}
+
 func gofmt(fset *token.FileSet, filename string, src *bytes.Buffer) error {
 	f, _, _, err := parse(fset, filename, src.Bytes(), false)
 	if err != nil {
@@ -41,7 +77,10 @@ func gofmt(fset *token.FileSet, filename string, src *bytes.Buffer) error {
 	}
 	ast.SortImports(fset, f)
 	src.Reset()
-	return (&printer.Config{Mode: printerMode, Tabwidth: tabWidth}).Fprint(src, fset, f)
+	return (&printer.Config{
+		Mode: printerMode,
+		Tabwidth: tabWidth,
+	}).Fprint(src, fset, f)
 }
 
 func testFile(t *testing.T, b1, b2 *bytes.Buffer, filename string) {
@@ -54,7 +93,9 @@ func testFile(t *testing.T, b1, b2 *bytes.Buffer, filename string) {
 
 	// read file
 	b1.Reset()
+
 	_, err = io.Copy(b1, f)
+
 	f.Close()
 	if err != nil {
 		t.Error(err)
@@ -63,10 +104,12 @@ func testFile(t *testing.T, b1, b2 *bytes.Buffer, filename string) {
 
 	// exclude files w/ syntax errors (typically test cases)
 	fset := token.NewFileSet()
+
 	if _, _, _, err = parse(fset, filename, b1.Bytes(), false); err != nil {
 		if *verbose {
 			fmt.Fprintf(os.Stderr, "ignoring %s\n", err)
 		}
+
 		return
 	}
 
@@ -101,43 +144,12 @@ func testFile(t *testing.T, b1, b2 *bytes.Buffer, filename string) {
 func testFiles(t *testing.T, filenames <-chan string, done chan<- int) {
 	b1 := new(bytes.Buffer)
 	b2 := new(bytes.Buffer)
+
 	for filename := range filenames {
 		testFile(t, b1, b2, filename)
 	}
+
 	done <- 0
-}
-
-func genFilenames(t *testing.T, filenames chan<- string) {
-	defer close(filenames)
-
-	handleFile := func(filename string, d fs.DirEntry, err error) error {
-		if err != nil {
-			t.Error(err)
-			return nil
-		}
-		// don't descend into testdata directories
-		if !d.IsDir() && isGoFilename(d.Name()) && !strings.Contains(filepath.ToSlash(filename), "/testdata/") {
-			filenames <- filename
-			nfiles++
-		}
-		return nil
-	}
-
-	// test Go files provided via -files, if any
-	if *files != "" {
-		for filename := range strings.SplitSeq(*files, ",") {
-			fi, err := os.Stat(filename)
-			handleFile(filename, fs.FileInfoToDirEntry(fi), err)
-		}
-		return // ignore files under -root
-	}
-
-	// otherwise, test all Go files under *root
-	goroot := *root
-	if goroot == "" {
-		goroot = testenv.GOROOT(t)
-	}
-	filepath.WalkDir(goroot, handleFile)
 }
 
 func TestAll(t *testing.T) {
@@ -148,16 +160,19 @@ func TestAll(t *testing.T) {
 	if *ngo < 1 {
 		*ngo = 1 // make sure test is run
 	}
+
 	if *verbose {
 		fmt.Printf("running test using %d goroutines\n", *ngo)
 	}
 
 	// generate filenames
 	filenames := make(chan string, 32)
+
 	go genFilenames(t, filenames)
 
 	// launch test goroutines
 	done := make(chan int)
+
 	for i := 0; i < *ngo; i++ {
 		go testFiles(t, filenames, done)
 	}

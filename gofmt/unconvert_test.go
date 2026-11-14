@@ -2,33 +2,42 @@ package main
 
 import (
 	"bytes"
+	"forkmat/go/printer"
 	"go/parser"
 	"go/token"
 	"strings"
 	"testing"
-
-	"forkmat/go/printer"
 )
 
 // unconvertText returns src with its redundant conversions removed, printed
 // without comments changing layout.
 func unconvertText(t *testing.T, src string) string {
 	t.Helper()
+
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+
 	var buf bytes.Buffer
-	cfg := printer.Config{Mode: printer.UseSpaces | printer.TabIndent, Tabwidth: 8}
+
+	cfg := printer.Config{
+		Mode: printer.UseSpaces | printer.TabIndent,
+		Tabwidth: 8,
+	}
+
 	if err := cfg.Fprint(&buf, fset, unconvert(fset, file)); err != nil {
 		t.Fatalf("print: %v", err)
 	}
+
 	return buf.String()
 }
 
 func TestUnconvert(t *testing.T) {
-	tests := []struct{ name, src, want string }{
+	tests := []struct {
+		name, src, want string
+	}{
 		{
 			name: "string of string",
 			src: "package p\n\nfunc f(s string) string { return string(string(s)) }\n",
@@ -65,13 +74,13 @@ func TestUnconvert(t *testing.T) {
 			want: "package p\n\nfunc f(b []byte) []byte { return b }\n",
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// the printer lays out function bodies over several lines, so the
 			// comparison is of the tokens, with white space collapsed
 			got := strings.Join(strings.Fields(unconvertText(t, tt.src)), " ")
-			want := strings.Join(strings.Fields(tt.want), " ")
-			if got != want {
+			if want := strings.Join(strings.Fields(tt.want), " "); got != want {
 				t.Errorf("got:\n%s\nwant:\n%s", got, want)
 			}
 		})

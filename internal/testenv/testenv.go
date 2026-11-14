@@ -29,6 +29,11 @@ import (
 	"testing"
 )
 
+// SpecialBuildTypes are interesting build types that may affect linking.
+type SpecialBuildTypes struct {
+	Cgo, Asan, Msan, Race bool
+}
+
 // Save the original environment during init for use in checks. A test
 // binary may modify its environment before calling HasExec to change its
 // behavior (such as mimicking a command-line tool), and that modified
@@ -72,16 +77,20 @@ var tryGoBuild = sync.OnceValue(func() error {
 	if err != nil {
 		return err
 	}
+
 	cmd := exec.Command(goTool, "tool", "-n", "compile")
 	cmd.Env = origEnv
 	out, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("%v: %w", cmd, err)
 	}
+
 	out = bytes.TrimSpace(out)
+
 	if len(out) == 0 {
 		return fmt.Errorf("%v: no tool reported", cmd)
 	}
+
 	if _, err := exec.LookPath(string(out)); err != nil {
 		return err
 	}
@@ -102,16 +111,39 @@ var tryGoBuild = sync.OnceValue(func() error {
 			if err != nil {
 				return fmt.Errorf("%v: %w", cmd, err)
 			}
+
 			out = bytes.TrimSpace(out)
+
 			if len(out) == 0 {
 				return fmt.Errorf("%v: no CC reported", cmd)
 			}
+
 			_, err = exec.LookPath(string(out))
+
 			return err
 		}
 	}
+
 	return nil
 })
+
+// HasGoRun reports whether the current system can run programs with “go run”.
+func HasGoRun() bool {
+	// For now, having go run and having go build are the same.
+	return HasGoBuild()
+}
+
+// HasParallelism reports whether the current system can execute multiple
+// threads in parallel.
+// There is a copy of this function in cmd/dist/test.go.
+func HasParallelism() bool {
+	switch runtime.GOOS {
+	case "js", "wasip1":
+		return false
+	}
+
+	return true
+}
 
 // MustHaveGoBuild checks that the current system can build programs with “go build”
 // and then run them with os.StartProcess or exec.Command.
@@ -121,16 +153,32 @@ func MustHaveGoBuild(t testing.TB) {
 		t.Helper()
 		t.Skipf("skipping test: 'go build' not compatible with setting $GO_GCFLAGS")
 	}
+
 	if !HasGoBuild() {
 		t.Helper()
 		t.Skipf("skipping test: 'go build' unavailable: %v", tryGoBuild())
 	}
 }
 
-// HasGoRun reports whether the current system can run programs with “go run”.
-func HasGoRun() bool {
-	// For now, having go run and having go build are the same.
-	return HasGoBuild()
+// GoToolPath reports the path to the Go tool.
+// It is a convenience wrapper around GoTool.
+// If the tool is unavailable GoToolPath calls t.Skip.
+// If the tool should be available and isn't, GoToolPath calls t.Fatal.
+func GoToolPath(t testing.TB) string {
+	MustHaveGoBuild(t)
+
+	path, err := GoTool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Add all environment variables that affect the Go command to test metadata.
+	// Cached test results will be invalidate when these variables change.
+	// See golang.org/issue/32285.
+	for envVar := range strings.FieldsSeq(cfg.KnownEnv) {
+		os.Getenv(envVar)
+	}
+
+	return path
 }
 
 // MustHaveGoRun checks that the current system can run programs with “go run”.
@@ -142,17 +190,6 @@ func MustHaveGoRun(t testing.TB) {
 	}
 }
 
-// HasParallelism reports whether the current system can execute multiple
-// threads in parallel.
-// There is a copy of this function in cmd/dist/test.go.
-func HasParallelism() bool {
-	switch runtime.GOOS {
-	case "js", "wasip1":
-		return false
-	}
-	return true
-}
-
 // MustHaveParallelism checks that the current system can execute multiple
 // threads in parallel. If not, MustHaveParallelism calls t.Skip with an explanation.
 func MustHaveParallelism(t testing.TB) {
@@ -160,25 +197,6 @@ func MustHaveParallelism(t testing.TB) {
 		t.Helper()
 		t.Skipf("skipping test: no parallelism available on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
-}
-
-// GoToolPath reports the path to the Go tool.
-// It is a convenience wrapper around GoTool.
-// If the tool is unavailable GoToolPath calls t.Skip.
-// If the tool should be available and isn't, GoToolPath calls t.Fatal.
-func GoToolPath(t testing.TB) string {
-	MustHaveGoBuild(t)
-	path, err := GoTool()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Add all environment variables that affect the Go command to test metadata.
-	// Cached test results will be invalidate when these variables change.
-	// See golang.org/issue/32285.
-	for envVar := range strings.FieldsSeq(cfg.KnownEnv) {
-		os.Getenv(envVar)
-	}
-	return path
 }
 
 var findGOROOT = sync.OnceValues(func() (path string, err error) {
@@ -209,6 +227,7 @@ var findGOROOT = sync.OnceValues(func() (path string, err error) {
 	}
 
 	dir := cwd
+
 	for {
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -227,12 +246,15 @@ var findGOROOT = sync.OnceValues(func() (path string, err error) {
 				dir = parent
 				continue
 			}
+
 			return "", fmt.Errorf("finding GOROOT: %w", err)
 		}
+
 		goMod := string(b)
 
 		for goMod != "" {
 			var line string
+
 			line, goMod, _ = strings.Cut(goMod, "\n")
 			fields := strings.Fields(line)
 			if len(fields) >= 2 && fields[0] == "module" && fields[1] == "std" {
@@ -259,6 +281,7 @@ func GOROOT(t testing.TB) string {
 		t.Helper()
 		t.Skip(err)
 	}
+
 	return path
 }
 
@@ -267,6 +290,7 @@ func GoTool() (string, error) {
 	if !HasGoBuild() {
 		return "", errors.New("platform cannot run go tool")
 	}
+
 	return goTool()
 }
 
@@ -274,30 +298,9 @@ var goTool = sync.OnceValues(func() (string, error) {
 	return exec.LookPath("go")
 })
 
-// MustHaveSource checks that the entire source tree is available under GOROOT.
-// If not, it calls t.Skip with an explanation.
-//
-// This is needed when reading files from GOROOT that are not in ./testdata.
-func MustHaveSource(t testing.TB) {
-	t.Helper()
-	switch runtime.GOOS {
-	case "ios":
-		t.Skip("skipping test: no source tree on " + runtime.GOOS)
-	}
-	if Builder() != "" {
-		// The builders have the source tree available, and if they don't the
-		// tests should error out.
-		return
-	}
-	// If not running on the builders, the test binary might have been copied to
-	// a target machine where the source tree isn't available.
-	goroot, err := findGOROOT()
-	if err != nil {
-		t.Skipf("skipping test: cannot locate GOROOT: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(goroot, "src", "go.mod")); err != nil {
-		t.Skipf("skipping test: GOROOT/src not available: %v", err)
-	}
+// HasCGO reports whether the current system can use cgo.
+func HasCGO() bool {
+	return hasCgo()
 }
 
 // HasExternalNetwork reports whether the current system can use
@@ -314,15 +317,39 @@ func MustHaveExternalNetwork(t testing.TB) {
 		t.Helper()
 		t.Skipf("skipping test: no external network on %s", runtime.GOOS)
 	}
+
 	if testing.Short() {
 		t.Helper()
 		t.Skipf("skipping test: no external network in -short mode")
 	}
 }
 
-// HasCGO reports whether the current system can use cgo.
-func HasCGO() bool {
-	return hasCgo()
+// MustHaveSource checks that the entire source tree is available under GOROOT.
+// If not, it calls t.Skip with an explanation.
+//
+// This is needed when reading files from GOROOT that are not in ./testdata.
+func MustHaveSource(t testing.TB) {
+	t.Helper()
+	switch runtime.GOOS {
+	case "ios":
+		t.Skip("skipping test: no source tree on " + runtime.GOOS)
+	}
+
+	if Builder() != "" {
+		// The builders have the source tree available, and if they don't the
+		// tests should error out.
+		return
+	}
+	// If not running on the builders, the test binary might have been copied to
+	// a target machine where the source tree isn't available.
+	goroot, err := findGOROOT()
+	if err != nil {
+		t.Skipf("skipping test: cannot locate GOROOT: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(goroot, "src", "go.mod")); err != nil {
+		t.Skipf("skipping test: GOROOT/src not available: %v", err)
+	}
 }
 
 var hasCgo = sync.OnceValue(func() bool {
@@ -330,18 +357,27 @@ var hasCgo = sync.OnceValue(func() bool {
 	if err != nil {
 		return false
 	}
+
 	cmd := exec.Command(goTool, "env", "CGO_ENABLED")
 	cmd.Env = origEnv
 	out, err := cmd.Output()
 	if err != nil {
 		panic(fmt.Sprintf("%v: %v", cmd, out))
 	}
+
 	ok, err := strconv.ParseBool(string(bytes.TrimSpace(out)))
 	if err != nil {
 		panic(fmt.Sprintf("%v: non-boolean output %q", cmd, out))
 	}
+
 	return ok
 })
+
+// CanInternalLink reports whether the current system can link programs with
+// internal linking.
+func CanInternalLink(withCgo bool) bool {
+	return !platform.MustLinkExternal(runtime.GOOS, runtime.GOARCH, withCgo)
+}
 
 // MustHaveCGO calls t.Skip if cgo is not available.
 func MustHaveCGO(t testing.TB) {
@@ -351,22 +387,51 @@ func MustHaveCGO(t testing.TB) {
 	}
 }
 
-// CanInternalLink reports whether the current system can link programs with
-// internal linking.
-func CanInternalLink(withCgo bool) bool {
-	return !platform.MustLinkExternal(runtime.GOOS, runtime.GOARCH, withCgo)
-}
-
-// SpecialBuildTypes are interesting build types that may affect linking.
-type SpecialBuildTypes struct {
-	Cgo bool
-	Asan bool
-	Msan bool
-	Race bool
-}
-
 // NoSpecialBuildTypes indicates a standard, no cgo go build.
 var NoSpecialBuildTypes SpecialBuildTypes
+
+// HasLink reports whether the current system can use os.Link.
+func HasLink() bool {
+	// From Android release M (Marshmallow), hard linking files is blocked
+	// and an attempt to call link() on a file will return EACCES.
+	// - https://code.google.com/p/android-developer-preview/issues/detail?id=3150
+	return runtime.GOOS != "plan9" && runtime.GOOS != "android"
+}
+
+// HasSymlink reports whether the current system can use os.Symlink.
+func HasSymlink() bool {
+	ok, _ := hasSymlink()
+
+	return ok
+}
+
+// MustHaveBuildMode reports whether the current system can build programs in
+// the given build mode.
+// If not, MustHaveBuildMode calls t.Skip with an explanation.
+func MustHaveBuildMode(t testing.TB, buildmode string) {
+	if !platform.BuildModeSupported(runtime.Compiler, buildmode, runtime.GOOS, runtime.GOARCH) {
+		t.Helper()
+		t.Skipf("skipping test: build mode %s on %s/%s is not supported by the %s compiler", buildmode, runtime.GOOS, runtime.GOARCH, runtime.Compiler)
+	}
+}
+
+// MustHaveLink reports whether the current system can use os.Link.
+// If not, MustHaveLink calls t.Skip with an explanation.
+func MustHaveLink(t testing.TB) {
+	if !HasLink() {
+		t.Helper()
+		t.Skipf("skipping test: hardlinks are not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
+	}
+}
+
+// MustHaveSymlink reports whether the current system can use os.Symlink.
+// If not, MustHaveSymlink calls t.Skip with an explanation.
+func MustHaveSymlink(t testing.TB) {
+	if ok, reason := hasSymlink(); !ok {
+		t.Helper()
+		t.Skipf("skipping test: cannot make symlinks on %s/%s: %s", runtime.GOOS, runtime.GOARCH, reason)
+	}
+}
 
 // MustInternalLink checks that the current system can link programs with internal
 // linking.
@@ -375,6 +440,7 @@ func MustInternalLink(t testing.TB, with SpecialBuildTypes) {
 	if with.Asan || with.Msan || with.Race {
 		t.Skipf("skipping test: internal linking with sanitizers is not supported")
 	}
+
 	if !CanInternalLink(with.Cgo) {
 		t.Helper()
 		if with.Cgo && CanInternalLink(false) {
@@ -394,64 +460,7 @@ func MustInternalLinkPIE(t testing.TB) {
 	}
 }
 
-// MustHaveBuildMode reports whether the current system can build programs in
-// the given build mode.
-// If not, MustHaveBuildMode calls t.Skip with an explanation.
-func MustHaveBuildMode(t testing.TB, buildmode string) {
-	if !platform.BuildModeSupported(runtime.Compiler, buildmode, runtime.GOOS, runtime.GOARCH) {
-		t.Helper()
-		t.Skipf("skipping test: build mode %s on %s/%s is not supported by the %s compiler", buildmode, runtime.GOOS, runtime.GOARCH, runtime.Compiler)
-	}
-}
-
-// HasSymlink reports whether the current system can use os.Symlink.
-func HasSymlink() bool {
-	ok, _ := hasSymlink()
-	return ok
-}
-
-// MustHaveSymlink reports whether the current system can use os.Symlink.
-// If not, MustHaveSymlink calls t.Skip with an explanation.
-func MustHaveSymlink(t testing.TB) {
-	ok, reason := hasSymlink()
-	if !ok {
-		t.Helper()
-		t.Skipf("skipping test: cannot make symlinks on %s/%s: %s", runtime.GOOS, runtime.GOARCH, reason)
-	}
-}
-
-// HasLink reports whether the current system can use os.Link.
-func HasLink() bool {
-	// From Android release M (Marshmallow), hard linking files is blocked
-	// and an attempt to call link() on a file will return EACCES.
-	// - https://code.google.com/p/android-developer-preview/issues/detail?id=3150
-	return runtime.GOOS != "plan9" && runtime.GOOS != "android"
-}
-
-// MustHaveLink reports whether the current system can use os.Link.
-// If not, MustHaveLink calls t.Skip with an explanation.
-func MustHaveLink(t testing.TB) {
-	if !HasLink() {
-		t.Helper()
-		t.Skipf("skipping test: hardlinks are not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
-	}
-}
-
 var flaky = flag.Bool("flaky", false, "run known-flaky tests too")
-
-func SkipFlaky(t testing.TB, issue int) {
-	if !*flaky {
-		t.Helper()
-		t.Skipf("skipping known flaky test without the -flaky flag; see golang.org/issue/%d", issue)
-	}
-}
-
-func SkipFlakyNet(t testing.TB) {
-	if v, _ := strconv.ParseBool(os.Getenv("GO_BUILDER_FLAKY_NET")); v {
-		t.Helper()
-		t.Skip("skipping test on builder known to have frequent network failures")
-	}
-}
 
 // CPUIsSlow reports whether the CPU running the test is suspected to be slow.
 func CPUIsSlow() bool {
@@ -459,86 +468,8 @@ func CPUIsSlow() bool {
 	case "arm", "mips", "mipsle", "mips64", "mips64le", "wasm":
 		return true
 	}
+
 	return false
-}
-
-// SkipIfShortAndSlow skips t if -short is set and the CPU running the test is
-// suspected to be slow.
-//
-// (This is useful for CPU-intensive tests that otherwise complete quickly.)
-func SkipIfShortAndSlow(t testing.TB) {
-	if testing.Short() && CPUIsSlow() {
-		t.Helper()
-		t.Skipf("skipping test in -short mode on %s", runtime.GOARCH)
-	}
-}
-
-// SkipIfOptimizationOff skips t if optimization is disabled.
-func SkipIfOptimizationOff(t testing.TB) {
-	if OptimizationOff() {
-		t.Helper()
-		t.Skip("skipping test with optimization disabled")
-	}
-}
-
-// WriteImportcfg writes an importcfg file used by the compiler or linker to
-// dstPath containing entries for the file mappings in packageFiles, as well
-// as for the packages transitively imported by the package(s) in pkgs.
-//
-// pkgs may include any package pattern that is valid to pass to 'go list',
-// so it may also be a list of Go source files all in the same directory.
-func WriteImportcfg(t testing.TB, dstPath string, packageFiles map[string]string, pkgs ...string) {
-	t.Helper()
-
-	icfg := new(bytes.Buffer)
-	icfg.WriteString("# import config\n")
-	for k, v := range packageFiles {
-		fmt.Fprintf(icfg, "packagefile %s=%s\n", k, v)
-	}
-
-	if len(pkgs) > 0 {
-		// Use 'go list' to resolve any missing packages and rewrite the import map.
-		cmd := Command(t, GoToolPath(t), "list", "-export", "-deps", "-f", `{{if ne .ImportPath "command-line-arguments"}}{{if .Export}}{{.ImportPath}}={{.Export}}{{end}}{{end}}`)
-		cmd.Args = append(cmd.Args, pkgs...)
-		cmd.Stderr = new(strings.Builder)
-		out, err := cmd.Output()
-		if err != nil {
-			t.Fatalf("%v: %v\n%s", cmd, err, cmd.Stderr)
-		}
-
-		for line := range strings.SplitSeq(string(out), "\n") {
-			if line == "" {
-				continue
-			}
-			importPath, export, ok := strings.Cut(line, "=")
-			if !ok {
-				t.Fatalf("invalid line in output from %v:\n%s", cmd, line)
-			}
-			if packageFiles[importPath] == "" {
-				fmt.Fprintf(icfg, "packagefile %s=%s\n", importPath, export)
-			}
-		}
-	}
-
-	if err := os.WriteFile(dstPath, icfg.Bytes(), 0o666); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// SyscallIsNotSupported reports whether err may indicate that a system call is
-// not supported by the current platform or execution environment.
-func SyscallIsNotSupported(err error) bool {
-	return syscallIsNotSupported(err)
-}
-
-// ParallelOn64Bit calls t.Parallel() unless there is a case that cannot be parallel.
-// This function should be used when it is necessary to avoid t.Parallel on
-// 32-bit machines, typically because the test uses lots of memory.
-func ParallelOn64Bit(t *testing.T) {
-	if goarch.PtrSize == 4 {
-		return
-	}
-	t.Parallel()
 }
 
 // CPUProfilingBroken returns true if CPU profiling has known issues on this
@@ -564,9 +495,105 @@ func CPUProfilingBroken() bool {
 	return false
 }
 
+// ParallelOn64Bit calls t.Parallel() unless there is a case that cannot be parallel.
+// This function should be used when it is necessary to avoid t.Parallel on
+// 32-bit machines, typically because the test uses lots of memory.
+func ParallelOn64Bit(t *testing.T) {
+	if goarch.PtrSize == 4 {
+		return
+	}
+	t.Parallel()
+}
+
 // SetGODEBUG appends v to the GODEBUG environment variable for the
 // duration of the test.
 func SetGODEBUG(t testing.TB, v string) {
 	t.Helper()
 	t.Setenv("GODEBUG", os.Getenv("GODEBUG")+","+v)
+}
+
+func SkipFlaky(t testing.TB, issue int) {
+	if !*flaky {
+		t.Helper()
+		t.Skipf("skipping known flaky test without the -flaky flag; see golang.org/issue/%d", issue)
+	}
+}
+
+func SkipFlakyNet(t testing.TB) {
+	if v, _ := strconv.ParseBool(os.Getenv("GO_BUILDER_FLAKY_NET")); v {
+		t.Helper()
+		t.Skip("skipping test on builder known to have frequent network failures")
+	}
+}
+
+// SkipIfOptimizationOff skips t if optimization is disabled.
+func SkipIfOptimizationOff(t testing.TB) {
+	if OptimizationOff() {
+		t.Helper()
+		t.Skip("skipping test with optimization disabled")
+	}
+}
+
+// SkipIfShortAndSlow skips t if -short is set and the CPU running the test is
+// suspected to be slow.
+//
+// (This is useful for CPU-intensive tests that otherwise complete quickly.)
+func SkipIfShortAndSlow(t testing.TB) {
+	if testing.Short() && CPUIsSlow() {
+		t.Helper()
+		t.Skipf("skipping test in -short mode on %s", runtime.GOARCH)
+	}
+}
+
+// SyscallIsNotSupported reports whether err may indicate that a system call is
+// not supported by the current platform or execution environment.
+func SyscallIsNotSupported(err error) bool {
+	return syscallIsNotSupported(err)
+}
+
+// WriteImportcfg writes an importcfg file used by the compiler or linker to
+// dstPath containing entries for the file mappings in packageFiles, as well
+// as for the packages transitively imported by the package(s) in pkgs.
+//
+// pkgs may include any package pattern that is valid to pass to 'go list',
+// so it may also be a list of Go source files all in the same directory.
+func WriteImportcfg(t testing.TB, dstPath string, packageFiles map[string]string, pkgs ...string) {
+	t.Helper()
+
+	icfg := new(bytes.Buffer)
+
+	icfg.WriteString("# import config\n")
+	for k, v := range packageFiles {
+		fmt.Fprintf(icfg, "packagefile %s=%s\n", k, v)
+	}
+
+	if len(pkgs) > 0 {
+		// Use 'go list' to resolve any missing packages and rewrite the import map.
+		cmd := Command(t, GoToolPath(t), "list", "-export", "-deps", "-f", `{{if ne .ImportPath "command-line-arguments"}}{{if .Export}}{{.ImportPath}}={{.Export}}{{end}}{{end}}`)
+		cmd.Args = append(cmd.Args, pkgs...)
+		cmd.Stderr = new(strings.Builder)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", cmd, err, cmd.Stderr)
+		}
+
+		for line := range strings.SplitSeq(string(out), "\n") {
+			if line == "" {
+				continue
+			}
+
+			importPath, export, ok := strings.Cut(line, "=")
+			if !ok {
+				t.Fatalf("invalid line in output from %v:\n%s", cmd, line)
+			}
+
+			if packageFiles[importPath] == "" {
+				fmt.Fprintf(icfg, "packagefile %s=%s\n", importPath, export)
+			}
+		}
+	}
+
+	if err := os.WriteFile(dstPath, icfg.Bytes(), 0o666); err != nil {
+		t.Fatal(err)
+	}
 }

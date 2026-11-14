@@ -17,9 +17,11 @@ var hasSymlink = sync.OnceValues(func() (bool, string) {
 	if err != nil {
 		panic("failed to create temp directory: " + err.Error())
 	}
+
 	defer os.RemoveAll(tmpdir)
 
 	err = os.Symlink("target", filepath.Join(tmpdir, "symlink"))
+
 	switch {
 	case err == nil:
 		return true, ""
@@ -28,5 +30,6 @@ var hasSymlink = sync.OnceValues(func() (bool, string) {
 	case errors.Is(err, syscall.ERROR_PRIVILEGE_NOT_HELD):
 		return false, ": you don't have enough privileges to create symlinks"
 	}
+
 	return false, ""
 })

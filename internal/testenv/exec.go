@@ -33,6 +33,7 @@ import (
 func MustHaveExec(t testing.TB) {
 	if err := tryExec(); err != nil {
 		msg := fmt.Sprintf("cannot exec subprocess on %s/%s: %v", runtime.GOOS, runtime.GOARCH, err)
+
 		if t == nil {
 			panic(msg)
 		}
@@ -71,8 +72,10 @@ var tryExec = sync.OnceValue(func() error {
 	if err != nil {
 		return fmt.Errorf("can't probe for exec support: %w", err)
 	}
+
 	cmd := exec.Command(exe, "-test.list=^$")
 	cmd.Env = origEnv
+
 	return cmd.Run()
 })
 
@@ -86,11 +89,13 @@ func Executable(t testing.TB) string {
 	exe, err := exePath()
 	if err != nil {
 		msg := fmt.Sprintf("os.Executable error: %v", err)
+
 		if t == nil {
 			panic(msg)
 		}
 		t.Fatal(msg)
 	}
+
 	return exe
 }
 
@@ -99,23 +104,6 @@ var exePath = sync.OnceValues(func() (string, error) {
 })
 
 var execPaths sync.Map // path -> error
-
-// MustHaveExecPath checks that the current system can start the named executable
-// using os.StartProcess or (more commonly) exec.Command.
-// If not, MustHaveExecPath calls t.Skip with an explanation.
-func MustHaveExecPath(t testing.TB, path string) {
-	MustHaveExec(t)
-
-	err, found := execPaths.Load(path)
-	if !found {
-		_, err = exec.LookPath(path)
-		err, _ = execPaths.LoadOrStore(path, err)
-	}
-	if err != nil {
-		t.Helper()
-		t.Skipf("skipping test: %s: %s", path, err)
-	}
-}
 
 // CleanCmdEnv will fill cmd.Env with the environment, excluding certain
 // variables that could modify the behavior of the Go tools such as
@@ -127,6 +115,7 @@ func CleanCmdEnv(cmd *exec.Cmd) *exec.Cmd {
 	if cmd.Env != nil {
 		panic("environment already set")
 	}
+
 	for _, env := range cmd.Environ() {
 		// Exclude GODEBUG from the environment to prevent its output
 		// from breaking tests that are trying to parse other command output.
@@ -137,8 +126,10 @@ func CleanCmdEnv(cmd *exec.Cmd) *exec.Cmd {
 		if strings.HasPrefix(env, "GOTRACEBACK=") {
 			continue
 		}
+
 		cmd.Env = append(cmd.Env, env)
 	}
+
 	return cmd
 }
 
@@ -153,7 +144,6 @@ func CleanCmdEnv(cmd *exec.Cmd) *exec.Cmd {
 func CommandContext(t testing.TB, ctx context.Context, name string, args ...string) *exec.Cmd {
 	t.Helper()
 	MustHaveExec(t)
-
 	var (
 		cancelCtx context.CancelFunc
 		gracePeriod time.Duration // unlimited unless the test has a deadline (to allow for interactive debugging)
@@ -167,17 +157,20 @@ func CommandContext(t testing.TB, ctx context.Context, name string, args ...stri
 			// Start with a minimum grace period, just long enough to consume the
 			// output of a reasonable program after it terminates.
 			gracePeriod = 100 * time.Millisecond
+
 			if s := os.Getenv("GO_TEST_TIMEOUT_SCALE"); s != "" {
 				scale, err := strconv.Atoi(s)
 				if err != nil {
 					t.Fatalf("invalid GO_TEST_TIMEOUT_SCALE: %v", err)
 				}
+
 				gracePeriod *= time.Duration(scale)
 			}
 
 			// If time allows, increase the termination grace period to 5% of the
 			// test's remaining time.
 			testTimeout := time.Until(td)
+
 			if gp := testTimeout / 20; gp > gracePeriod {
 				gracePeriod = gp
 			}
@@ -192,7 +185,6 @@ func CommandContext(t testing.TB, ctx context.Context, name string, args ...stri
 			// (We want to ensure that the test process itself has enough time to
 			// log the output before it is also terminated.)
 			cmdTimeout := testTimeout - 2*gracePeriod
-
 			if cd, ok := ctx.Deadline(); !ok || time.Until(cd) > cmdTimeout {
 				// Either ctx doesn't have a deadline, or its deadline would expire
 				// after (or too close before) the test has already timed out.
@@ -218,6 +210,7 @@ func CommandContext(t testing.TB, ctx context.Context, name string, args ...stri
 			// but don't actually fail the test because of it.
 			t.Logf("%v: terminating command: %v", ctx.Err(), cmd)
 		}
+
 		return cmd.Process.Signal(Sigquit)
 	}
 	cmd.WaitDelay = gracePeriod
@@ -226,11 +219,11 @@ func CommandContext(t testing.TB, ctx context.Context, name string, args ...stri
 		if cancelCtx != nil {
 			cancelCtx()
 		}
+
 		if cmd.Process != nil && cmd.ProcessState == nil {
 			t.Errorf("command was started, but test did not wait for it to complete: %v", cmd)
 		}
 	})
-
 	return cmd
 }
 
@@ -239,4 +232,22 @@ func CommandContext(t testing.TB, ctx context.Context, name string, args ...stri
 func Command(t testing.TB, name string, args ...string) *exec.Cmd {
 	t.Helper()
 	return CommandContext(t, context.Background(), name, args...)
+}
+
+// MustHaveExecPath checks that the current system can start the named executable
+// using os.StartProcess or (more commonly) exec.Command.
+// If not, MustHaveExecPath calls t.Skip with an explanation.
+func MustHaveExecPath(t testing.TB, path string) {
+	MustHaveExec(t)
+
+	err, found := execPaths.Load(path)
+	if !found {
+		_, err = exec.LookPath(path)
+		err, _ = execPaths.LoadOrStore(path, err)
+	}
+
+	if err != nil {
+		t.Helper()
+		t.Skipf("skipping test: %s: %s", path, err)
+	}
 }

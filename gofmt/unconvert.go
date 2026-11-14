@@ -22,29 +22,36 @@ import (
 // unconvert returns file with its redundant conversions removed. file must be
 // parsed with comments; it is type-checked as a package of its own.
 func unconvert(fset *token.FileSet, file *ast.File) *ast.File {
-	info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}}
+	info := &types.Info{
+		Types: map[ast.Expr]types.TypeAndValue{},
+	}
 	conf := types.Config{
 		Importer: importer.ForCompiler(fset, "source", nil),
 		Error: func(error) {}, // errors are expected for names declared elsewhere
 	}
+
 	conf.Check(file.Name.Name, fset, []*ast.File{file}, info)
 
 	repl := map[*ast.CallExpr]ast.Expr{}
+
 	ast.Inspect(file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok || call.Ellipsis.IsValid() || len(call.Args) != 1 || hasSelector(call.Fun) {
 			return true
 		}
+
 		if tv, ok := info.Types[call.Fun]; !ok || !tv.IsType() {
 			return true
 		}
-		target := info.Types[call.Fun].Type
+
 		arg := call.Args[0]
 		av := info.Types[arg]
-		if av.Type == nil || av.Value != nil || isUntyped(av.Type) || !types.Identical(target, av.Type) {
+		if target := info.Types[call.Fun].Type; av.Type == nil || av.Value != nil || isUntyped(av.Type) || !types.Identical(target, av.Type) {
 			return true
 		}
+
 		repl[call] = operand(arg)
+
 		return true
 	})
 	if len(repl) == 0 {
@@ -52,6 +59,7 @@ func unconvert(fset *token.FileSet, file *ast.File) *ast.File {
 	}
 
 	var rewriteVal func(val reflect.Value) reflect.Value
+
 	rewriteVal = func(val reflect.Value) reflect.Value {
 		if val.IsValid() && val.Type() == callExprPtrType {
 			if r, ok := repl[val.Interface().(*ast.CallExpr)]; ok {
@@ -59,8 +67,10 @@ func unconvert(fset *token.FileSet, file *ast.File) *ast.File {
 				return rewriteVal(reflect.ValueOf(r))
 			}
 		}
+
 		return apply(rewriteVal, val)
 	}
+
 	return rewriteVal(reflect.ValueOf(file)).Interface().(*ast.File)
 }
 
@@ -69,11 +79,13 @@ var callExprPtrType = reflect.TypeFor[*ast.CallExpr]()
 
 // hasSelector reports whether an expression holds a selector, such as pkg.T.
 func hasSelector(e ast.Expr) bool {
-	found := false
+	var found bool
+
 	ast.Inspect(e, func(n ast.Node) bool {
 		if _, ok := n.(*ast.SelectorExpr); ok {
 			found = true
 		}
+
 		return !found
 	})
 	return found
@@ -83,6 +95,7 @@ func hasSelector(e ast.Expr) bool {
 // boolean from a comparison.
 func isUntyped(t types.Type) bool {
 	b, ok := t.(*types.Basic)
+
 	return ok && b.Info()&types.IsUntyped != 0
 }
 
@@ -92,10 +105,11 @@ func isUntyped(t types.Type) bool {
 // printer under -strict when they are not needed.
 func operand(x ast.Expr) ast.Expr {
 	switch x.(type) {
-	case *ast.Ident, *ast.BasicLit, *ast.CallExpr, *ast.SelectorExpr,
-		*ast.IndexExpr, *ast.IndexListExpr, *ast.SliceExpr, *ast.ParenExpr,
-		*ast.CompositeLit, *ast.TypeAssertExpr:
+	case *ast.Ident, *ast.BasicLit, *ast.CallExpr, *ast.SelectorExpr, *ast.IndexExpr, *ast.IndexListExpr, *ast.SliceExpr, *ast.ParenExpr, *ast.CompositeLit, *ast.TypeAssertExpr:
 		return x
 	}
-	return &ast.ParenExpr{X: x}
+
+	return &ast.ParenExpr{
+		X: x,
+	}
 }

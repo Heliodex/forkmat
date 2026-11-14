@@ -17,6 +17,46 @@ import (
 
 var update = flag.Bool("update", false, "update .golden files")
 
+func TestBackupFile(t *testing.T) {
+	dir, err := os.MkdirTemp("", "gofmt_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	name, err := backupFile(filepath.Join(dir, "foo.go"), []byte("  package main"), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Created: %s", name)
+}
+
+// Test case for issue 3961.
+func TestCRLF(t *testing.T) {
+	const input = "testdata/crlf.input" // must contain CR/LF's
+	const golden = "testdata/crlf.golden" // must not contain any CR's
+
+	data, err := os.ReadFile(input)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if !bytes.Contains(data, []byte("\r\n")) {
+		t.Errorf("%s contains no CR/LF's", input)
+	}
+
+	data, err = os.ReadFile(golden)
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	if bytes.Contains(data, []byte("\r")) {
+		t.Errorf("%s contains CR's", golden)
+	}
+}
+
 // gofmtFlags looks for a comment of the form
 //
 //	//gofmt flags
@@ -29,11 +69,13 @@ func gofmtFlags(filename string, maxLines int) string {
 	if err != nil {
 		return "" // ignore errors - they will be found later
 	}
+
 	defer f.Close()
 
 	// initialize scanner
 	var s scanner.Scanner
 	s.Init(f)
+
 	s.Error = func(*scanner.Scanner, string) {} // ignore errors
 	s.Mode = scanner.GoTokens &^ scanner.SkipComments // want comments
 
@@ -42,6 +84,7 @@ func gofmtFlags(filename string, maxLines int) string {
 		switch s.Scan() {
 		case scanner.Comment:
 			const prefix = "//gofmt "
+
 			if t := s.TokenText(); strings.HasPrefix(t, prefix) {
 				return strings.TrimSpace(t[len(prefix):])
 			}
@@ -64,20 +107,75 @@ func resetFlags() {
 	*cpuprofile = ""
 }
 
+// TestDiff runs gofmt with the -d flag on the input files and checks that the
+// expected exit code is set.
+func TestDiff(t *testing.T) {
+	tests := []struct {
+		in string
+		exitCode int
+	}{
+		{
+			in: "testdata/exitcode.input",
+			exitCode: 1,
+		},
+		{
+			in: "testdata/exitcode.golden",
+			exitCode: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		resetFlags()
+
+		*doDiff = true
+
+		initParserMode()
+		initRewrite()
+
+		info, err := os.Lstat(tt.in)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		const maxWeight = 2 << 20
+
+		var buf, errBuf bytes.Buffer
+
+		s := newSequencer(maxWeight, &buf, &errBuf)
+
+		s.Add(fileWeight(tt.in, info), func(r *reporter) error {
+			return processFile(tt.in, info, nil, r)
+		})
+		if errBuf.Len() > 0 {
+			t.Logf("%q", errBuf.Bytes())
+		}
+
+		if s.GetExitCode() != tt.exitCode {
+			t.Errorf("%s: expected exit code %d, got %d", tt.in, tt.exitCode, s.GetExitCode())
+		}
+	}
+}
+
 func runTest(t *testing.T, in, out string) {
 	resetFlags()
+
 	info, err := os.Lstat(in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
+
 	for flag := range strings.SplitSeq(gofmtFlags(in, 20), " ") {
 		elts := strings.SplitN(flag, "=", 2)
 		name := elts[0]
-		value := ""
+
+		var value string
+
 		if len(elts) == 2 {
 			value = elts[1]
 		}
+
 		switch name {
 		case "":
 			// no flags
@@ -92,19 +190,22 @@ func runTest(t *testing.T, in, out string) {
 			t.Errorf("unrecognized flag name: %s", name)
 		}
 	}
-
 	initParserMode()
 	initRewrite()
 
 	const maxWeight = 2 << 20
+
 	var buf, errBuf bytes.Buffer
+
 	s := newSequencer(maxWeight, &buf, &errBuf)
+
 	s.Add(fileWeight(in, info), func(r *reporter) error {
 		return processFile(in, info, nil, r)
 	})
 	if errBuf.Len() > 0 {
 		t.Logf("%q", errBuf.Bytes())
 	}
+
 	if s.GetExitCode() != 0 {
 		t.Fail()
 	}
@@ -121,14 +222,13 @@ func runTest(t *testing.T, in, out string) {
 				if err := os.WriteFile(out, got, 0o666); err != nil {
 					t.Error(err)
 				}
+
 				return
 			}
 			// in == out: don't accidentally destroy input
 			t.Errorf("WARNING: -update did not rewrite input file %s", in)
 		}
-
-		t.Errorf("(gofmt %s) != %s (see %s.gofmt)\n%s", in, out, in,
-			diff.Diff("expected", expected, "got", got))
+		t.Errorf("(gofmt %s) != %s (see %s.gofmt)\n%s", in, out, in, diff.Diff("expected", expected, "got", got))
 		if err := os.WriteFile(in+".gofmt", got, 0o666); err != nil {
 			t.Error(err)
 		}
@@ -154,6 +254,7 @@ func TestRewrite(t *testing.T) {
 
 	for _, in := range match {
 		name := filepath.Base(in)
+
 		t.Run(name, func(t *testing.T) {
 			out := in // for files where input and output are identical
 			if strings.HasSuffix(in, ".input") {
@@ -166,79 +267,4 @@ func TestRewrite(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestDiff runs gofmt with the -d flag on the input files and checks that the
-// expected exit code is set.
-func TestDiff(t *testing.T) {
-	tests := []struct {
-		in string
-		exitCode int
-	}{
-		{in: "testdata/exitcode.input", exitCode: 1},
-		{in: "testdata/exitcode.golden", exitCode: 0},
-	}
-
-	for _, tt := range tests {
-		resetFlags()
-		*doDiff = true
-
-		initParserMode()
-		initRewrite()
-
-		info, err := os.Lstat(tt.in)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-
-		const maxWeight = 2 << 20
-		var buf, errBuf bytes.Buffer
-		s := newSequencer(maxWeight, &buf, &errBuf)
-		s.Add(fileWeight(tt.in, info), func(r *reporter) error {
-			return processFile(tt.in, info, nil, r)
-		})
-		if errBuf.Len() > 0 {
-			t.Logf("%q", errBuf.Bytes())
-		}
-
-		if s.GetExitCode() != tt.exitCode {
-			t.Errorf("%s: expected exit code %d, got %d", tt.in, tt.exitCode, s.GetExitCode())
-		}
-	}
-}
-
-// Test case for issue 3961.
-func TestCRLF(t *testing.T) {
-	const input = "testdata/crlf.input" // must contain CR/LF's
-	const golden = "testdata/crlf.golden" // must not contain any CR's
-
-	data, err := os.ReadFile(input)
-	if err != nil {
-		t.Error(err)
-	}
-	if !bytes.Contains(data, []byte("\r\n")) {
-		t.Errorf("%s contains no CR/LF's", input)
-	}
-
-	data, err = os.ReadFile(golden)
-	if err != nil {
-		t.Error(err)
-	}
-	if bytes.Contains(data, []byte("\r")) {
-		t.Errorf("%s contains CR's", golden)
-	}
-}
-
-func TestBackupFile(t *testing.T) {
-	dir, err := os.MkdirTemp("", "gofmt_test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-	name, err := backupFile(filepath.Join(dir, "foo.go"), []byte("  package main"), 0o644)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("Created: %s", name)
 }

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"forkmat/go/printer"
 	"forkmat/internal/diff"
+	"forkmat/internal/telemetry/counter"
 	"go/ast"
 	"go/parser"
 	"go/scanner"
@@ -25,9 +26,31 @@ import (
 	"strconv"
 	"strings"
 
-	"forkmat/internal/telemetry/counter"
-
 	"golang.org/x/sync/semaphore"
+)
+
+type (
+	// reporterState carries the state of a reporter instance.
+	//
+	// Only one reporter at a time may have access to a reporterState.
+	reporterState struct {
+		out, err io.Writer
+		exitCode int
+	}
+
+	// A reporter reports output, warnings, and errors.
+	reporter struct {
+		prev <-chan *reporterState
+		state *reporterState
+	}
+
+	// A sequencer performs concurrent tasks that may write output, but emits that
+	// output in a deterministic order.
+	sequencer struct {
+		sem *semaphore.Weighted // weighted by input bytes (an approximate proxy for memory overhead)
+		prev <-chan *reporterState // 1-buffered
+		maxWeight int64
+	}
 )
 
 var (
@@ -73,17 +96,13 @@ const (
 var fdSem = make(chan bool, 200)
 
 var (
-	rewrite func(*token.FileSet, *ast.File) *ast.File
 	parserMode parser.Mode
+	rewrite func(*token.FileSet, *ast.File) *ast.File
 )
-
-func usage() {
-	fmt.Fprintf(os.Stderr, "usage: gofmt [flags] [path ...]\n")
-	flag.PrintDefaults()
-}
 
 func initParserMode() {
 	parserMode = parser.ParseComments | parser.SkipObjectResolution
+
 	if *allErrors {
 		parserMode |= parser.AllErrors
 	}
@@ -98,20 +117,16 @@ func isGoFilename(name string) bool {
 	return !strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".go")
 }
 
-// A sequencer performs concurrent tasks that may write output, but emits that
-// output in a deterministic order.
-type sequencer struct {
-	sem *semaphore.Weighted // weighted by input bytes (an approximate proxy for memory overhead)
-	prev <-chan *reporterState // 1-buffered
-	maxWeight int64
-}
-
 // newSequencer returns a sequencer that allows concurrent tasks up to maxWeight
 // and writes tasks' output to out and err.
 func newSequencer(maxWeight int64, out, err io.Writer) *sequencer {
 	sem := semaphore.NewWeighted(maxWeight)
 	prev := make(chan *reporterState, 1)
-	prev <- &reporterState{out: out, err: err}
+	prev <- &reporterState{
+		out: out,
+		err: err,
+	}
+
 	return &sequencer{
 		maxWeight: maxWeight,
 		sem: sem,
@@ -119,9 +134,58 @@ func newSequencer(maxWeight int64, out, err io.Writer) *sequencer {
 	}
 }
 
+func usage() {
+	fmt.Fprintf(os.Stderr, "usage: gofmt [flags] [path ...]\n")
+	flag.PrintDefaults()
+}
+
 // exclusive is a weight that can be passed to a sequencer to cause
 // a task to be executed without any other concurrent tasks.
 const exclusive = -1
+
+// getState blocks until any prior reporters are finished with the reporter
+// state, then returns the state for manipulation.
+func (r *reporter) getState() *reporterState {
+	if r.state == nil {
+		r.state = <-r.prev
+	}
+
+	return r.state
+}
+
+func (r *reporter) ExitCode() int {
+	return r.getState().exitCode
+}
+
+// Report emits a non-nil error to the reporter's error stream,
+// changing its exit code to a nonzero value.
+func (r *reporter) Report(err error) {
+	if err == nil {
+		panic("Report with nil error")
+	}
+
+	if st := r.getState(); err == errFormattingDiffers {
+		st.exitCode = 1
+	} else {
+		scanner.PrintError(st.err, err)
+
+		st.exitCode = 2
+	}
+}
+
+// Warnf emits a warning message to the reporter's error stream,
+// without changing its exit code.
+func (r *reporter) Warnf(format string, args ...any) {
+	fmt.Fprintf(r.getState().err, format, args...)
+}
+
+// Write emits a slice to the reporter's output stream.
+//
+// Any error is returned to the caller, and does not otherwise affect the
+// reporter's exit code.
+func (r *reporter) Write(p []byte) (int, error) {
+	return r.getState().out.Write(p)
+}
 
 // Add blocks until the sequencer has enough weight to spare, then adds f as a
 // task to be executed concurrently.
@@ -143,6 +207,7 @@ func (s *sequencer) Add(weight int64, f func(*reporter) error) {
 	if weight < 0 || weight > s.maxWeight {
 		weight = s.maxWeight
 	}
+
 	if err := s.sem.Acquire(context.TODO(), weight); err != nil {
 		// Change the task from "execute f" to "report err".
 		weight = 0
@@ -151,8 +216,10 @@ func (s *sequencer) Add(weight int64, f func(*reporter) error) {
 		}
 	}
 
-	r := &reporter{prev: s.prev}
 	next := make(chan *reporterState, 1)
+	r := &reporter{
+		prev: s.prev,
+	}
 	s.prev = next
 
 	// Start f in parallel: it can run until it invokes a method on r, at which
@@ -161,6 +228,7 @@ func (s *sequencer) Add(weight int64, f func(*reporter) error) {
 		if err := f(r); err != nil {
 			r.Report(err)
 		}
+
 		next <- r.getState() // Release the next task.
 		s.sem.Release(weight)
 	}()
@@ -178,147 +246,82 @@ func (s *sequencer) AddReport(err error) {
 // exit code for the sequence suitable for passing to os.Exit.
 func (s *sequencer) GetExitCode() int {
 	c := make(chan int, 1)
+
 	s.Add(0, func(r *reporter) error {
 		c <- r.ExitCode()
+
 		return nil
 	})
 	return <-c
 }
 
-// A reporter reports output, warnings, and errors.
-type reporter struct {
-	prev <-chan *reporterState
-	state *reporterState
-}
+// backupFile writes data to a new file named filename<number> with permissions perm,
+// with <number> randomly chosen such that the file name is unique. backupFile returns
+// the chosen file name.
+func backupFile(filename string, data []byte, perm fs.FileMode) (string, error) {
+	fdSem <- true
 
-// reporterState carries the state of a reporter instance.
-//
-// Only one reporter at a time may have access to a reporterState.
-type reporterState struct {
-	out, err io.Writer
-	exitCode int
-}
+	defer func() {
+		<-fdSem
+	}()
 
-// getState blocks until any prior reporters are finished with the reporter
-// state, then returns the state for manipulation.
-func (r *reporter) getState() *reporterState {
-	if r.state == nil {
-		r.state = <-r.prev
+	nextRandom := func() string {
+		return strconv.Itoa(rand.Int())
 	}
-	return r.state
-}
+	dir, base := filepath.Split(filename)
 
-// Warnf emits a warning message to the reporter's error stream,
-// without changing its exit code.
-func (r *reporter) Warnf(format string, args ...any) {
-	fmt.Fprintf(r.getState().err, format, args...)
-}
+	var (
+		bakname string
+		f *os.File
+	)
 
-// Write emits a slice to the reporter's output stream.
-//
-// Any error is returned to the caller, and does not otherwise affect the
-// reporter's exit code.
-func (r *reporter) Write(p []byte) (int, error) {
-	return r.getState().out.Write(p)
-}
+	for {
+		bakname = filepath.Join(dir, base+"."+nextRandom())
 
-// Report emits a non-nil error to the reporter's error stream,
-// changing its exit code to a nonzero value.
-func (r *reporter) Report(err error) {
-	if err == nil {
-		panic("Report with nil error")
-	}
-	st := r.getState()
-	if err == errFormattingDiffers {
-		st.exitCode = 1
-	} else {
-		scanner.PrintError(st.err, err)
-		st.exitCode = 2
-	}
-}
+		var err error
 
-func (r *reporter) ExitCode() int {
-	return r.getState().exitCode
-}
+		f, err = os.OpenFile(bakname, os.O_RDWR|os.O_CREATE|os.O_EXCL, perm)
 
-// If info == nil, we are formatting stdin instead of a file.
-// If in == nil, the source is the contents of the file with the given filename.
-func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) error {
-	src, err := readFile(filename, info, in)
-	if err != nil {
-		return err
-	}
+		if err == nil {
+			break
+		}
 
-	fileSet := token.NewFileSet()
-	// If we are formatting stdin, we accept a program fragment in lieu of a
-	// complete source file.
-	fragmentOk := info == nil
-	file, sourceAdj, indentAdj, err := parse(fileSet, filename, src, fragmentOk)
-	if err != nil {
-		return err
-	}
-
-	if *unconvertFlag && sourceAdj == nil {
-		file = unconvert(fileSet, file)
-	}
-
-	if *strict && sourceAdj == nil {
-		// -strict also reorders declarations below the ones they depend on
-		// (see reorder.go). The reordered source is parsed again, for printing.
-		if reordered := reorderSource(filename, src); !bytes.Equal(reordered, src) {
-			if file, err = parser.ParseFile(fileSet, filename, reordered, parserMode); err != nil {
-				return err
-			}
+		if !os.IsExist(err) {
+			return "", err
 		}
 	}
 
-	if rewrite != nil {
-		if sourceAdj == nil {
-			file = rewrite(fileSet, file)
-		} else {
-			r.Warnf("warning: rewrite ignored for incomplete programs\n")
+	// write data to backup file
+	_, err := f.Write(data)
+	if err1 := f.Close(); err == nil {
+		err = err1
+	}
+
+	return bakname, err
+}
+
+func fileWeight(path string, info fs.FileInfo) int64 {
+	if info == nil {
+		return exclusive
+	}
+
+	if info.Mode().Type() == fs.ModeSymlink {
+		var err error
+
+		info, err = os.Stat(path)
+
+		if err != nil {
+			return exclusive
 		}
 	}
 
-	ast.SortImports(fileSet, file)
-
-	if *simplifyAST {
-		simplify(file)
+	if !info.Mode().IsRegular() {
+		// For non-regular files, FileInfo.Size is system-dependent and thus not a
+		// reliable indicator of weight.
+		return exclusive
 	}
 
-	res, err := format(fileSet, file, sourceAdj, indentAdj, src, printer.Config{Mode: printerMode, Tabwidth: tabWidth})
-	if err != nil {
-		return err
-	}
-
-	if !bytes.Equal(src, res) {
-		// formatting has changed
-		if *list {
-			fmt.Fprintln(r, filename)
-		}
-		if *write {
-			if info == nil {
-				panic("-w should not have been allowed with stdin")
-			}
-
-			perm := info.Mode().Perm()
-			if werr := writeFile(filename, src, res, perm); werr != nil {
-				return werr
-			}
-		}
-		if *doDiff {
-			newName := filepath.ToSlash(filename)
-			oldName := newName + ".orig"
-			r.Write(diff.Diff(oldName, src, newName, res))
-			return errFormattingDiffers
-		}
-	}
-
-	if !*list && !*write && !*doDiff {
-		_, err = r.Write(res)
-	}
-
-	return err
+	return info.Size()
 }
 
 // readFile reads the contents of filename, described by info.
@@ -329,11 +332,14 @@ func readFile(filename string, info fs.FileInfo, in io.Reader) ([]byte, error) {
 	if in == nil {
 		fdSem <- true
 		var err error
+
 		f, err := os.Open(filename)
 		if err != nil {
 			return nil, err
 		}
+
 		in = f
+
 		defer func() {
 			f.Close()
 			<-fdSem
@@ -348,16 +354,20 @@ func readFile(filename string, info fs.FileInfo, in io.Reader) ([]byte, error) {
 	// If the size is unknown (or bogus, or overflows an int), fall back to
 	// a size-independent ReadAll.
 	size := -1
+
 	if info != nil && info.Mode().IsRegular() && int64(int(info.Size())) == info.Size() {
 		size = int(info.Size())
 	}
+
 	if size+1 <= 0 {
 		// The file is not known to be regular, so we don't have a reliable size for it.
 		var err error
+
 		src, err := io.ReadAll(in)
 		if err != nil {
 			return nil, err
 		}
+
 		return src, nil
 	}
 
@@ -369,6 +379,7 @@ func readFile(filename string, info fs.FileInfo, in io.Reader) ([]byte, error) {
 	// stop to avoid corrupting it.)
 	src := make([]byte, size+1)
 	n, err := io.ReadFull(in, src)
+
 	switch err {
 	case nil, io.EOF, io.ErrUnexpectedEOF:
 		// io.ReadFull returns io.EOF (for an empty file) or io.ErrUnexpectedEOF
@@ -377,117 +388,14 @@ func readFile(filename string, info fs.FileInfo, in io.Reader) ([]byte, error) {
 	default:
 		return nil, err
 	}
+
 	if n < size {
 		return nil, fmt.Errorf("error: size of %s changed during reading (from %d to %d bytes)", filename, size, n)
 	} else if n > size {
 		return nil, fmt.Errorf("error: size of %s changed during reading (from %d to >=%d bytes)", filename, size, len(src))
 	}
+
 	return src[:n], nil
-}
-
-func main() {
-	// Arbitrarily limit in-flight work to 2MiB times the number of threads.
-	//
-	// The actual overhead for the parse tree and output will depend on the
-	// specifics of the file, but this at least keeps the footprint of the process
-	// roughly proportional to GOMAXPROCS.
-	maxWeight := (2 << 20) * int64(runtime.GOMAXPROCS(0))
-	s := newSequencer(maxWeight, os.Stdout, os.Stderr)
-
-	// call gofmtMain in a separate function
-	// so that it can use defer and have them
-	// run before the exit.
-	gofmtMain(s)
-	os.Exit(s.GetExitCode())
-}
-
-func gofmtMain(s *sequencer) {
-	counter.Open()
-	flag.Usage = usage
-	flag.Parse()
-	counter.Inc("gofmt/invocations")
-	counter.CountFlags("gofmt/flag:", *flag.CommandLine)
-
-	if *strict {
-		printerMode |= printer.StrictLayout
-	}
-
-	if *cpuprofile != "" {
-		fdSem <- true
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			s.AddReport(fmt.Errorf("creating cpu profile: %s", err))
-			return
-		}
-		defer func() {
-			f.Close()
-			<-fdSem
-		}()
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
-	}
-
-	initParserMode()
-	initRewrite()
-
-	args := flag.Args()
-	if len(args) == 0 {
-		if *write {
-			s.AddReport(fmt.Errorf("error: cannot use -w with standard input"))
-			return
-		}
-		s.Add(0, func(r *reporter) error {
-			return processFile("<standard input>", nil, os.Stdin, r)
-		})
-		return
-	}
-
-	for _, arg := range args {
-		// Walk each given argument as a directory tree.
-		// If the argument is not a directory, it's always formatted as a Go file.
-		// If the argument is a directory, we walk it, ignoring non-Go files.
-		if err := filepath.WalkDir(arg, func(path string, d fs.DirEntry, err error) error {
-			switch {
-			case err != nil:
-				return err
-			case d.IsDir():
-				return nil // simply recurse into directories
-			case path == arg:
-				// non-directories given as explicit arguments are always formatted
-			case !isGoFilename(d.Name()):
-				return nil // skip walked non-Go files
-			}
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			s.Add(fileWeight(path, info), func(r *reporter) error {
-				return processFile(path, info, nil, r)
-			})
-			return nil
-		}); err != nil {
-			s.AddReport(err)
-		}
-	}
-}
-
-func fileWeight(path string, info fs.FileInfo) int64 {
-	if info == nil {
-		return exclusive
-	}
-	if info.Mode().Type() == fs.ModeSymlink {
-		var err error
-		info, err = os.Stat(path)
-		if err != nil {
-			return exclusive
-		}
-	}
-	if !info.Mode().IsRegular() {
-		// For non-regular files, FileInfo.Size is system-dependent and thus not a
-		// reliable indicator of weight.
-		return exclusive
-	}
-	return info.Size()
 }
 
 // writeFile updates a file with the new formatted data.
@@ -499,6 +407,7 @@ func writeFile(filename string, orig, formatted []byte, perm fs.FileMode) error 
 	}
 
 	fdSem <- true
+
 	defer func() {
 		<-fdSem
 	}()
@@ -510,12 +419,12 @@ func writeFile(filename string, orig, formatted []byte, perm fs.FileMode) error 
 		os.Remove(bakname)
 		return err
 	}
+
 	defer fout.Close() // for error paths
 
 	restoreFail := func(err error) {
 		fmt.Fprintf(os.Stderr, "gofmt: %s: error restoring file to original: %v; backup in %s\n", filename, err, bakname)
 	}
-
 	n, err := fout.Write(formatted)
 	if err == nil {
 		err = fout.Truncate(int64(n))
@@ -567,41 +476,177 @@ func writeFile(filename string, orig, formatted []byte, perm fs.FileMode) error 
 	return nil
 }
 
-// backupFile writes data to a new file named filename<number> with permissions perm,
-// with <number> randomly chosen such that the file name is unique. backupFile returns
-// the chosen file name.
-func backupFile(filename string, data []byte, perm fs.FileMode) (string, error) {
-	fdSem <- true
-	defer func() {
-		<-fdSem
-	}()
-
-	nextRandom := func() string {
-		return strconv.Itoa(rand.Int())
+// If info == nil, we are formatting stdin instead of a file.
+// If in == nil, the source is the contents of the file with the given filename.
+func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) error {
+	src, err := readFile(filename, info, in)
+	if err != nil {
+		return err
 	}
 
-	dir, base := filepath.Split(filename)
-	var (
-		bakname string
-		f *os.File
-	)
-	for {
-		bakname = filepath.Join(dir, base+"."+nextRandom())
-		var err error
-		f, err = os.OpenFile(bakname, os.O_RDWR|os.O_CREATE|os.O_EXCL, perm)
-		if err == nil {
-			break
+	fileSet := token.NewFileSet()
+	// If we are formatting stdin, we accept a program fragment in lieu of a
+	// complete source file.
+	fragmentOk := info == nil
+	file, sourceAdj, indentAdj, err := parse(fileSet, filename, src, fragmentOk)
+	if err != nil {
+		return err
+	}
+
+	if *unconvertFlag && sourceAdj == nil {
+		file = unconvert(fileSet, file)
+	}
+
+	if *strict && sourceAdj == nil {
+		// -strict also reorders declarations below the ones they depend on
+		// (see reorder.go). The reordered source is parsed again, for printing.
+		if reordered := reorderSource(filename, src); !bytes.Equal(reordered, src) {
+			if file, err = parser.ParseFile(fileSet, filename, reordered, parserMode); err != nil {
+				return err
+			}
 		}
-		if !os.IsExist(err) {
-			return "", err
+	}
+
+	if rewrite != nil {
+		if sourceAdj == nil {
+			file = rewrite(fileSet, file)
+		} else {
+			r.Warnf("warning: rewrite ignored for incomplete programs\n")
+		}
+	}
+	ast.SortImports(fileSet, file)
+	if *simplifyAST {
+		simplify(file)
+	}
+
+	res, err := format(fileSet, file, sourceAdj, indentAdj, src, printer.Config{
+		Mode: printerMode,
+		Tabwidth: tabWidth,
+	})
+	if err != nil {
+		return err
+	}
+
+	if !bytes.Equal(src, res) {
+		// formatting has changed
+		if *list {
+			fmt.Fprintln(r, filename)
+		}
+
+		if *write {
+			if info == nil {
+				panic("-w should not have been allowed with stdin")
+			}
+
+			perm := info.Mode().Perm()
+
+			if werr := writeFile(filename, src, res, perm); werr != nil {
+				return werr
+			}
+		}
+
+		if *doDiff {
+			newName := filepath.ToSlash(filename)
+			oldName := newName + ".orig"
+
+			r.Write(diff.Diff(oldName, src, newName, res))
+			return errFormattingDiffers
 		}
 	}
 
-	// write data to backup file
-	_, err := f.Write(data)
-	if err1 := f.Close(); err == nil {
-		err = err1
+	if !*list && !*write && !*doDiff {
+		_, err = r.Write(res)
 	}
 
-	return bakname, err
+	return err
+}
+
+func gofmtMain(s *sequencer) {
+	counter.Open()
+
+	flag.Usage = usage
+
+	flag.Parse()
+	counter.Inc("gofmt/invocations")
+	counter.CountFlags("gofmt/flag:", *flag.CommandLine)
+	if *strict {
+		printerMode |= printer.StrictLayout
+	}
+
+	if *cpuprofile != "" {
+		fdSem <- true
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			s.AddReport(fmt.Errorf("creating cpu profile: %s", err))
+			return
+		}
+
+		defer func() {
+			f.Close()
+			<-fdSem
+		}()
+
+		pprof.StartCPUProfile(f)
+
+		defer pprof.StopCPUProfile()
+	}
+	initParserMode()
+	initRewrite()
+
+	args := flag.Args()
+	if len(args) == 0 {
+		if *write {
+			s.AddReport(fmt.Errorf("error: cannot use -w with standard input"))
+			return
+		}
+		s.Add(0, func(r *reporter) error {
+			return processFile("<standard input>", nil, os.Stdin, r)
+		})
+		return
+	}
+
+	for _, arg := range args {
+		// Walk each given argument as a directory tree.
+		// If the argument is not a directory, it's always formatted as a Go file.
+		// If the argument is a directory, we walk it, ignoring non-Go files.
+		if err := filepath.WalkDir(arg, func(path string, d fs.DirEntry, err error) error {
+			switch {
+			case err != nil:
+				return err
+			case d.IsDir():
+				return nil // simply recurse into directories
+			case path == arg:
+				// non-directories given as explicit arguments are always formatted
+			case !isGoFilename(d.Name()):
+				return nil // skip walked non-Go files
+			}
+
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			s.Add(fileWeight(path, info), func(r *reporter) error {
+				return processFile(path, info, nil, r)
+			})
+			return nil
+		}); err != nil {
+			s.AddReport(err)
+		}
+	}
+}
+
+func main() {
+	// Arbitrarily limit in-flight work to 2MiB times the number of threads.
+	//
+	// The actual overhead for the parse tree and output will depend on the
+	// specifics of the file, but this at least keeps the footprint of the process
+	// roughly proportional to GOMAXPROCS.
+	maxWeight := 2 << 20 * int64(runtime.GOMAXPROCS(0))
+	s := newSequencer(maxWeight, os.Stdout, os.Stderr)
+
+	// call gofmtMain in a separate function
+	// so that it can use defer and have them
+	// run before the exit.
+	gofmtMain(s)
+	os.Exit(s.GetExitCode())
 }

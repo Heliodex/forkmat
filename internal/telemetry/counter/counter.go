@@ -15,14 +15,16 @@ import "flag"
 type dummyCounter struct{}
 
 func (dc dummyCounter) Inc() {}
-
-func Open() {}
+func CountFlagValue(prefix string, flagSet flag.FlagSet, flagName string) {}
+func CountFlags(name string, flagSet flag.FlagSet) {}
 func Inc(name string) {}
+
 func New(name string) dummyCounter {
 	return dummyCounter{}
 }
+
 func NewStack(name string, depth int) dummyCounter {
 	return dummyCounter{}
 }
-func CountFlags(name string, flagSet flag.FlagSet) {}
-func CountFlagValue(prefix string, flagSet flag.FlagSet, flagName string) {}
+
+func Open() {}

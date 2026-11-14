@@ -9,21 +9,18 @@ import (
 	"testing"
 )
 
-// reorderText returns src with its function runs reordered.
-func reorderText(t *testing.T, src string) string {
-	t.Helper()
-	return string(reorderSource("x.go", []byte(src)))
-}
-
 // declOrder returns the names of the top-level functions and methods of src, in
 // order.
 func declOrder(t *testing.T, src string) []string {
 	t.Helper()
+
 	file, err := parser.ParseFile(token.NewFileSet(), "x.go", src, 0)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+
 	var names []string
+
 	for _, d := range file.Decls {
 		switch d := d.(type) {
 		case *ast.FuncDecl:
@@ -31,6 +28,7 @@ func declOrder(t *testing.T, src string) []string {
 		case *ast.GenDecl:
 			if d.Tok == token.CONST || d.Tok == token.VAR || d.Tok == token.TYPE {
 				var group []string
+
 				for _, sp := range d.Specs {
 					switch sp := sp.(type) {
 					case *ast.ValueSpec:
@@ -41,17 +39,45 @@ func declOrder(t *testing.T, src string) []string {
 						group = append(group, sp.Name.Name)
 					}
 				}
+
 				names = append(names, strings.Join(group, ","))
 			}
 		}
 	}
+
 	return names
+}
+
+// reorderText returns src with its function runs reordered.
+func reorderText(t *testing.T, src string) string {
+	t.Helper()
+	return string(reorderSource("x.go", []byte(src)))
+}
+
+func TestHoistTypesAfterImports(t *testing.T) {
+	src := "package p\n\nimport \"fmt\"\n\nfunc f() { fmt.Println() }\n\ntype T struct{ s fmt.Stringer }\n"
+	got := reorderText(t, src)
+
+	if i, j := strings.Index(got, "import"), strings.Index(got, "type T"); !(i >= 0 && j > i) {
+		t.Errorf("type T not after the import:\n%s", got)
+	}
+
+	if i, j := strings.Index(got, "type T"), strings.Index(got, "func f"); !(i >= 0 && i < j) {
+		t.Errorf("type T not above func f:\n%s", got)
+	}
+}
+
+func TestReorderComments(t *testing.T) {
+	src := "package p\n\n// a is documented.\nfunc a() {\n\tb()\n}\n\n// b is documented.\nfunc b() {}\n"
+	want := "package p\n\n// b is documented.\nfunc b() {}\n\n// a is documented.\nfunc a() {\n\tb()\n}\n"
+	if got := reorderText(t, src); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
 }
 
 func TestReorderFuncs(t *testing.T) {
 	tests := []struct {
-		name string
-		src string
+		name, src string
 		want []string
 	}{
 		{
@@ -190,34 +216,33 @@ func TestReorderFuncs(t *testing.T) {
 			want: []string{"a", "init", "b"},
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := declOrder(t, reorderText(t, tt.src))
-			if !reflect.DeepEqual(got, tt.want) {
+			if got := declOrder(t, reorderText(t, tt.src)); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("order = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestHoistTypesAfterImports(t *testing.T) {
-	src := "package p\n\nimport \"fmt\"\n\nfunc f() { fmt.Println() }\n\ntype T struct{ s fmt.Stringer }\n"
-	got := reorderText(t, src)
-	if i, j := strings.Index(got, "import"), strings.Index(got, "type T"); !(i >= 0 && j > i) {
-		t.Errorf("type T not after the import:\n%s", got)
-	}
-	if i, j := strings.Index(got, "type T"), strings.Index(got, "func f"); !(i >= 0 && i < j) {
-		t.Errorf("type T not above func f:\n%s", got)
+func TestReorderIdempotent(t *testing.T) {
+	src := "package p\n\nfunc a() {\n\tb()\n}\n\nfunc b() {\n\tc()\n}\n\nfunc c() {}\n"
+	once := reorderText(t, src)
+	if twice := reorderText(t, once); once != twice {
+		t.Errorf("second pass changed the output:\n%s", twice)
 	}
 }
 
 // stmtPos returns the offset of the first occurrence of text in src.
 func stmtPos(t *testing.T, src, text string) int {
 	t.Helper()
+
 	i := strings.Index(src, text)
 	if i < 0 {
 		t.Fatalf("%q not in output:\n%s", text, src)
 	}
+
 	return i
 }
 
@@ -253,6 +278,7 @@ func TestReorderAssignRuns(t *testing.T) {
 			then: "a := 2",
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := reorderText(t, tt.src)
@@ -260,25 +286,10 @@ func TestReorderAssignRuns(t *testing.T) {
 			if tt.sorted && !(i < j) {
 				t.Errorf("not sorted:\n%s", got)
 			}
+
 			if !tt.sorted && !(i < j) {
 				t.Errorf("order changed:\n%s", got)
 			}
 		})
-	}
-}
-
-func TestReorderComments(t *testing.T) {
-	src := "package p\n\n// a is documented.\nfunc a() {\n\tb()\n}\n\n// b is documented.\nfunc b() {}\n"
-	want := "package p\n\n// b is documented.\nfunc b() {}\n\n// a is documented.\nfunc a() {\n\tb()\n}\n"
-	if got := reorderText(t, src); got != want {
-		t.Errorf("got:\n%s\nwant:\n%s", got, want)
-	}
-}
-
-func TestReorderIdempotent(t *testing.T) {
-	src := "package p\n\nfunc a() {\n\tb()\n}\n\nfunc b() {\n\tc()\n}\n\nfunc c() {}\n"
-	once := reorderText(t, src)
-	if twice := reorderText(t, once); once != twice {
-		t.Errorf("second pass changed the output:\n%s", twice)
 	}
 }

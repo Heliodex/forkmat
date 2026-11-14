@@ -4,29 +4,30 @@
 
 package goarch
 
-const GOARCH = `ppc64`
-
-const Is386 = 0
-const IsAmd64 = 0
-const IsAmd64p32 = 0
-const IsArm = 0
-const IsArmbe = 0
-const IsArm64 = 0
-const IsArm64be = 0
-const IsLoong64 = 0
-const IsMips = 0
-const IsMipsle = 0
-const IsMips64 = 0
-const IsMips64le = 0
-const IsMips64p32 = 0
-const IsMips64p32le = 0
-const IsPpc = 0
-const IsPpc64 = 1
-const IsPpc64le = 0
-const IsRiscv = 0
-const IsRiscv64 = 0
-const IsS390 = 0
-const IsS390x = 0
-const IsSparc = 0
-const IsSparc64 = 0
-const IsWasm = 0
+const (
+	GOARCH = `ppc64`
+	Is386 = 0
+	IsAmd64 = 0
+	IsAmd64p32 = 0
+	IsArm = 0
+	IsArm64 = 0
+	IsArm64be = 0
+	IsArmbe = 0
+	IsLoong64 = 0
+	IsMips = 0
+	IsMips64 = 0
+	IsMips64le = 0
+	IsMips64p32 = 0
+	IsMips64p32le = 0
+	IsMipsle = 0
+	IsPpc = 0
+	IsPpc64 = 1
+	IsPpc64le = 0
+	IsRiscv = 0
+	IsRiscv64 = 0
+	IsS390 = 0
+	IsS390x = 0
+	IsSparc = 0
+	IsSparc64 = 0
+	IsWasm = 0
+)

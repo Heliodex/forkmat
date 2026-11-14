@@ -19,11 +19,10 @@ import (
 )
 
 var (
-	fileNode *ast.File
-	fileSize int64
-
 	declNode ast.Decl
 	declSize int64
+	fileNode *ast.File
+	fileSize int64
 )
 
 func testprint(out io.Writer, node ast.Node) {
@@ -47,6 +46,7 @@ func initialize() {
 	}
 
 	var buf bytes.Buffer
+
 	testprint(&buf, file)
 	if !bytes.Equal(buf.Bytes(), src) {
 		log.Fatalf("print error: %s not idempotent", filename)
@@ -64,18 +64,6 @@ func initialize() {
 			declSize = int64(fset.Position(decl.End()).Offset - fset.Position(decl.Pos()).Offset)
 			break
 		}
-
-	}
-}
-
-func BenchmarkPrintFile(b *testing.B) {
-	if fileNode == nil {
-		initialize()
-	}
-	b.ReportAllocs()
-	b.SetBytes(fileSize)
-	for b.Loop() {
-		testprint(io.Discard, fileNode)
 	}
 }
 
@@ -87,5 +75,16 @@ func BenchmarkPrintDecl(b *testing.B) {
 	b.SetBytes(declSize)
 	for b.Loop() {
 		testprint(io.Discard, declNode)
+	}
+}
+
+func BenchmarkPrintFile(b *testing.B) {
+	if fileNode == nil {
+		initialize()
+	}
+	b.ReportAllocs()
+	b.SetBytes(fileSize)
+	for b.Loop() {
+		testprint(io.Discard, fileNode)
 	}
 }

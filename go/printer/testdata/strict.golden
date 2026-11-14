@@ -361,3 +361,34 @@ func ifUse(a int) error {
 
 	return nil
 }
+
+// Compiler allows programs to be compiled and deserialised with a cache and given optimisation level.
+type (
+	Compiler struct {
+		Cache map[[32]byte]internal.Deserpath
+		O uint8
+	}
+
+	// Luau types
+
+	// Val represents any possible Luau value. Luau type `any`
+	Val = internal.Val
+
+	// Function represents a native or wrapped Luau function. Luau type `function`
+	Function struct {
+		// Run is the native body of the function. Its coroutine argument is used to run the function in a coroutine.
+		Run *func(*Coroutine, ...Val) ([]Val, error)
+		Name string
+		Co *Coroutine // if in a different coroutine
+	}
+
+	// Buffer represents a Luau byte buffer. Luau type`buffer`
+	// As buffers are compared by reference, this type must always be used as a pointer.
+	Buffer []byte
+
+	// Vector represents a 3-wide or 4-wide vector value. Luau type `vector`
+	Vector [4]float32
+
+	// Env represents a global Luau environment.
+	Env map[string]Val
+)

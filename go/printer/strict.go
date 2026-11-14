@@ -545,27 +545,20 @@ func (p *printer) afterOpenBrace() bool {
 	return false
 }
 
-// singleDecl returns d if it is an ungrouped var or type declaration of one spec
-// with no comment, and nil otherwise.
+// singleDecl returns d if it is an ungrouped var declaration of one spec with
+// no comment, and nil otherwise.
 func singleDecl(d *ast.GenDecl) *ast.GenDecl {
-	if d == nil || (d.Tok != token.VAR && d.Tok != token.TYPE) || d.Lparen.IsValid() || len(d.Specs) != 1 || d.Doc != nil {
+	if d == nil || d.Tok != token.VAR || d.Lparen.IsValid() || len(d.Specs) != 1 || d.Doc != nil {
 		return nil
 	}
-	switch s := d.Specs[0].(type) {
-	case *ast.ValueSpec:
-		if s.Doc != nil || s.Comment != nil {
-			return nil
-		}
-	case *ast.TypeSpec:
-		if s.Doc != nil || s.Comment != nil {
-			return nil
-		}
+	if vs := d.Specs[0].(*ast.ValueSpec); vs.Doc != nil || vs.Comment != nil {
+		return nil
 	}
 	return d
 }
 
-// groupDecls joins a run of single declarations of one token into one
-// parenthesized declaration.
+// groupDecls joins a run of single var declarations into one parenthesized
+// declaration.
 func groupDecls(run []*ast.GenDecl) *ast.GenDecl {
 	var specs []ast.Spec
 	for _, d := range run {
@@ -581,10 +574,103 @@ func groupDecls(run []*ast.GenDecl) *ast.GenDecl {
 	}
 }
 
-// strictGroupDecls groups each run of adjacent single var or type declarations
-// at package level into one var (...) or type (...) declaration. A run holds
-// one token only, and a comment between two declarations keeps them apart.
+// startPos returns where d starts, including its doc comment.
+func startPos(d *ast.GenDecl) token.Pos {
+	if d.Doc != nil {
+		return d.Doc.Pos()
+	}
+	return d.Pos()
+}
+
+// withDoc returns spec s with the comment group doc placed before it, merged
+// with any doc comment s already has.
+func withDoc(s ast.Spec, doc *ast.CommentGroup) ast.Spec {
+	if doc == nil {
+		return s
+	}
+	switch s := s.(type) {
+	case *ast.TypeSpec:
+		c := *s
+		c.Doc = mergeDoc(doc, c.Doc)
+		return &c
+	case *ast.ValueSpec:
+		c := *s
+		c.Doc = mergeDoc(doc, c.Doc)
+		return &c
+	}
+	return s
+}
+
+// mergeDoc returns the comment group of a followed by that of b.
+func mergeDoc(a, b *ast.CommentGroup) *ast.CommentGroup {
+	if b == nil {
+		return a
+	}
+	return &ast.CommentGroup{List: append(append([]*ast.Comment{}, a.List...), b.List...)}
+}
+
+// joinTypeDecls joins a run of type declarations into one type (...)
+// declaration. The doc comment of the first declaration becomes the doc comment
+// of the group; that of each later declaration moves onto its first spec.
+func joinTypeDecls(run []*ast.GenDecl) *ast.GenDecl {
+	var specs []ast.Spec
+	for i, d := range run {
+		for j, sp := range d.Specs {
+			if i > 0 && j == 0 {
+				sp = withDoc(sp, d.Doc)
+			}
+			specs = append(specs, sp)
+		}
+	}
+	first, last := run[0], run[len(run)-1]
+	return &ast.GenDecl{
+		Doc:    first.Doc,
+		TokPos: first.TokPos,
+		Tok:    token.TYPE,
+		Lparen: first.TokPos,
+		Specs:  specs,
+		Rparen: last.End(),
+	}
+}
+
+// groupTypes joins each run of adjacent type declarations into one type (...)
+// declaration. A declaration may be a single one or a group already, and may
+// carry doc comments. A comment that is not the doc comment of the next
+// declaration keeps two declarations apart.
+func groupTypes[T ast.Node](p *printer, list []T, decl func(T) *ast.GenDecl, wrap func(*ast.GenDecl) T) []T {
+	var out []T
+	for i := 0; i < len(list); {
+		j := i + 1
+		var run []*ast.GenDecl
+		if d := decl(list[i]); d != nil && d.Tok == token.TYPE {
+			run = append(run, d)
+			for j < len(list) {
+				d := decl(list[j])
+				if d == nil || d.Tok != token.TYPE || p.commentIn(list[j-1].End(), startPos(d)) {
+					break
+				}
+				run = append(run, d)
+				j++
+			}
+		}
+		if len(run) > 1 {
+			out = append(out, wrap(joinTypeDecls(run)))
+		} else {
+			out = append(out, list[i])
+		}
+		i = j
+	}
+	return out
+}
+
+// strictGroupDecls groups each run of adjacent single var declarations at
+// package level into one var (...) declaration, and each run of type
+// declarations into one type (...) declaration (see groupTypes). A comment
+// between two var declarations keeps them apart.
 func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
+	list = groupTypes(p, list,
+		func(d ast.Decl) *ast.GenDecl { g, _ := d.(*ast.GenDecl); return g },
+		func(g *ast.GenDecl) ast.Decl { return g })
 	var out []ast.Decl
 	for i := 0; i < len(list); {
 		j := i + 1
@@ -617,6 +703,15 @@ func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
 
 // strictGroupStmts is strictGroupDecls for the statements of a block.
 func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
+	list = groupTypes(p, list,
+		func(s ast.Stmt) *ast.GenDecl {
+			if ds, ok := s.(*ast.DeclStmt); ok {
+				g, _ := ds.Decl.(*ast.GenDecl)
+				return g
+			}
+			return nil
+		},
+		func(g *ast.GenDecl) ast.Stmt { return &ast.DeclStmt{Decl: g} })
 	declOf := func(s ast.Stmt) *ast.GenDecl {
 		if ds, ok := s.(*ast.DeclStmt); ok {
 			if d, ok := ds.Decl.(*ast.GenDecl); ok {

@@ -35,13 +35,13 @@ type (
 	// A Config node controls the output of Fprint.
 	Config struct {
 		Mode Mode // default: 0
-		Tabwidth int // default: 8
+		Tabwidth, // default: 8
 		Indent int // default: 0 (all code is indented at least by this much)
 	}
 
 	commentInfo struct {
 		comment *ast.CommentGroup // = printer.comments[cindex-1]; or nil
-		cindex int // index of the next comment
+		cindex, // index of the next comment
 		commentOffset int // = printer.posFor(printer.comments[cindex-1].List[0].Pos()).Offset; or infinity
 		commentNewline bool // true if the comment group contains newlines
 	}
@@ -93,8 +93,8 @@ type (
 		wsbuf []whiteSpace // delayed white space
 
 		// Positions (see above)
-		out token.Position // current position in output space
-		last token.Position // value of pos after calling writeString
+		out, // current position in output space
+		last, // value of pos after calling writeString
 		pos token.Position // current position in AST (source) space
 
 		// Configuration (does not change after initialization)
@@ -103,13 +103,13 @@ type (
 		// Current state
 		mode pmode // current printer mode
 		level int // level == 0: outside composite literal; level > 0: inside composite literal
-		prevOpen token.Token // previous non-brace "open" token (, [, or token.ILLEGAL
+		prevOpen, // previous non-brace "open" token (, [, or token.ILLEGAL
 		lastTok token.Token // last token printed (token.ILLEGAL if it's whitespace)
 		indent int // current indentation
 		cachedPos token.Pos // Cache of most recently computed line position.
 		cachedLine int // line corresponding to cachedPos
-		endAlignment bool // if set, terminate alignment immediately
-		useNodeComments bool // if not set, ignore lead and line comments of nodes
+		endAlignment, // if set, terminate alignment immediately
+		useNodeComments, // if not set, ignore lead and line comments of nodes
 		impliedSemi bool // if set, a linebreak implies a semicolon
 	}
 )

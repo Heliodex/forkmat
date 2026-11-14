@@ -561,6 +561,29 @@ func (p *printer) afterOpenBrace() bool {
 	return false
 }
 
+// commentInExcepts reports whether a comment starts in the source range [from, to),
+// other than the comment groups in except, which are printed where they stand.
+func (p *printer) commentInExcepts(from, to token.Pos, except []*ast.CommentGroup) bool {
+	cs := p.allComments
+	i := sort.Search(len(cs), func(i int) bool {
+		return cs[i].Pos() >= from
+	})
+
+	for ; i < len(cs) && cs[i].Pos() < to; i++ {
+		if !slices.Contains(except, cs[i]) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// commentInExcept reports whether a comment starts in the source range [from, to),
+// other than the comment group except, which is printed where it stands.
+func (p *printer) commentInExcept(from, to token.Pos, except *ast.CommentGroup) bool {
+	return p.commentInExcepts(from, to, []*ast.CommentGroup{except})
+}
+
 // sameType reports whether a and b print the same type, with no comment in
 // either.
 func (p *printer) sameType(a, b ast.Expr) bool {
@@ -586,29 +609,6 @@ func (p *printer) mergeable(prev, cur *ast.Field) bool {
 
 	// the trailing comment of prev may sit between the names; it keeps its place
 	return !p.commentInExcept(prev.End(), cur.Pos(), prev.Comment) && p.sameType(prev.Type, cur.Type)
-}
-
-// commentInExcept reports whether a comment starts in the source range [from, to),
-// other than the comment group except, which is printed where it stands.
-func (p *printer) commentInExcept(from, to token.Pos, except *ast.CommentGroup) bool {
-	return p.commentInExcepts(from, to, []*ast.CommentGroup{except})
-}
-
-// commentInExcepts reports whether a comment starts in the source range [from, to),
-// other than the comment groups in except, which are printed where they stand.
-func (p *printer) commentInExcepts(from, to token.Pos, except []*ast.CommentGroup) bool {
-	cs := p.allComments
-	i := sort.Search(len(cs), func(i int) bool {
-		return cs[i].Pos() >= from
-	})
-
-	for ; i < len(cs) && cs[i].Pos() < to; i++ {
-		if !slices.Contains(except, cs[i]) {
-			return true
-		}
-	}
-
-	return false
 }
 
 // strictFields returns the fields of a parameter or struct list as they print
@@ -882,6 +882,7 @@ func (p *printer) mergeVarSpecs(d *ast.GenDecl) *ast.GenDecl {
 	}
 
 	var trailing []*ast.CommentGroup
+
 	for _, sp := range d.Specs {
 		if vs := sp.(*ast.ValueSpec); vs.Comment != nil {
 			trailing = append(trailing, vs.Comment)

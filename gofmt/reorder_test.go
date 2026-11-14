@@ -317,8 +317,7 @@ func stmtPos(t *testing.T, src, text string) int {
 
 func TestReorderAssignRuns(t *testing.T) {
 	tests := []struct {
-		name, src string
-		first, then string // first must come before then in the output
+		name, src, first, then string // first must come before then in the output
 		sorted bool // whether the statements are sorted (then comes first) or kept
 	}{
 		{

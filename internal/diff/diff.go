@@ -175,8 +175,8 @@ func Diff(oldName string, old []byte, newName string, new []byte) []byte {
 	// tgs returns a leading {0,0} and trailing {len(x), len(y)} pair
 	// in the sequence of matches.
 	var (
-		done pair // printed up to x[:done.x] and y[:done.y]
-		chunk pair // start lines of current chunk
+		done, // printed up to x[:done.x] and y[:done.y]
+		chunk, // start lines of current chunk
 		count pair // number of lines from each side in current chunk
 		ctext []string // lines for current chunk
 	)

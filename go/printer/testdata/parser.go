@@ -30,7 +30,7 @@ type (
 
 		// Comments
 		comments []*ast.CommentGroup
-		leadComment *ast.CommentGroup // last lead comment
+		leadComment, // last lead comment
 		lineComment *ast.CommentGroup // last line comment
 
 		// Next token
@@ -42,7 +42,7 @@ type (
 		exprLev int // < 0: in control clause, >= 0: in expression
 
 		// Ordinary identifier scopes
-		pkgScope *ast.Scope // pkgScope.Outer == nil
+		pkgScope, // pkgScope.Outer == nil
 		topScope *ast.Scope // top-most scope; may be pkgScope
 		unresolved []*ast.Ident // unresolved identifiers
 		imports []*ast.ImportSpec // list of imports

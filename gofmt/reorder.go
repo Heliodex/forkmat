@@ -48,7 +48,7 @@ type (
 		names []string // the names it declares; for a method, "Type.Name"
 		body ast.Node // the part whose references count as dependencies
 		objs []any // the declarations that resolved references may point to
-		start token.Pos // where it starts, including its doc comment
+		start, // where it starts, including its doc comment
 		end token.Pos // where it ends
 
 		method bool // a method: a function with a receiver

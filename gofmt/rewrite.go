@@ -102,7 +102,7 @@ func set(x, y reflect.Value) {
 
 // Values/types for special cases.
 var (
-	identType    = reflect.TypeFor[*ast.Ident]()
+	identType = reflect.TypeFor[*ast.Ident]()
 	positionType = reflect.TypeFor[token.Pos]()
 	callExprType = reflect.TypeFor[*ast.CallExpr]()
 
@@ -110,9 +110,9 @@ var (
 	// fields so that the deprecated ast.Object and ast.Scope names are not used.
 	// Parsing skips object resolution, so these fields are always nil.
 	objectPtrType = fieldType[ast.Ident]("Obj")
-	scopePtrType  = fieldType[ast.File]("Scope")
-	objectPtrNil  = reflect.Zero(objectPtrType)
-	scopePtrNil   = reflect.Zero(scopePtrType)
+	scopePtrType = fieldType[ast.File]("Scope")
+	objectPtrNil = reflect.Zero(objectPtrType)
+	scopePtrNil = reflect.Zero(scopePtrType)
 )
 
 // fieldType returns the type of the field called name in T.

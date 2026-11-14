@@ -21,10 +21,10 @@ import (
 // parser functionality.
 const (
 	PackageClauseOnly uint = 1 << iota // parsing stops after package clause
-	ImportsOnly                        // parsing stops after import declarations
-	ParseComments                      // parse comments and add them to AST
-	Trace                              // print a trace of parsed productions
-	DeclarationErrors                  // report declaration errors
+	ImportsOnly // parsing stops after import declarations
+	ParseComments // parse comments and add them to AST
+	Trace // print a trace of parsed productions
+	DeclarationErrors // report declaration errors
 )
 
 // The parser structure holds the parser's internal state.
@@ -34,32 +34,32 @@ type parser struct {
 	scanner scanner.Scanner
 
 	// Tracing/debugging
-	mode   uint // parsing mode
-	trace  bool // == (mode & Trace != 0)
+	mode uint // parsing mode
+	trace bool // == (mode & Trace != 0)
 	indent uint // indentation used for tracing output
 
 	// Comments
-	comments    []*ast.CommentGroup
+	comments []*ast.CommentGroup
 	leadComment *ast.CommentGroup // last lead comment
 	lineComment *ast.CommentGroup // last line comment
 
 	// Next token
-	pos token.Pos   // token position
+	pos token.Pos // token position
 	tok token.Token // one token look-ahead
-	lit string      // token literal
+	lit string // token literal
 
 	// Non-syntactic parser control
 	exprLev int // < 0: in control clause, >= 0: in expression
 
 	// Ordinary identifier scopes
-	pkgScope   *ast.Scope        // pkgScope.Outer == nil
-	topScope   *ast.Scope        // top-most scope; may be pkgScope
-	unresolved []*ast.Ident      // unresolved identifiers
-	imports    []*ast.ImportSpec // list of imports
+	pkgScope *ast.Scope // pkgScope.Outer == nil
+	topScope *ast.Scope // top-most scope; may be pkgScope
+	unresolved []*ast.Ident // unresolved identifiers
+	imports []*ast.ImportSpec // list of imports
 
 	// Label scope
 	// (maintained by open/close LabelScope)
-	labelScope  *ast.Scope     // label scope for current function
+	labelScope *ast.Scope // label scope for current function
 	targetStack [][]*ast.Ident // stack of unresolved labels
 }
 

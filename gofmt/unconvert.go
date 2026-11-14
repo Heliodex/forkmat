@@ -25,7 +25,7 @@ func unconvert(fset *token.FileSet, file *ast.File) *ast.File {
 	info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}}
 	conf := types.Config{
 		Importer: importer.ForCompiler(fset, "source", nil),
-		Error:    func(error) {}, // errors are expected for names declared elsewhere
+		Error: func(error) {}, // errors are expected for names declared elsewhere
 	}
 	conf.Check(file.Name.Name, fset, []*ast.File{file}, info)
 

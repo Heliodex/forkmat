@@ -51,142 +51,142 @@ func declOrder(t *testing.T, src string) []string {
 func TestReorderFuncs(t *testing.T) {
 	tests := []struct {
 		name string
-		src  string
+		src string
 		want []string
 	}{
 		{
 			name: "caller moves below callee",
-			src:  "package p\n\nfunc a() {\n\tb()\n}\n\nfunc b() {}\n",
+			src: "package p\n\nfunc a() {\n\tb()\n}\n\nfunc b() {}\n",
 			want: []string{"b", "a"},
 		},
 		{
 			name: "chain",
-			src:  "package p\n\nfunc a() {\n\tb()\n}\n\nfunc b() {\n\tc()\n}\n\nfunc c() {}\n",
+			src: "package p\n\nfunc a() {\n\tb()\n}\n\nfunc b() {\n\tc()\n}\n\nfunc c() {}\n",
 			want: []string{"c", "b", "a"},
 		},
 		{
 			name: "independent functions keep their order",
-			src:  "package p\n\nfunc a() {}\n\nfunc b() {}\n",
+			src: "package p\n\nfunc a() {}\n\nfunc b() {}\n",
 			want: []string{"a", "b"},
 		},
 		{
 			name: "cycle keeps source order",
-			src:  "package p\n\nfunc cyc1() {\n\tcyc2()\n}\n\nfunc cyc2() {\n\tcyc1()\n}\n",
+			src: "package p\n\nfunc cyc1() {\n\tcyc2()\n}\n\nfunc cyc2() {\n\tcyc1()\n}\n",
 			want: []string{"cyc1", "cyc2"},
 		},
 		{
 			name: "function value counts as a reference",
-			src:  "package p\n\nfunc a() {\n\tf := b\n\tf()\n}\n\nfunc b() {}\n",
+			src: "package p\n\nfunc a() {\n\tf := b\n\tf()\n}\n\nfunc b() {}\n",
 			want: []string{"b", "a"},
 		},
 		{
 			name: "local shadowing a function is not a reference",
-			src:  "package p\n\nfunc a1() {\n\tleaf := 1\n\t_ = leaf\n}\n\nfunc leaf() {}\n",
+			src: "package p\n\nfunc a1() {\n\tleaf := 1\n\t_ = leaf\n}\n\nfunc leaf() {}\n",
 			want: []string{"a1", "leaf"},
 		},
 		{
 			name: "selector is not a reference",
-			src:  "package p\n\nfunc a1(x T) {\n\tx.leaf()\n}\n\nfunc leaf() {}\n",
+			src: "package p\n\nfunc a1(x T) {\n\tx.leaf()\n}\n\nfunc leaf() {}\n",
 			want: []string{"a1", "leaf"},
 		},
 		{
 			name: "method is a barrier",
-			src:  "package p\n\nfunc a() {\n\tb()\n}\n\nfunc (T) M() {}\n\nfunc b() {}\n",
+			src: "package p\n\nfunc a() {\n\tb()\n}\n\nfunc (T) M() {}\n\nfunc b() {}\n",
 			want: []string{"a", "M", "b"},
 		},
 		{
 			name: "const declared before its use moves below it",
-			src:  "package p\n\nconst y = x\n\nconst x = 5\n",
+			src: "package p\n\nconst y = x\n\nconst x = 5\n",
 			want: []string{"x", "y"},
 		},
 		{
 			name: "const group moves as one unit",
-			src:  "package p\n\nconst (\n\tA = iota\n\tB\n)\n\nconst c = A\n",
+			src: "package p\n\nconst (\n\tA = iota\n\tB\n)\n\nconst c = A\n",
 			want: []string{"A,B", "c"},
 		},
 		{
 			name: "local const shadowing a package const is not a reference",
-			src:  "package p\n\nfunc p1() {\n\tconst x = 1\n\t_ = x\n}\n\nconst x = 5\n",
+			src: "package p\n\nfunc p1() {\n\tconst x = 1\n\t_ = x\n}\n\nconst x = 5\n",
 			want: []string{"p1", "x"},
 		},
 		{
 			name: "var declared before its use moves below it",
-			src:  "package p\n\nvar y = x\n\nvar x = 5\n",
+			src: "package p\n\nvar y = x\n\nvar x = 5\n",
 			want: []string{"x", "y"},
 		},
 		{
 			name: "var with a call is a barrier",
-			src:  "package p\n\nvar y = x\n\nvar x = f()\n",
+			src: "package p\n\nvar y = x\n\nvar x = f()\n",
 			want: []string{"y", "x"},
 		},
 		{
 			name: "var with a conversion of a constant moves",
-			src:  "package p\n\nvar y = x\n\nvar x = int32(5)\n",
+			src: "package p\n\nvar y = x\n\nvar x = int32(5)\n",
 			want: []string{"x", "y"},
 		},
 		{
 			name: "type declared before its use moves below it",
-			src:  "package p\n\ntype m n\n\ntype n int\n",
+			src: "package p\n\ntype m n\n\ntype n int\n",
 			want: []string{"n", "m"},
 		},
 		{
 			name: "specs of a type group reorder among themselves",
-			src:  "package p\n\ntype (\n\tm n\n\tn int\n)\n",
+			src: "package p\n\ntype (\n\tm n\n\tn int\n)\n",
 			want: []string{"n", "m"},
 		},
 		{
 			name: "type with only type dependencies moves to the top",
-			src:  "package p\n\nfunc f() {}\n\ntype T struct{ x int }\n\ntype U struct{ t T }\n",
+			src: "package p\n\nfunc f() {}\n\ntype T struct{ x int }\n\ntype U struct{ t T }\n",
 			want: []string{"T", "U", "f"},
 		},
 		{
 			name: "type with a constant length stays below it",
-			src:  "package p\n\nconst N = 3\n\ntype Buf [N]byte\n\nfunc f() {}\n\ntype U struct{ b Buf }\n",
+			src: "package p\n\nconst N = 3\n\ntype Buf [N]byte\n\nfunc f() {}\n\ntype U struct{ b Buf }\n",
 			want: []string{"N", "Buf", "f", "U"},
 		},
 		{
 			name: "type with an imported package moves below the imports",
-			src:  "package p\n\nimport \"fmt\"\n\nfunc f() { fmt.Println() }\n\ntype T struct{ s fmt.Stringer }\n",
+			src: "package p\n\nimport \"fmt\"\n\nfunc f() { fmt.Println() }\n\ntype T struct{ s fmt.Stringer }\n",
 			want: []string{"T", "f"},
 		},
 		{
 			name: "generic type moves to the top",
-			src:  "package p\n\nfunc f() {}\n\ntype G[T any] struct{ x T }\n",
+			src: "package p\n\nfunc f() {}\n\ntype G[T any] struct{ x T }\n",
 			want: []string{"G", "f"},
 		},
 		{
 			name: "types are sorted alphabetically",
-			src:  "package p\n\ntype Z int\n\ntype A int\n\ntype M int\n",
+			src: "package p\n\ntype Z int\n\ntype A int\n\ntype M int\n",
 			want: []string{"A", "M", "Z"},
 		},
 		{
 			name: "a dependency comes before alphabetical order",
-			src:  "package p\n\ntype A B\n\ntype B int\n\ntype C int\n",
+			src: "package p\n\ntype A B\n\ntype B int\n\ntype C int\n",
 			want: []string{"B", "A", "C"},
 		},
 		{
 			name: "specs of a type group are sorted alphabetically",
-			src:  "package p\n\ntype (\n\tZ int\n\tA int\n)\n",
+			src: "package p\n\ntype (\n\tZ int\n\tA int\n)\n",
 			want: []string{"A", "Z"},
 		},
 		{
 			name: "functions are sorted alphabetically",
-			src:  "package p\n\nfunc z() {}\n\nfunc a() {}\n",
+			src: "package p\n\nfunc z() {}\n\nfunc a() {}\n",
 			want: []string{"a", "z"},
 		},
 		{
 			name: "methods are sorted by receiver type, then name",
-			src:  "package p\n\ntype B struct{}\n\ntype A struct{}\n\nfunc (b B) Z() {}\n\nfunc (a A) Y() {}\n\nfunc (b B) X() {}\n",
+			src: "package p\n\ntype B struct{}\n\ntype A struct{}\n\nfunc (b B) Z() {}\n\nfunc (a A) Y() {}\n\nfunc (b B) X() {}\n",
 			want: []string{"A", "B", "Y", "X", "Z"},
 		},
 		{
 			name: "a method that calls another comes after it",
-			src:  "package p\n\ntype B struct{}\n\nfunc (b B) A() { b.Z() }\n\nfunc (b B) Z() {}\n",
+			src: "package p\n\ntype B struct{}\n\nfunc (b B) A() { b.Z() }\n\nfunc (b B) Z() {}\n",
 			want: []string{"B", "Z", "A"},
 		},
 		{
 			name: "init is a barrier",
-			src:  "package p\n\nfunc a() {\n\tb()\n}\n\nfunc init() {}\n\nfunc b() {}\n",
+			src: "package p\n\nfunc a() {\n\tb()\n}\n\nfunc init() {}\n\nfunc b() {}\n",
 			want: []string{"a", "init", "b"},
 		},
 	}
@@ -223,34 +223,34 @@ func stmtPos(t *testing.T, src, text string) int {
 
 func TestReorderAssignRuns(t *testing.T) {
 	tests := []struct {
-		name, src   string
+		name, src string
 		first, then string // first must come before then in the output
-		sorted      bool   // whether the statements are sorted (then comes first) or kept
+		sorted bool // whether the statements are sorted (then comes first) or kept
 	}{
 		{
-			name:   "independent := statements are sorted by name",
-			src:    "package p\n\nfunc f() {\n\tz := 1\n\ta := 2\n\t_, _ = z, a\n}\n",
-			first:  "a := 2",
-			then:   "z := 1",
+			name: "independent := statements are sorted by name",
+			src: "package p\n\nfunc f() {\n\tz := 1\n\ta := 2\n\t_, _ = z, a\n}\n",
+			first: "a := 2",
+			then: "z := 1",
 			sorted: true,
 		},
 		{
-			name:  "a statement stays after the one it uses",
-			src:   "package p\n\nfunc f() {\n\tz := 1\n\ta := z\n\t_ = a\n}\n",
+			name: "a statement stays after the one it uses",
+			src: "package p\n\nfunc f() {\n\tz := 1\n\ta := z\n\t_ = a\n}\n",
 			first: "z := 1",
-			then:  "a := z",
+			then: "a := z",
 		},
 		{
-			name:  "a shadowing declaration stays after the read it would change",
-			src:   "package p\n\nvar n = 5\n\nfunc f() {\n\tz := n\n\tn := 1\n\t_, _ = z, n\n}\n",
+			name: "a shadowing declaration stays after the read it would change",
+			src: "package p\n\nvar n = 5\n\nfunc f() {\n\tz := n\n\tn := 1\n\t_, _ = z, n\n}\n",
 			first: "z := n",
-			then:  "n := 1",
+			then: "n := 1",
 		},
 		{
-			name:  "a call is not moved",
-			src:   "package p\n\nfunc f() {\n\tz := g()\n\ta := 2\n\t_, _ = z, a\n}\n",
+			name: "a call is not moved",
+			src: "package p\n\nfunc f() {\n\tz := g()\n\ta := 2\n\t_, _ = z, a\n}\n",
 			first: "z := g()",
-			then:  "a := 2",
+			then: "a := 2",
 		},
 	}
 	for _, tt := range tests {

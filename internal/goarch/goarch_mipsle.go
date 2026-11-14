@@ -5,9 +5,9 @@
 package goarch
 
 const (
-	_ArchFamily          = MIPS
+	_ArchFamily = MIPS
 	_DefaultPhysPageSize = 65536
-	_PCQuantum           = 4
-	_MinFrameSize        = 4
-	_StackAlign          = PtrSize
+	_PCQuantum = 4
+	_MinFrameSize = 4
+	_StackAlign = PtrSize
 )

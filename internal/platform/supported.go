@@ -275,8 +275,8 @@ func ExecutableHasDWARF(goos, goarch string) bool {
 // stored in the generated distInfo map.
 type osArchInfo struct {
 	CgoSupported bool
-	FirstClass   bool
-	Broken       bool
+	FirstClass bool
+	Broken bool
 }
 
 // CgoSupported reports whether goos/goarch supports cgo.

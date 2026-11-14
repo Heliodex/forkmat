@@ -258,11 +258,11 @@ func isCallStmt(s ast.Stmt) bool {
 type stmtKind int
 
 const (
-	kindNone   stmtKind = iota // any other statement, which never sets off a neighbour
-	kindCall                   // an expression statement holding a call
-	kindAssign                 // an assignment, := or op=, or an increment or decrement
-	kindConst                  // a const declaration
-	kindVar                    // a var declaration
+	kindNone stmtKind = iota // any other statement, which never sets off a neighbour
+	kindCall // an expression statement holding a call
+	kindAssign // an assignment, := or op=, or an increment or decrement
+	kindConst // a const declaration
+	kindVar // a var declaration
 )
 
 // kindOf returns the kind of s.
@@ -599,9 +599,9 @@ func groupDecls(run []*ast.GenDecl) *ast.GenDecl {
 	first, last := run[0], run[len(run)-1]
 	return &ast.GenDecl{
 		TokPos: first.TokPos,
-		Tok:    first.Tok,
+		Tok: first.Tok,
 		Lparen: first.TokPos,
-		Specs:  specs,
+		Specs: specs,
 		Rparen: last.End(),
 	}
 }
@@ -650,9 +650,9 @@ func joinTypeDecls(run []*ast.GenDecl, pos token.Pos) *ast.GenDecl {
 	last := run[len(run)-1]
 	return &ast.GenDecl{
 		TokPos: pos,
-		Tok:    token.TYPE,
+		Tok: token.TYPE,
 		Lparen: pos,
-		Specs:  specs,
+		Specs: specs,
 		Rparen: last.End(),
 	}
 }
@@ -670,7 +670,9 @@ func (p *printer) typeBlockPos(before token.Pos, first *ast.GenDecl) token.Pos {
 		anchor = first.Doc.Pos()
 	}
 	cs := p.allComments
-	i := sort.Search(len(cs), func(i int) bool { return cs[i].Pos() > before })
+	i := sort.Search(len(cs), func(i int) bool {
+		return cs[i].Pos() > before
+	})
 	if i < len(cs) && cs[i].Pos() < anchor {
 		anchor = cs[i].Pos()
 	}
@@ -726,8 +728,13 @@ func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, decl func(T) *
 // between two var declarations keeps them apart.
 func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
 	list = groupTypes(p, list, p.head,
-		func(d ast.Decl) *ast.GenDecl { g, _ := d.(*ast.GenDecl); return g },
-		func(g *ast.GenDecl) ast.Decl { return g })
+		func(d ast.Decl) *ast.GenDecl {
+			g, _ := d.(*ast.GenDecl)
+			return g
+		},
+		func(g *ast.GenDecl) ast.Decl {
+			return g
+		})
 	var out []ast.Decl
 	for i := 0; i < len(list); {
 		j := i + 1
@@ -768,7 +775,9 @@ func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
 			}
 			return nil
 		},
-		func(g *ast.GenDecl) ast.Stmt { return &ast.DeclStmt{Decl: g} })
+		func(g *ast.GenDecl) ast.Stmt {
+			return &ast.DeclStmt{Decl: g}
+		})
 	declOf := func(s ast.Stmt) *ast.GenDecl {
 		if ds, ok := s.(*ast.DeclStmt); ok {
 			if d, ok := ds.Decl.(*ast.GenDecl); ok {
@@ -826,7 +835,7 @@ func (p *printer) mergeVarSpecs(d *ast.GenDecl) *ast.GenDecl {
 			if p.mergeableVars(prev, vs) {
 				specs[n-1] = &ast.ValueSpec{
 					Names: append(append([]*ast.Ident{}, prev.Names...), vs.Names...),
-					Type:  prev.Type,
+					Type: prev.Type,
 				}
 				merged = true
 				continue
@@ -1008,10 +1017,10 @@ func (p *printer) strictZeroVars(list []ast.Stmt) []ast.Stmt {
 		}
 		out = append(out, &ast.DeclStmt{Decl: &ast.GenDecl{
 			TokPos: as.Pos(),
-			Tok:    token.VAR,
+			Tok: token.VAR,
 			Specs: []ast.Spec{&ast.ValueSpec{
 				Names: []*ast.Ident{name},
-				Type:  typ,
+				Type: typ,
 			}},
 		}})
 	}

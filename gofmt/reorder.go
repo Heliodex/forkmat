@@ -33,16 +33,16 @@ import (
 
 // unit is a declaration, or a spec of a type group, that is moved as a whole.
 type unit struct {
-	kind  token.Token // token.FUNC for a function, otherwise the token of the declaration
-	names []string    // the names it declares; for a method, "Type.Name"
-	body  ast.Node    // the part whose references count as dependencies
-	objs  []any       // the declarations that resolved references may point to
-	start token.Pos   // where it starts, including its doc comment
-	end   token.Pos   // where it ends
+	kind token.Token // token.FUNC for a function, otherwise the token of the declaration
+	names []string // the names it declares; for a method, "Type.Name"
+	body ast.Node // the part whose references count as dependencies
+	objs []any // the declarations that resolved references may point to
+	start token.Pos // where it starts, including its doc comment
+	end token.Pos // where it ends
 
-	method     bool     // a method: a function with a receiver
-	methodName string   // the name of a method
-	sels       []string // the names selected in its body, which may name other methods
+	method bool // a method: a function with a receiver
+	methodName string // the name of a method
+	sels []string // the names selected in its body, which may name other methods
 }
 
 // unitOf returns d as a unit, or false if the reordering does not move d.
@@ -188,14 +188,18 @@ func reorderSource(filename string, src []byte) []byte {
 
 // layout gives positions of a file as offsets into its source.
 type layout struct {
-	tf       *token.File
-	src      []byte
+	tf *token.File
+	src []byte
 	comments []*ast.CommentGroup
 }
 
-func (l layout) off(p token.Pos) int { return l.tf.Offset(p) }
+func (l layout) off(p token.Pos) int {
+	return l.tf.Offset(p)
+}
 
-func (l layout) line(p token.Pos) int { return l.tf.Line(p) }
+func (l layout) line(p token.Pos) int {
+	return l.tf.Line(p)
+}
 
 // lineEnd returns the offset just past the newline that ends the line containing
 // offset o, or len(src) if there is none.
@@ -232,7 +236,7 @@ func (l layout) lineStart(o int) int {
 // edit replaces src[start:end] with text.
 type edit struct {
 	start, end int
-	text       []byte
+	text []byte
 }
 
 // applyEdits returns src with the edits applied. They must be in source order
@@ -697,7 +701,7 @@ func specTextFrom(src []byte, lead []byte, sp ast.Spec, kw string, l layout) []b
 // the units of one component keep their source order.
 func dependencyOrder(run []unit) []int {
 	byName := map[string]int{} // for names that are not resolved
-	byObj := map[any]int{}     // for names resolved to a unit's declaration
+	byObj := map[any]int{} // for names resolved to a unit's declaration
 	for t, u := range run {
 		for _, n := range u.names {
 			byName[n] = t
@@ -923,7 +927,9 @@ func reorderAssignRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 		}
 		return true
 	})
-	sort.Slice(edits, func(i, j int) bool { return edits[i].start < edits[j].start })
+	sort.Slice(edits, func(i, j int) bool {
+		return edits[i].start < edits[j].start
+	})
 	return applyEdits(src, edits)
 }
 

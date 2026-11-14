@@ -359,7 +359,7 @@ func CanInternalLink(withCgo bool) bool {
 
 // SpecialBuildTypes are interesting build types that may affect linking.
 type SpecialBuildTypes struct {
-	Cgo  bool
+	Cgo bool
 	Asan bool
 	Msan bool
 	Race bool
@@ -520,7 +520,7 @@ func WriteImportcfg(t testing.TB, dstPath string, packageFiles map[string]string
 		}
 	}
 
-	if err := os.WriteFile(dstPath, icfg.Bytes(), 0666); err != nil {
+	if err := os.WriteFile(dstPath, icfg.Bytes(), 0o666); err != nil {
 		t.Fatal(err)
 	}
 }

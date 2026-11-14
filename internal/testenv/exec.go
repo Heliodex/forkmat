@@ -155,7 +155,7 @@ func CommandContext(t testing.TB, ctx context.Context, name string, args ...stri
 	MustHaveExec(t)
 
 	var (
-		cancelCtx   context.CancelFunc
+		cancelCtx context.CancelFunc
 		gracePeriod time.Duration // unlimited unless the test has a deadline (to allow for interactive debugging)
 	)
 

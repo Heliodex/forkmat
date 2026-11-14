@@ -438,3 +438,17 @@ const (
 const (
     gC = iota
 )
+
+// Constant groups join when no value depends on its place in the group.
+const (
+    cgA = 1
+    cgB = 2
+)
+
+// Expression precedence levels.
+const cgC = 0
+
+const (
+    cgD = 9
+    cgE = 8
+)

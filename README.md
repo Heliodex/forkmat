@@ -299,9 +299,11 @@ The rules:
   the run too, with their specs kept in order, so two groups side by side
   become one. A doc comment or another statement between two of them keeps them
   apart.
-- Adjacent single `const` declarations are joined into one `const (...)` group
-  the same way, except where a value uses `iota`: `iota` counts the specs of a
-  group, so such a constant stays on its own.
+- Adjacent `const` declarations, singles and groups alike, are joined into one
+  `const (...)` block, with their doc comments kept on their specs inside it.
+  A declaration whose values use `iota`, or a group with a spec that takes its
+  value from the one before it, stays apart: `iota` and the implicit repetition
+  both depend on position in the group.
 - Inside a function, a `var` with values and no type becomes `:=`:
   `var x = y` is `x := y`, and `var a, b = 1, 2` is `a, b := 1, 2`. A `var`
   with a type stays a declaration, and so does one whose names are all `_`,

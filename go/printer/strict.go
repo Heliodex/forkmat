@@ -647,6 +647,18 @@ func mergeDoc(a, b *ast.CommentGroup) *ast.CommentGroup {
 	}
 }
 
+// constJoinable reports whether a const declaration can join a group. Its specs
+// must all have values, since a spec without one repeats the value before it,
+// and no value may use iota, which counts the specs of a group.
+func constJoinable(g *ast.GenDecl) bool {
+	for _, sp := range g.Specs {
+		if len(sp.(*ast.ValueSpec).Values) == 0 {
+			return false
+		}
+	}
+	return !usesIota(g)
+}
+
 // usesIota reports whether a declaration mentions iota.
 func usesIota(d *ast.GenDecl) bool {
 	var found bool
@@ -741,7 +753,7 @@ func joinTypeDecls(run []*ast.GenDecl, pos token.Pos) *ast.GenDecl {
 
 	return &ast.GenDecl{
 		TokPos: pos,
-		Tok: token.TYPE,
+		Tok: run[0].Tok,
 		Lparen: pos,
 		Specs: specs,
 		Rparen: last.End(),
@@ -778,7 +790,7 @@ func (p *printer) typeBlockPos(before token.Pos, first *ast.GenDecl) token.Pos {
 // declaration. A declaration may be a single one or a group already, and may
 // carry doc comments. Comments between two declarations stay where they are,
 // inside the block.
-func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, decl func(T) *ast.GenDecl, wrap func(*ast.GenDecl) T) []T {
+func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, tok token.Token, joinable func(*ast.GenDecl) bool, decl func(T) *ast.GenDecl, wrap func(*ast.GenDecl) T) []T {
 	var out []T
 
 	for i := 0; i < len(list); {
@@ -786,12 +798,12 @@ func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, decl func(T) *
 
 		var run []*ast.GenDecl
 
-		if d := decl(list[i]); d != nil && d.Tok == token.TYPE {
+		if d := decl(list[i]); d != nil && d.Tok == tok && joinable(d) {
 			run = append(run, d)
 
 			for j < len(list) {
 				d := decl(list[j])
-				if d == nil || d.Tok != token.TYPE {
+				if d == nil || d.Tok != tok || !joinable(d) {
 					break
 				}
 
@@ -887,9 +899,18 @@ func (p *printer) mergeVarSpecs(d *ast.GenDecl) *ast.GenDecl {
 // declarations into one type (...) declaration (see groupTypes). A comment
 // between two var declarations keeps them apart.
 func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
-	list = groupTypes(p, list, p.head, func(d ast.Decl) *ast.GenDecl {
+	list = groupTypes(p, list, p.head, token.TYPE, func(*ast.GenDecl) bool { return true }, func(d ast.Decl) *ast.GenDecl {
 		g, _ := d.(*ast.GenDecl)
 
+		return g
+	}, func(g *ast.GenDecl) ast.Decl {
+		return g
+	})
+
+	// constants join as types do, with their doc comments, when no value takes
+	// its meaning from its place in the group (see constJoinable)
+	list = groupTypes(p, list, p.head, token.CONST, constJoinable, func(d ast.Decl) *ast.GenDecl {
+		g, _ := d.(*ast.GenDecl)
 		return g
 	}, func(g *ast.GenDecl) ast.Decl {
 		return g
@@ -936,7 +957,7 @@ func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
 
 // strictGroupStmts is strictGroupDecls for the statements of a block.
 func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
-	list = groupTypes(p, list, token.NoPos, func(s ast.Stmt) *ast.GenDecl {
+	list = groupTypes(p, list, token.NoPos, token.TYPE, func(*ast.GenDecl) bool { return true }, func(s ast.Stmt) *ast.GenDecl {
 		if ds, ok := s.(*ast.DeclStmt); ok {
 			g, _ := ds.Decl.(*ast.GenDecl)
 

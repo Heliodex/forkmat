@@ -430,10 +430,10 @@ type (
 
 var x = 1
 
-// Single constants group together, except those whose values use iota: iota
-// counts the specs of a group.
-
 const (
+	// Single constants group together, except those whose values use iota: iota
+	// counts the specs of a group.
+
 	cA = 1
 	cB = 2
 )
@@ -466,4 +466,16 @@ const (
 
 const (
 	gC = iota
+)
+
+const (
+	// Constant groups join when no value depends on its place in the group.
+
+	cgA = 1
+	cgB = 2
+
+	// Expression precedence levels.
+	cgC = 0
+	cgD = 9
+	cgE = 8
 )

@@ -8,8 +8,7 @@ import (
 	"testing"
 )
 
-// incDecOps returns the statements of the body of f in src after incDecStmts, each
-// written as its operator: "++", "--", or "=" for any other assignment.
+// incDecOps returns the statements of the body of f in src after incDecStmts, each written as its operator: "++", "--", or "=" for any other assignment.
 func incDecOps(t *testing.T, src string) []string {
 	t.Helper()
 	file, err := parser.ParseFile(token.NewFileSet(), "x.go", src, parser.SkipObjectResolution)

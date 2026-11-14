@@ -5,11 +5,7 @@ import (
 	"go/token"
 )
 
-// This file implements the increment rewrite of -strict: an assignment x = x + 1
-// or x = x - 1 becomes x++ or x--. Only an identifier on the left and the integer
-// literal 1 on the right qualify, so the statement means the same thing. The
-// rewrite applies to statements of blocks and clauses, and to the post statement
-// of a for loop.
+// This file implements the increment rewrite of -strict: an assignment x = x + 1 or x = x - 1 becomes x++ or x--. Only an identifier on the left and the integer literal 1 on the right qualify, so the statement means the same thing. The rewrite applies to statements of blocks and clauses, and to the post statement of a for loop.
 
 // incDecStmts rewrites the increment assignments of file.
 func incDecStmts(file *ast.File) {
@@ -40,8 +36,7 @@ func incDecList(list []ast.Stmt) []ast.Stmt {
 	return list
 }
 
-// incDecStmt returns s as x++ or x-- if s is x = x + 1 or x = x - 1, and s
-// otherwise.
+// incDecStmt returns s as x++ or x-- if s is x = x + 1 or x = x - 1, and s otherwise.
 func incDecStmt(s ast.Stmt) ast.Stmt {
 	as, ok := s.(*ast.AssignStmt)
 	if !ok || as.Tok != token.ASSIGN || len(as.Lhs) != 1 || len(as.Rhs) != 1 {

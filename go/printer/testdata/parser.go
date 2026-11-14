@@ -582,12 +582,12 @@ func parseImportSpec(p *parser, doc *ast.CommentGroup, _ int) ast.Spec {
 	var ident *ast.Ident
 
 	switch p.tok {
+	case token.IDENT:
+		ident = p.parseIdent()
 	case token.PERIOD:
 		ident = &ast.Ident{p.pos, ".", nil}
 
 		p.next()
-	case token.IDENT:
-		ident = p.parseIdent()
 	}
 
 	var path *ast.BasicLit
@@ -1338,20 +1338,8 @@ func (p *parser) tryIdentOrType(ellipsisOk bool) ast.Expr {
 	switch p.tok {
 	case token.IDENT:
 		return p.parseTypeName()
-	case token.LBRACK:
-		return p.parseArrayType(ellipsisOk)
-	case token.STRUCT:
-		return p.parseStructType()
 	case token.MUL:
 		return p.parsePointerType()
-	case token.FUNC:
-		typ, _ := p.parseFuncType()
-
-		return typ
-	case token.INTERFACE:
-		return p.parseInterfaceType()
-	case token.MAP:
-		return p.parseMapType()
 	case token.CHAN, token.ARROW:
 		return p.parseChanType()
 	case token.LPAREN:
@@ -1363,6 +1351,18 @@ func (p *parser) tryIdentOrType(ellipsisOk bool) ast.Expr {
 		rparen := p.expect(token.RPAREN)
 
 		return &ast.ParenExpr{lparen, typ, rparen}
+	case token.LBRACK:
+		return p.parseArrayType(ellipsisOk)
+	case token.FUNC:
+		typ, _ := p.parseFuncType()
+
+		return typ
+	case token.INTERFACE:
+		return p.parseInterfaceType()
+	case token.MAP:
+		return p.parseMapType()
+	case token.STRUCT:
+		return p.parseStructType()
 	}
 
 	// no type found
@@ -2088,8 +2088,6 @@ func (p *parser) parseStmt() (s ast.Stmt) {
 	}
 
 	switch p.tok {
-	case token.CONST, token.TYPE, token.VAR:
-		s = &ast.DeclStmt{p.parseDecl()}
 	case
 		// tokens that may start a top-level expression
 		token.IDENT,
@@ -2114,33 +2112,35 @@ func (p *parser) parseStmt() (s ast.Stmt) {
 		if _, isLabeledStmt := s.(*ast.LabeledStmt); !isLabeledStmt {
 			p.expectSemi()
 		}
-	case token.GO:
-		s = p.parseGoStmt()
-	case token.DEFER:
-		s = p.parseDeferStmt()
-	case token.RETURN:
-		s = p.parseReturnStmt()
-	case token.BREAK, token.CONTINUE, token.GOTO, token.FALLTHROUGH:
-		s = p.parseBranchStmt(p.tok)
 	case token.LBRACE:
 		s = p.parseBlockStmt()
 
 		p.expectSemi()
-	case token.IF:
-		s = p.parseIfStmt()
-	case token.SWITCH:
-		s = p.parseSwitchStmt()
-	case token.SELECT:
-		s = p.parseSelectStmt()
-	case token.FOR:
-		s = p.parseForStmt()
+	case token.RBRACE:
+		// a semicolon may be omitted before a closing "}"
+		s = &ast.EmptyStmt{p.pos}
 	case token.SEMICOLON:
 		s = &ast.EmptyStmt{p.pos}
 
 		p.next()
-	case token.RBRACE:
-		// a semicolon may be omitted before a closing "}"
-		s = &ast.EmptyStmt{p.pos}
+	case token.BREAK, token.CONTINUE, token.GOTO, token.FALLTHROUGH:
+		s = p.parseBranchStmt(p.tok)
+	case token.CONST, token.TYPE, token.VAR:
+		s = &ast.DeclStmt{p.parseDecl()}
+	case token.DEFER:
+		s = p.parseDeferStmt()
+	case token.FOR:
+		s = p.parseForStmt()
+	case token.GO:
+		s = p.parseGoStmt()
+	case token.IF:
+		s = p.parseIfStmt()
+	case token.RETURN:
+		s = p.parseReturnStmt()
+	case token.SELECT:
+		s = p.parseSelectStmt()
+	case token.SWITCH:
+		s = p.parseSwitchStmt()
 	default:
 		// no statement found
 		pos := p.pos
@@ -2320,12 +2320,12 @@ func (p *parser) parseDecl() ast.Decl {
 	switch p.tok {
 	case token.CONST:
 		f = parseConstSpec
+	case token.FUNC:
+		return p.parseFuncDecl()
 	case token.TYPE:
 		f = parseTypeSpec
 	case token.VAR:
 		f = parseVarSpec
-	case token.FUNC:
-		return p.parseFuncDecl()
 	default:
 		pos := p.pos
 

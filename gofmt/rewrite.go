@@ -82,6 +82,8 @@ func match(m map[string]reflect.Value, pattern, val reflect.Value) bool {
 	}
 
 	switch p.Kind() {
+	case reflect.Interface:
+		return match(m, p.Elem(), v.Elem())
 	case reflect.Slice:
 		if p.Len() != v.Len() {
 			return false
@@ -102,8 +104,6 @@ func match(m map[string]reflect.Value, pattern, val reflect.Value) bool {
 		}
 
 		return true
-	case reflect.Interface:
-		return match(m, p.Elem(), v.Elem())
 	}
 
 	// Handle token integers, etc.
@@ -171,6 +171,10 @@ func apply(f func(reflect.Value) reflect.Value, val reflect.Value) reflect.Value
 	}
 
 	switch v := reflect.Indirect(val); v.Kind() {
+	case reflect.Interface:
+		e := v.Elem()
+
+		set(v, f(e))
 	case reflect.Slice:
 		for i := range v.Len() {
 			e := v.Index(i)
@@ -181,10 +185,6 @@ func apply(f func(reflect.Value) reflect.Value, val reflect.Value) reflect.Value
 		for _, e := range v.Fields() {
 			set(e, f(e))
 		}
-	case reflect.Interface:
-		e := v.Elem()
-
-		set(v, f(e))
 	}
 
 	return val

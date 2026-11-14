@@ -1396,12 +1396,6 @@ func specRunToken(d ast.Decl) token.Token {
 	}
 
 	switch g.Tok {
-	case token.TYPE:
-		return token.TYPE
-	case token.VAR:
-		if pureVars(g) {
-			return token.VAR
-		}
 	case token.CONST:
 		if !g.Lparen.IsValid() {
 			return token.CONST
@@ -1415,6 +1409,12 @@ func specRunToken(d ast.Decl) token.Token {
 
 		if !usesIota(g) {
 			return token.CONST
+		}
+	case token.TYPE:
+		return token.TYPE
+	case token.VAR:
+		if pureVars(g) {
+			return token.VAR
 		}
 	}
 

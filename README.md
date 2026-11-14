@@ -178,6 +178,17 @@ decide the layout. It is off by default; the default output is unchanged. The
 rules are documented in `go/printer/strict.go`, and the mode is
 `printer.StrictLayout`.
 
+`-strict` also reorders functions, in `gofmt/reorder.go`, so that each function
+comes after the functions it refers to. In `a` calling `b`, `b` is printed
+above `a`. Only runs of consecutive plain functions move: methods, `init`
+functions and body-less declarations end a run and stay put, as do types and
+variables. A reference is a use of the package-level name, including a function
+passed as a value. Local names that shadow a function, selectors (`x.f`),
+struct-literal keys and labels are not references, and methods are not matched
+by name. A cycle keeps its source order. Each function moves with the comments
+that lead into it. This runs on the source text before printing, so it is
+applied by `gofmt`, not by `go/format`.
+
 Before, with standard gofmt:
 
 ```go

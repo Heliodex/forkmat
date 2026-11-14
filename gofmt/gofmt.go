@@ -257,6 +257,19 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 		return err
 	}
 
+	if *strict && sourceAdj == nil {
+		// -strict also moves each function below the functions it depends on
+		// (see reorder.go). The moved source is parsed again, for printing.
+		afset := token.NewFileSet()
+		if afile, err := parser.ParseFile(afset, filename, src, parser.ParseComments); err == nil {
+			if reordered := reorderFuncRuns(afset, afile, src); !bytes.Equal(reordered, src) {
+				if file, err = parser.ParseFile(fileSet, filename, reordered, parserMode); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
 	if rewrite != nil {
 		if sourceAdj == nil {
 			file = rewrite(fileSet, file)

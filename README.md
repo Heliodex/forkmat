@@ -206,7 +206,9 @@ source order. Declarations move with the comments that lead into them.
 
 Types also move: a type declaration moves up to just after the imports when
 every name it uses is a predeclared type, an imported package, its own type
-parameter, or another type that moves too. A type that uses a constant,
+parameter, a type declared in another file of the same package, or another
+type that moves too. The other files are read only to find which names are
+types. A type that uses a constant,
 variable or function, or a name not declared in this file, stays where it is,
 and so does any type that depends on one. Declaration order at package level
 does not change what a type means, so the move is safe; the restriction keeps a

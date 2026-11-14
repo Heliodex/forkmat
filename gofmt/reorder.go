@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -239,7 +241,9 @@ var predeclaredPure = map[string]bool{
 // if nothing moves.
 func reorderSource(filename string, src []byte) []byte {
 	passes := []func(*token.FileSet, *ast.File, []byte) []byte{
-		hoistTypes,
+		func(fset *token.FileSet, file *ast.File, src []byte) []byte {
+			return hoistTypes(fset, file, src, siblingTypes(filename, file.Name.Name))
+		},
 		reorderSpecRuns,
 		reorderDecls,
 		reorderAssignRuns,
@@ -680,6 +684,42 @@ func declStart(d ast.Decl) token.Pos {
 	return d.Pos()
 }
 
+// siblingTypes returns the names of the types that other files of the package of
+// filename declare. A file's package is the files of its directory with the same
+// package name. A name that a sibling declares as a type is a type, so a type may
+// use it and still move; a constant, variable or function of a sibling is not.
+func siblingTypes(filename, pkg string) map[string]bool {
+	types := map[string]bool{}
+	dir := filepath.Dir(filename)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return types
+	}
+	self, _ := filepath.Abs(filename)
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || filepath.Ext(name) != ".go" {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		if abs, _ := filepath.Abs(path); abs == self {
+			continue
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+		if err != nil || f.Name.Name != pkg {
+			continue
+		}
+		for _, d := range f.Decls {
+			if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
+				for _, sp := range g.Specs {
+					types[sp.(*ast.TypeSpec).Name.Name] = true
+				}
+			}
+		}
+	}
+	return types
+}
+
 // hoistTypes is the pass that moves type declarations to the top of the file,
 // after the imports. Only a type whose names are all types (of this file, or
 // predeclared), imported packages, or its own type parameters moves: a name
@@ -688,7 +728,7 @@ func declStart(d ast.Decl) token.Pos {
 // a type. Declaration order at package level does not change the meaning of a
 // type, so a move is safe; the restriction keeps a type with a constant length
 // below its constant.
-func hoistTypes(fset *token.FileSet, file *ast.File, src []byte) []byte {
+func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[string]bool) []byte {
 	tf := fset.File(file.Pos())
 	if tf == nil {
 		return src
@@ -764,7 +804,7 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte) []byte {
 			}
 
 			if id.Obj == nil {
-				if !universeTypes[id.Name] && !imports[id.Name] {
+				if !universeTypes[id.Name] && !imports[id.Name] && !external[id.Name] {
 					bad[i] = true
 				}
 

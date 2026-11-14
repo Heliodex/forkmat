@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -291,5 +293,31 @@ func TestReorderAssignRuns(t *testing.T) {
 				t.Errorf("order changed:\n%s", got)
 			}
 		})
+	}
+}
+
+func TestSiblingTypes(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"a.go":  "package p\n\ntype Coroutine struct{}\n\nconst limit = 3\n",
+		"b.go":  "package p\n\ntype Val any\n",
+		"c.go":  "package q\n\ntype Other int\n",
+		"d.go":  "package p\n\nfunc helper() {}\n",
+		"x.go":  "package p\n\ntype Self int\n",
+		"e.txt": "not go",
+	}
+	for name, src := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := siblingTypes(filepath.Join(dir, "x.go"), "p")
+	if !got["Coroutine"] || !got["Val"] {
+		t.Errorf("types of sibling files not found: %v", got)
+	}
+	for _, name := range []string{"limit", "helper", "Other", "Self"} {
+		if got[name] {
+			t.Errorf("%s wrongly counted as a sibling type", name)
+		}
 	}
 }

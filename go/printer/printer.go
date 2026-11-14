@@ -1134,7 +1134,7 @@ func (p *printer) printNode(node any) error {
 				p.indent = 1
 			}
 		}
-		p.stmtList(n, 0, false)
+		p.stmtList(n, token.NoPos, 0, false)
 	case []ast.Decl:
 		p.declList(n)
 	case *ast.File:

@@ -213,10 +213,10 @@ var (
 	}
 	first = 1
 	second int
-)
 
-// third has a comment above it, so it starts a new group.
-var third = 3
+	// third has a comment above it, and still joins the group.
+	third = 3
+)
 
 func vars() {
 	x := 1
@@ -308,10 +308,9 @@ func mergeVars() {
 	var (
 		pc, top int32
 		n int
+		m int // kept
+		k int
 	)
-
-	var m int // kept
-	var k int
 
 	_, _, _, _, _ = pc, top, n, m, k
 }
@@ -449,10 +448,10 @@ func constGroups() {
 	_, _, _ = kA, kB, kC
 }
 
-// Adjacent var groups join into one, as single var declarations do. Const
-// groups do not: iota counts the specs of each group.
-
 var (
+	// Adjacent var groups join into one, as single var declarations do. Const
+	// groups do not: iota counts the specs of each group.
+
 	_ tIface = tImpl{}
 	_ tIface = tOther{}
 	_ tOther2 = tImpl{}
@@ -478,11 +477,10 @@ const (
 	cgE = 8
 )
 
-// Map literals with string or number keys are sorted by key. A literal with a call
-// in a value, or with keys of mixed kinds, keeps its order.
-var mapWords = map[string]int{"apple": 1, "pear": 3}
-
 var (
+	// Map literals with string or number keys are sorted by key. A literal with a call
+	// in a value, or with keys of mixed kinds, keeps its order.
+	mapWords = map[string]int{"apple": 1, "pear": 3}
 	mapNums = map[int]string{-2: "minus two", 3: "three", 10: "ten"}
 	mapCall = map[string]int{"b": mapF(), "a": 1}
 )
@@ -491,10 +489,26 @@ func mapF() int {
 	return 0
 }
 
-// A map with keys of several basic types, as a map with an any key holds, is
-// sorted by kind: nil, booleans, numbers, strings; and within each kind as above.
-var mapAny = map[any]string{nil: "n", false: "f", true: "t", -1: "neg", 2: "two", "a": "s", "b": "s"}
+var (
+	// A map with keys of several basic types, as a map with an any key holds, is
+	// sorted by kind: nil, booleans, numbers, strings; and within each kind as above.
+	mapAny = map[any]string{nil: "n", false: "f", true: "t", -1: "neg", 2: "two", "a": "s", "b": "s"}
 
-// Identifier keys, as in a map with constant keys, come after the literal keys,
-// sorted by name. A literal with only identifier keys may be a struct, so it stays.
-var mapNames = map[any]int{2: 4, "b": 2, Alpha: 3, Zeta: 1}
+	// Identifier keys, as in a map with constant keys, come after the literal keys,
+	// sorted by name. A literal with only identifier keys may be a struct, so it stays.
+	mapNames = map[any]int{2: 4, "b": 2, Alpha: 3, Zeta: 1}
+
+	// Var declarations join a block whatever comments they carry.
+
+	// doc of vcA
+	vcA = 1
+	vcB = 2 // trailing vcB
+)
+
+func varComments() {
+	var (
+		// leading
+		a int
+		b string // trailing b
+	)
+}

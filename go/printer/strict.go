@@ -34,6 +34,20 @@ type (
 // strictMaxSize is the width, in characters, of a composite literal that may stay on one line.
 const strictMaxSize = 100
 
+// declEnd returns the end of d, including the trailing comment of its last spec.
+func declEnd(d *ast.GenDecl) token.Pos {
+	end := d.End()
+	if vs, ok := d.Specs[len(d.Specs)-1].(*ast.ValueSpec); ok && vs.Comment != nil && vs.Comment.End() > end {
+		end = vs.Comment.End()
+	}
+
+	if ts, ok := d.Specs[len(d.Specs)-1].(*ast.TypeSpec); ok && ts.Comment != nil && ts.Comment.End() > end {
+		end = ts.Comment.End()
+	}
+
+	return end
+}
+
 // declaresUsedBy reports whether next is an if statement whose condition uses a name that prev declares, with := or a var declaration. Names are compared by spelling, so a shadowing name counts as a use: the blank line is only a layout choice.
 func declaresUsedBy(prev, next ast.Stmt) bool {
 	is, ok := next.(*ast.IfStmt)
@@ -92,7 +106,7 @@ func defaultNumeric(kind token.Token) string {
 	return "int"
 }
 
-// groupDecls joins a run of single var declarations into one parenthesized declaration.
+// groupDecls joins a run of single const declarations into one parenthesized declaration.
 func groupDecls(run []*ast.GenDecl) *ast.GenDecl {
 	var specs []ast.Spec
 
@@ -107,7 +121,7 @@ func groupDecls(run []*ast.GenDecl) *ast.GenDecl {
 		Tok: first.Tok,
 		Lparen: first.TokPos,
 		Specs: specs,
-		Rparen: last.End(),
+		Rparen: declEnd(last),
 	}
 }
 
@@ -556,7 +570,7 @@ func (p *printer) mergeable(prev, cur *ast.Field) bool {
 
 // mergeableVars reports whether var spec cur can join the names of prev: both have the same type written out, and neither has values or comments.
 func (p *printer) mergeableVars(prev, cur *ast.ValueSpec) bool {
-	return prev.Type != nil && cur.Type != nil && len(prev.Values) == 0 && len(cur.Values) == 0 && prev.Doc == nil && cur.Doc == nil && p.sameType(prev.Type, cur.Type)
+	return prev.Type != nil && cur.Type != nil && len(prev.Values) == 0 && len(cur.Values) == 0 && prev.Doc == nil && cur.Doc == nil && prev.Comment == nil && cur.Comment == nil && p.sameType(prev.Type, cur.Type)
 }
 
 // mergeVarSpecs joins consecutive specs of a var declaration that name the same type and have no values, so that var pc int32; var top int32 is written as var pc, top int32. A declaration with a comment inside is left alone. When one spec is left, the parentheses of the group are dropped.
@@ -1155,27 +1169,9 @@ func constJoinable(g *ast.GenDecl) bool {
 	return !usesIota(g)
 }
 
-// singleDecl returns d if it can join a run of declarations of its token: an ungrouped var or const declaration of one spec with no comment, or a var group, whose specs can be joined with others without changing their meaning. A const declaration is joined only if its values do not use iota: iota counts the specs of a group, so grouping such a const would change its value. A const group is never joined. A doc comment on the declaration keeps it apart.
+// singleDecl returns d if it can join a run of const declarations in a block: an ungrouped const declaration of one spec with no comment, whose values do not use iota. iota counts the specs of a group, so grouping such a const would change its value. A doc comment on the declaration keeps it apart.
 func singleDecl(d *ast.GenDecl) *ast.GenDecl {
-	if d == nil || d.Doc != nil {
-		return nil
-	}
-
-	switch d.Tok {
-	case token.VAR:
-		if d.Lparen.IsValid() {
-			// a var group: its specs keep their own comments inside the group
-			return d
-		}
-	case token.CONST:
-		if d.Lparen.IsValid() || len(d.Specs) != 1 || usesIota(d) {
-			return nil
-		}
-	default:
-		return nil
-	}
-
-	if len(d.Specs) != 1 {
+	if d == nil || d.Doc != nil || d.Tok != token.CONST || d.Lparen.IsValid() || len(d.Specs) != 1 || usesIota(d) {
 		return nil
 	}
 
@@ -1250,7 +1246,7 @@ func joinTypeDecls(run []*ast.GenDecl, pos token.Pos) *ast.GenDecl {
 		Tok: run[0].Tok,
 		Lparen: pos,
 		Specs: specs,
-		Rparen: last.End(),
+		Rparen: declEnd(last),
 	}
 }
 
@@ -1294,7 +1290,7 @@ func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, tok token.Toke
 
 			out = append(out, wrap(joinTypeDecls(run, pos)))
 		} else {
-			out = append(out, list[i])
+			out = append(out, list[i:j]...)
 		}
 
 		i = j
@@ -1303,71 +1299,37 @@ func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, tok token.Toke
 	return out
 }
 
-// strictGroupDecls groups each run of adjacent single var declarations at package level into one var (...) declaration, and each run of type declarations into one type (...) declaration (see groupTypes). A comment between two var declarations keeps them apart.
+// strictGroupDecls groups each run of adjacent type, const and var declarations at package level into one declaration of their keyword (see groupTypes). Singles and groups join alike, and doc comments move onto their specs inside the block. A const declaration whose values use iota stays apart.
 func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
-	list = groupTypes(p, list, p.head, token.TYPE, func(*ast.GenDecl) bool {
+	declOf := func(d ast.Decl) *ast.GenDecl {
+		g, _ := d.(*ast.GenDecl)
+
+		return g
+	}
+	wrap := func(g *ast.GenDecl) ast.Decl {
+		return g
+	}
+	always := func(*ast.GenDecl) bool {
 		return true
-	}, func(d ast.Decl) *ast.GenDecl {
-		g, _ := d.(*ast.GenDecl)
-
-		return g
-	}, func(g *ast.GenDecl) ast.Decl {
-		return g
-	})
-
-	// constants join as types do, with their doc comments, when no value takes its meaning from its place in the group (see constJoinable)
-	list = groupTypes(p, list, p.head, token.CONST, constJoinable, func(d ast.Decl) *ast.GenDecl {
-		g, _ := d.(*ast.GenDecl)
-
-		return g
-	}, func(g *ast.GenDecl) ast.Decl {
-		return g
-	})
-
-	var out []ast.Decl
-
-	for i := 0; i < len(list); {
-		j := i + 1
-
-		var run []*ast.GenDecl
-
-		if d, ok := list[i].(*ast.GenDecl); ok && singleDecl(d) != nil {
-			run = append(run, d)
-
-			for j < len(list) {
-				d, ok := list[j].(*ast.GenDecl)
-				if !ok || singleDecl(d) == nil || d.Tok != run[0].Tok || p.commentIn(list[j-1].End(), list[j].Pos()) {
-					break
-				}
-
-				run = append(run, d)
-				j++
-			}
-		}
-
-		if len(run) > 1 {
-			out = append(out, groupDecls(run))
-		} else {
-			out = append(out, list[i])
-		}
-
-		i = j
 	}
+	list = groupTypes(p, list, p.head, token.TYPE, always, declOf, wrap)
 
-	for i, d := range out {
+	// constants join as types do, when no value takes its meaning from its place in the group (see constJoinable)
+	list = groupTypes(p, list, p.head, token.CONST, constJoinable, declOf, wrap)
+	list = groupTypes(p, list, p.head, token.VAR, always, declOf, wrap)
+
+	for i, d := range list {
 		if g, ok := d.(*ast.GenDecl); ok {
-			out[i] = p.mergeVarSpecs(g)
+			list[i] = p.mergeVarSpecs(g)
 		}
 	}
 
-	return out
+	return list
 }
 
-// strictGroupStmts is strictGroupDecls for the statements of a block.
-func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
-	list = groupTypes(p, list, token.NoPos, token.TYPE, func(*ast.GenDecl) bool {
-		return true
-	}, func(s ast.Stmt) *ast.GenDecl {
+// strictGroupStmts is strictGroupDecls for the statements of a block, where head is the position of the token that opens the block. A const declaration joins a run only when it is a single one with no comment.
+func (p *printer) strictGroupStmts(list []ast.Stmt, head token.Pos) []ast.Stmt {
+	declOf := func(s ast.Stmt) *ast.GenDecl {
 		if ds, ok := s.(*ast.DeclStmt); ok {
 			g, _ := ds.Decl.(*ast.GenDecl)
 
@@ -1375,19 +1337,19 @@ func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
 		}
 
 		return nil
-	}, func(g *ast.GenDecl) ast.Stmt {
+	}
+	wrap := func(g *ast.GenDecl) ast.Stmt {
 		return &ast.DeclStmt{
 			Decl: g,
 		}
-	})
-	declOf := func(s ast.Stmt) *ast.GenDecl {
-		if ds, ok := s.(*ast.DeclStmt); ok {
-			if d, ok := ds.Decl.(*ast.GenDecl); ok {
-				return singleDecl(d)
-			}
-		}
-
-		return nil
+	}
+	always := func(*ast.GenDecl) bool {
+		return true
+	}
+	list = groupTypes(p, list, head, token.TYPE, always, declOf, wrap)
+	list = groupTypes(p, list, head, token.VAR, always, declOf, wrap)
+	constOf := func(s ast.Stmt) *ast.GenDecl {
+		return singleDecl(declOf(s))
 	}
 
 	var out []ast.Stmt
@@ -1397,12 +1359,12 @@ func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
 
 		var run []*ast.GenDecl
 
-		if d := declOf(list[i]); d != nil {
+		if d := constOf(list[i]); d != nil {
 			run = append(run, d)
 
 			for j < len(list) {
-				d := declOf(list[j])
-				if d == nil || d.Tok != run[0].Tok || p.commentIn(list[j-1].End(), list[j].Pos()) {
+				d := constOf(list[j])
+				if d == nil || p.commentIn(list[j-1].End(), list[j].Pos()) {
 					break
 				}
 
@@ -1412,9 +1374,7 @@ func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
 		}
 
 		if len(run) > 1 {
-			out = append(out, &ast.DeclStmt{
-				Decl: groupDecls(run),
-			})
+			out = append(out, wrap(groupDecls(run)))
 		} else {
 			out = append(out, list[i])
 		}
@@ -1423,12 +1383,8 @@ func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
 	}
 
 	for i, s := range out {
-		if ds, ok := s.(*ast.DeclStmt); ok {
-			if g, ok := ds.Decl.(*ast.GenDecl); ok {
-				out[i] = &ast.DeclStmt{
-					Decl: p.mergeVarSpecs(g),
-				}
-			}
+		if g := declOf(s); g != nil {
+			out[i] = wrap(p.mergeVarSpecs(g))
 		}
 	}
 

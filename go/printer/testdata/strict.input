@@ -215,7 +215,7 @@ var edgeLit = T{
 var first = 1
 var second int
 
-// third has a comment above it, so it starts a new group.
+// third has a comment above it, and still joins the group.
 var third = 3
 
 func vars() {
@@ -492,4 +492,16 @@ var mapNames = map[any]int{
     "b": 2,
     Alpha: 3,
     2: 4,
+}
+
+// Var declarations join a block whatever comments they carry.
+
+// doc of vcA
+var vcA = 1
+var vcB = 2 // trailing vcB
+
+func varComments() {
+	// leading
+	var a int
+	var b string // trailing b
 }

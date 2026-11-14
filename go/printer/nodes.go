@@ -1448,10 +1448,10 @@ func (p *printer) possibleSelectorExpr(expr ast.Expr, prec1, depth int) bool {
 
 // ---------------------------------------------------------------------------- Statements
 
-// Print the statement list indented, but without a newline after the last statement. Extra line breaks between statements in the source are respected but at most one empty line is printed between statements.
-func (p *printer) stmtList(list []ast.Stmt, nindent int, nextIsRBrace bool) {
+// Print the statement list indented, where head is the position of the token that opens it (or NoPos), but without a newline after the last statement. Extra line breaks between statements in the source are respected but at most one empty line is printed between statements.
+func (p *printer) stmtList(list []ast.Stmt, head token.Pos, nindent int, nextIsRBrace bool) {
 	if p.strict() {
-		list = p.strictGroupStmts(p.strictZeroVars(p.strictIfInits(p.strictShortVars(list))))
+		list = p.strictGroupStmts(p.strictZeroVars(p.strictIfInits(p.strictShortVars(list))), head)
 	}
 
 	if nindent > 0 {
@@ -1511,7 +1511,7 @@ func (p *printer) stmtList(list []ast.Stmt, nindent int, nextIsRBrace bool) {
 func (p *printer) block(b *ast.BlockStmt, nindent int) {
 	p.setPos(b.Lbrace)
 	p.print(token.LBRACE)
-	p.stmtList(b.List, nindent, true)
+	p.stmtList(b.List, b.Lbrace, nindent, true)
 	p.linebreak(p.layoutLine(b.Rbrace, 1), 1, ignore, true)
 	p.setPos(b.Rbrace)
 	p.print(token.RBRACE)
@@ -1668,7 +1668,7 @@ func (p *printer) stmt(stmt ast.Stmt, nextIsRBrace bool) {
 		}
 		p.setPos(s.Colon)
 		p.print(token.COLON)
-		p.stmtList(s.Body, 1, nextIsRBrace)
+		p.stmtList(s.Body, s.Colon, 1, nextIsRBrace)
 	case *ast.SwitchStmt:
 		p.print(token.SWITCH)
 		p.controlClause(false, s.Init, s.Tag, nil)
@@ -1693,7 +1693,7 @@ func (p *printer) stmt(stmt ast.Stmt, nextIsRBrace bool) {
 		}
 		p.setPos(s.Colon)
 		p.print(token.COLON)
-		p.stmtList(s.Body, 1, nextIsRBrace)
+		p.stmtList(s.Body, s.Colon, 1, nextIsRBrace)
 	case *ast.SelectStmt:
 		p.print(token.SELECT, blank)
 

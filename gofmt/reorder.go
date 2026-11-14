@@ -18,6 +18,7 @@ package main
 // calls a function is never moved (see pureExpr).
 import (
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/token"
 	"os"
@@ -236,7 +237,11 @@ var predeclaredPure = map[string]bool{
 func reorderSource(filename string, src []byte) []byte {
 	passes := []func(*token.FileSet, *ast.File, []byte) []byte{
 		func(fset *token.FileSet, file *ast.File, src []byte) []byte {
-			return hoistTypes(fset, file, src, siblingTypes(filename, file.Name.Name))
+			external := siblingTypes(filename, file.Name.Name)
+			for name := range dotImportTypes(filename, file) {
+				external[name] = true
+			}
+			return hoistTypes(fset, file, src, external)
 		},
 		reorderSpecRuns,
 		reorderDecls,
@@ -707,6 +712,93 @@ func siblingTypes(filename, pkg string) map[string]bool {
 			if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
 				for _, sp := range g.Specs {
 					types[sp.(*ast.TypeSpec).Name.Name] = true
+				}
+			}
+		}
+	}
+	return types
+}
+
+// packageDir returns the directory of the package with import path path, as seen
+// from srcDir: a package of the module that srcDir is in is found from the
+// module's root; any other package is found with go/build. It returns "" if the
+// package cannot be found.
+func packageDir(path, srcDir string) string {
+	if root, mod := enclosingModule(srcDir); mod != "" {
+		if path == mod {
+			return root
+		}
+		if rest, ok := strings.CutPrefix(path, mod+"/"); ok {
+			return filepath.Join(root, filepath.FromSlash(rest))
+		}
+	}
+	pkg, err := build.Default.Import(path, srcDir, build.FindOnly)
+	if err != nil {
+		return ""
+	}
+	return pkg.Dir
+}
+
+// enclosingModule returns the root directory and the module path of the go.mod
+// file that governs dir, or empty strings if there is none.
+func enclosingModule(dir string) (string, string) {
+	for {
+		data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+		if err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				if mod, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
+					return dir, strings.Trim(strings.TrimSpace(mod), "\"")
+				}
+			}
+			return "", ""
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", ""
+		}
+		dir = parent
+	}
+}
+
+// dotImportTypes returns the names of the exported types of the packages that
+// file imports with a dot, which bring those names in without a qualifier. The
+// packages are located with go/build; a package that cannot be found adds no
+// names.
+func dotImportTypes(filename string, file *ast.File) map[string]bool {
+	types := map[string]bool{}
+	dir := filepath.Dir(filename)
+	for _, imp := range file.Imports {
+		if imp.Name == nil || imp.Name.Name != "." {
+			continue
+		}
+		path, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			continue
+		}
+		pkgDir := packageDir(path, dir)
+		if pkgDir == "" {
+			continue
+		}
+		entries, err := os.ReadDir(pkgDir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if e.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(pkgDir, name), nil, parser.SkipObjectResolution)
+			if err != nil {
+				continue
+			}
+			for _, d := range f.Decls {
+				if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
+					for _, sp := range g.Specs {
+						if n := sp.(*ast.TypeSpec).Name; n.IsExported() {
+							types[n.Name] = true
+						}
+					}
 				}
 			}
 		}

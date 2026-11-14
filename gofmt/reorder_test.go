@@ -321,3 +321,35 @@ func TestSiblingTypes(t *testing.T) {
 		}
 	}
 }
+
+func TestDotImportTypes(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, src string) {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module tmpmod\n\ngo 1.22\n")
+	write("vm/vm.go", "package vm\n\ntype Coroutine struct{}\n\ntype val any\n\nconst Limit = 3\n")
+	write("main.go", "package main\n\nimport . \"tmpmod/vm\"\n\ntype Args struct{ Co *Coroutine }\n")
+	src, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, "main.go"), src, parser.ImportsOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := dotImportTypes(filepath.Join(dir, "main.go"), file)
+	if !got["Coroutine"] {
+		t.Errorf("exported type of a dot-imported package not found: %v", got)
+	}
+	for _, name := range []string{"val", "Limit"} {
+		if got[name] {
+			t.Errorf("%s wrongly counted as a type", name)
+		}
+	}
+}

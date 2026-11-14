@@ -13,8 +13,8 @@ import (
 // has imported: a source importer otherwise looks every import up again, which
 // means reading the files of the package each time.
 type lockedImporter struct {
-	mu   sync.Mutex
-	imp  types.ImporterFrom
+	mu sync.Mutex
+	imp types.ImporterFrom
 	done map[string]*types.Package
 }
 

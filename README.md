@@ -219,6 +219,9 @@ The rules:
 - Statements are one per line. A blank line goes before and after a block
   statement (`if`, `for`, `range`, `switch`, `select`, a bare block), a
   `return`, and a grouped `var` declaration, but not next to a call statement.
+  The exception is an `if` whose condition uses a name that the statement
+  before it declares with `:=` or `var`: the two stay together, as in
+  `err := f()` followed by `if err != nil {`.
   Calls, assignments (`=`, `:=`, `op=`, `++`, `--`), `const` declarations and
   `var` declarations form runs: a blank line goes between two adjacent
   statements of different kinds, and none within a run.

@@ -313,3 +313,22 @@ func localTypes() {
 }
 
 var _ = errgroup.Group{}
+
+// An if statement whose condition uses a name declared just before it follows
+// that declaration directly. A condition that uses no such name is set off.
+func ifUse(a int) error {
+    n, err := g()
+    if err != nil {
+        return err
+    }
+    var m = a * 2
+    if m > 3 {
+        return nil
+    }
+    k := a
+    if a > 0 {
+        k++
+    }
+    _, _ = n, k
+    return nil
+}

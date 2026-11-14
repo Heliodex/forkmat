@@ -309,6 +309,11 @@ func (p *printer) blankLineBetween(prev, next ast.Stmt) bool {
 	if isGoOrDefer(prev) || isGoOrDefer(next) {
 		return !(isGoOrDefer(prev) && isGoOrDefer(next))
 	}
+	// An if statement whose condition uses a name that the statement before it
+	// declares stays with that declaration.
+	if declaresUsedBy(prev, next) {
+		return false
+	}
 	if p.blankStmt(prev) || p.blankStmt(next) {
 		return !isCallStmt(prev) && !isCallStmt(next)
 	}
@@ -316,6 +321,49 @@ func (p *printer) blankLineBetween(prev, next ast.Stmt) bool {
 	// the others. A statement of kindNone is never set off by this rule.
 	kp, kn := kindOf(prev), kindOf(next)
 	return kp != kindNone && kn != kindNone && kp != kn
+}
+
+// declaresUsedBy reports whether next is an if statement whose condition uses a
+// name that prev declares, with := or a var declaration. Names are compared by
+// spelling, so a shadowing name counts as a use: the blank line is only a
+// layout choice.
+func declaresUsedBy(prev, next ast.Stmt) bool {
+	is, ok := next.(*ast.IfStmt)
+	if !ok {
+		return false
+	}
+	names := map[string]bool{}
+	switch s := prev.(type) {
+	case *ast.AssignStmt:
+		if s.Tok == token.DEFINE {
+			for _, l := range s.Lhs {
+				if id, ok := l.(*ast.Ident); ok && id.Name != "_" {
+					names[id.Name] = true
+				}
+			}
+		}
+	case *ast.DeclStmt:
+		if d, ok := s.Decl.(*ast.GenDecl); ok && d.Tok == token.VAR {
+			for _, sp := range d.Specs {
+				for _, id := range sp.(*ast.ValueSpec).Names {
+					if id.Name != "_" {
+						names[id.Name] = true
+					}
+				}
+			}
+		}
+	}
+	if len(names) == 0 {
+		return false
+	}
+	used := false
+	ast.Inspect(is.Cond, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && names[id.Name] {
+			used = true
+		}
+		return !used
+	})
+	return used
 }
 
 // isGoOrDefer reports whether s is a go or defer statement.

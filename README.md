@@ -286,6 +286,9 @@ The rules:
 - A `type (...)`, `const (...)` or `var (...)` group that holds one declaration
   is printed as that declaration, without parentheses, unless a comment lies
   inside them.
+- `x = x + 1` and `x = x - 1` are written `x++` and `x--`, when `x` is an
+  identifier and the other operand is the integer literal `1`. This includes the
+  post statement of a `for` loop.
 - The clauses of a type switch are sorted alphabetically by their types, when
   every type is concrete: a pointer, slice, map, array, channel, function or
   struct type, a predeclared type other than an interface, or a named type whose

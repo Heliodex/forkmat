@@ -480,6 +480,11 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 		switchCaseOrder(filename, file)
 	}
 
+	if *strict && sourceAdj == nil {
+		// -strict writes x = x + 1 and x = x - 1 as x++ and x-- (see incdec.go)
+		incDecStmts(file)
+	}
+
 	if *mergeCasesFlag && sourceAdj == nil {
 		mergeCases(fileSet, file)
 	}

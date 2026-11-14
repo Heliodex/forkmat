@@ -3,6 +3,7 @@ package printer
 import (
 	"bytes"
 	"go/ast"
+	"go/constant"
 	"go/token"
 	"slices"
 	"sort"
@@ -600,6 +601,110 @@ func shortVarOK(vs *ast.ValueSpec) bool {
 		}
 	}
 	return false
+}
+
+// numericTypes are the predeclared numeric types, which a conversion of a zero
+// value can name.
+var numericTypes = map[string]bool{
+	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
+	"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true,
+	"uintptr": true, "byte": true, "rune": true,
+	"float32": true, "float64": true, "complex64": true, "complex128": true,
+}
+
+// zeroNumber reports whether lit is a numeric literal with the value zero.
+func zeroNumber(lit *ast.BasicLit) bool {
+	switch lit.Kind {
+	case token.INT, token.FLOAT, token.IMAG:
+		v := constant.MakeFromLiteral(lit.Value, lit.Kind, 0)
+		return v.Kind() != constant.Unknown && constant.Sign(v) == 0
+	}
+	return false
+}
+
+// zeroVarType returns the type that a := declaration of e takes, when e is a
+// zero value that can be written as a var declaration with that type: a zero
+// literal (0 is int, 0. is float64, 0i is complex128, "" is string), false, or
+// a conversion of a zero value to a predeclared type (int32(0), string(""),
+// bool(false)). It returns nil otherwise. The type is written as the source
+// spells it, so it names the same type as := gives e.
+func zeroVarType(e ast.Expr) ast.Expr {
+	switch x := e.(type) {
+	case *ast.BasicLit:
+		if zeroNumber(x) {
+			return &ast.Ident{NamePos: x.Pos(), Name: defaultNumeric(x.Kind)}
+		}
+		if x.Kind == token.STRING && constant.StringVal(constant.MakeFromLiteral(x.Value, x.Kind, 0)) == "" {
+			return &ast.Ident{NamePos: x.Pos(), Name: "string"}
+		}
+	case *ast.Ident:
+		if x.Name == "false" {
+			return &ast.Ident{NamePos: x.Pos(), Name: "bool"}
+		}
+	case *ast.CallExpr:
+		fun, ok := x.Fun.(*ast.Ident)
+		if !ok || len(x.Args) != 1 || x.Ellipsis.IsValid() {
+			return nil
+		}
+		switch arg := x.Args[0].(type) {
+		case *ast.BasicLit:
+			if numericTypes[fun.Name] && zeroNumber(arg) {
+				return fun
+			}
+			if fun.Name == "string" && arg.Kind == token.STRING && constant.StringVal(constant.MakeFromLiteral(arg.Value, arg.Kind, 0)) == "" {
+				return fun
+			}
+		case *ast.Ident:
+			if fun.Name == "bool" && arg.Name == "false" {
+				return fun
+			}
+		}
+	}
+	return nil
+}
+
+// defaultNumeric returns the type that := gives an untyped numeric literal of
+// the given kind.
+func defaultNumeric(kind token.Token) string {
+	switch kind {
+	case token.FLOAT:
+		return "float64"
+	case token.IMAG:
+		return "complex128"
+	}
+	return "int"
+}
+
+// strictZeroVars rewrites a := declaration of a block whose value is a zero
+// value (see zeroVarType) as a var declaration that names the type.
+func (p *printer) strictZeroVars(list []ast.Stmt) []ast.Stmt {
+	out := make([]ast.Stmt, 0, len(list))
+	for _, s := range list {
+		as, ok := s.(*ast.AssignStmt)
+		if !ok || as.Tok != token.DEFINE || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+			out = append(out, s)
+			continue
+		}
+		name, ok := as.Lhs[0].(*ast.Ident)
+		if !ok || name.Name == "_" || p.commentIn(as.Pos(), as.End()) {
+			out = append(out, s)
+			continue
+		}
+		typ := zeroVarType(as.Rhs[0])
+		if typ == nil {
+			out = append(out, s)
+			continue
+		}
+		out = append(out, &ast.DeclStmt{Decl: &ast.GenDecl{
+			TokPos: as.Pos(),
+			Tok:    token.VAR,
+			Specs: []ast.Spec{&ast.ValueSpec{
+				Names: []*ast.Ident{name},
+				Type:  typ,
+			}},
+		}})
+	}
+	return out
 }
 
 // strictShortVars rewrites the var declarations of a block that qualify (see

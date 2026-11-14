@@ -259,3 +259,21 @@ func kinds(ch chan int) {
     ch <- m
     fmt.Println(y)
 }
+
+// A := declaration of a zero value is written as a var declaration with its
+// type. Other values, and := with several names, are left alone.
+func zeros() {
+    x := 0
+    y := 0.
+    z := 0i
+    s := ""
+    b := false
+    a := int32(0)
+    c := float64(0.0)
+    m := 1
+    n := string(0)
+    r := uint8(0) // trailing
+    p, q := 0, 0
+    _, _, _, _, _, _, _, _, _, _ = x, y, z, s, b, a, c, m, n, r
+    _, _ = p, q
+}

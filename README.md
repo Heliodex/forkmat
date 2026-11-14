@@ -237,6 +237,12 @@ The rules:
   `var x = y` is `x := y`, and `var a, b = 1, 2` is `a, b := 1, 2`. A `var`
   with a type stays a declaration, and so does one whose names are all `_`,
   since `:=` needs a new name. A group with a comment inside is left alone.
+- A single `:=` whose value is a zero value becomes a `var` declaration with
+  its type written out: `x := 0` is `var x int`, `x := 0.` is `var x float64`,
+  `x := int32(0)` is `var x int32`, and `""`, `false` and `string("")`,
+  `bool(false)` likewise give `string` and `bool`. Only predeclared type names
+  are used, and only a zero literal (or a conversion of one) counts. Adjacent
+  results join a `var (...)` group, as above.
 
 What still follows the source:
 

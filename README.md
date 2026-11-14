@@ -377,6 +377,21 @@ unlabeled `break` in a `switch` default would leave the `switch`; or when a
 comment lies between the parts that move. It is applied after `-strict`, and
 off by default.
 
+### `-mergecases`: merge adjacent cases with the same body
+
+`gofmt -mergecases` joins two adjacent `case` clauses of a switch when their
+bodies are the same, so `case 1: f()` and `case 2: f()` become `case 1, 2: f()`.
+A type switch clause only merges when its body does not use the variable the
+switch binds, since in a clause with several types that variable has the type
+of the switch's operand. Clauses that are not adjacent, a `default` clause, a
+body that ends in `fallthrough`, and clauses with a comment are left alone. The
+case expressions are evaluated in order, so merging across another clause could
+change which of them run.
+
+Under `-strict` the merged list is laid out on one line. Without it, the printer
+keeps the source's line breaks inside a case list, so the merged list may be
+split over lines.
+
 ## What differs from upstream
 
 Only import paths, so that code outside the Go tree can reach packages that

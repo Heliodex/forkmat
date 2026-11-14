@@ -2,7 +2,6 @@ package main
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
@@ -67,8 +66,8 @@ func packageTypes(dir, skip, pkg string) map[string]ast.Expr {
 			continue
 		}
 
-		f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, name), nil, parser.SkipObjectResolution)
-		if err != nil || pkg != "" && f.Name.Name != pkg {
+		f := parsedSibling(filepath.Join(dir, name))
+		if f == nil || pkg != "" && f.Name.Name != pkg {
 			continue
 		}
 

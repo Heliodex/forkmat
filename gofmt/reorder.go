@@ -1021,8 +1021,8 @@ func siblingTypes(filename, pkg string) map[string]bool {
 			continue
 		}
 
-		f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
-		if err != nil || f.Name.Name != pkg {
+		f := parsedSibling(path)
+		if f == nil || f.Name.Name != pkg {
 			continue
 		}
 

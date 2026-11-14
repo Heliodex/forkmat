@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"forkmat/go/printer"
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
@@ -100,8 +99,8 @@ func packageConstIndex(filename string, file *ast.File) map[string]int {
 			continue
 		}
 
-		f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, name), nil, parser.SkipObjectResolution)
-		if err != nil || f.Name.Name != file.Name.Name {
+		f := parsedSibling(filepath.Join(dir, name))
+		if f == nil || f.Name.Name != file.Name.Name {
 			continue
 		}
 		add(f)

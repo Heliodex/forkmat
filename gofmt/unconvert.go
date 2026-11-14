@@ -1,12 +1,59 @@
 package main
 
 import (
+	"sync"
 	"go/ast"
 	"go/importer"
 	"go/token"
 	"go/types"
 	"reflect"
 )
+
+// checkTypes type-checks file on its own and returns the types of its expressions.
+// Errors are expected for names declared elsewhere, and are ignored: an expression
+// whose type cannot be found has no entry.
+func checkTypes(fset *token.FileSet, file *ast.File) *types.Info {
+	info := &types.Info{
+		Types: map[ast.Expr]types.TypeAndValue{},
+	}
+	conf := types.Config{
+		Importer: sharedImporter,
+		Error:    func(error) {},
+	}
+
+	conf.Check(file.Name.Name, fset, []*ast.File{file}, info)
+
+	return info
+}
+
+// sharedImporter imports packages from source, once for the whole run: a source
+// importer keeps the packages it has read, so one instance serves every file. It is
+// not safe for concurrent use, so each import holds the lock.
+var sharedImporter types.ImporterFrom = &lockedImporter{
+	imp: importer.ForCompiler(token.NewFileSet(), "source", nil).(types.ImporterFrom),
+}
+
+// lockedImporter serializes the calls of an importer.
+type lockedImporter struct {
+	mu  sync.Mutex
+	imp types.ImporterFrom
+}
+
+// Import implements types.Importer.
+func (l *lockedImporter) Import(path string) (*types.Package, error) {
+	return l.ImportFrom(path, "", 0)
+}
+
+// ImportFrom implements types.ImporterFrom.
+func (l *lockedImporter) ImportFrom(path, dir string, mode types.ImportMode) (*types.Package, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.imp.ImportFrom(path, dir, mode)
+}
+
+// callExprPtrType is the type of a *ast.CallExpr.
+var callExprPtrType = reflect.TypeFor[*ast.CallExpr]()
 
 // hasSelector reports whether an expression holds a selector, such as pkg.T.
 func hasSelector(e ast.Expr) bool {
@@ -21,9 +68,6 @@ func hasSelector(e ast.Expr) bool {
 	})
 	return found
 }
-
-// callExprPtrType is the type of a *ast.CallExpr.
-var callExprPtrType = reflect.TypeFor[*ast.CallExpr]()
 
 // isUntyped reports whether t is an untyped basic type, such as an untyped boolean from a comparison.
 func isUntyped(t types.Type) bool {
@@ -51,7 +95,6 @@ func operand(x ast.Expr) ast.Expr {
 // unconvert returns file with its redundant conversions removed. file must be parsed with comments; it is type-checked as a package of its own.
 func unconvert(fset *token.FileSet, file *ast.File) *ast.File {
 	info := checkTypes(fset, file)
-
 	repl := map[*ast.CallExpr]ast.Expr{}
 
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -92,21 +135,4 @@ func unconvert(fset *token.FileSet, file *ast.File) *ast.File {
 	}
 
 	return rewriteVal(reflect.ValueOf(file)).Interface().(*ast.File)
-}
-
-// checkTypes type-checks file on its own and returns the types of its expressions.
-// Errors are expected for names declared elsewhere, and are ignored: an expression
-// whose type cannot be found has no entry.
-func checkTypes(fset *token.FileSet, file *ast.File) *types.Info {
-	info := &types.Info{
-		Types: map[ast.Expr]types.TypeAndValue{},
-	}
-	conf := types.Config{
-		Importer: importer.ForCompiler(fset, "source", nil),
-		Error:    func(error) {},
-	}
-
-	conf.Check(file.Name.Name, fset, []*ast.File{file}, info)
-
-	return info
 }

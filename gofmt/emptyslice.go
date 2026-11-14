@@ -5,50 +5,6 @@ import (
 	"go/token"
 )
 
-// This file implements the empty slice rewrite of -strict: x := []T{} becomes
-// var x []T, when nil and empty are not told apart by the rest of the block. A
-// slice that is only appended to, ranged over, measured with len or cap, or indexed
-// behaves the same from nil as from empty. Any other use keeps the declaration: a
-// comparison with nil, a return, a call argument, a slice expression, an address,
-// or a further declaration of the name.
-
-// emptySlices rewrites the empty slice declarations of the statement lists of file.
-func emptySlices(file *ast.File) {
-	ast.Inspect(file, func(n ast.Node) bool {
-		switch x := n.(type) {
-		case *ast.BlockStmt:
-			x.List = emptySliceList(x.List)
-		case *ast.CaseClause:
-			x.Body = emptySliceList(x.Body)
-		case *ast.CommClause:
-			x.Body = emptySliceList(x.Body)
-		}
-
-		return true
-	})
-}
-
-// emptySliceList rewrites the declarations of list that qualify.
-func emptySliceList(list []ast.Stmt) []ast.Stmt {
-	for i, s := range list {
-		name, typ, ok := emptySliceDecl(s)
-		if !ok || !onlyNilSafeUses(list[i+1:], name.Name) {
-			continue
-		}
-
-		list[i] = &ast.DeclStmt{Decl: &ast.GenDecl{
-			TokPos: s.Pos(),
-			Tok:    token.VAR,
-			Specs: []ast.Spec{&ast.ValueSpec{
-				Names: []*ast.Ident{name},
-				Type:  typ,
-			}},
-		}}
-	}
-
-	return list
-}
-
 // emptySliceDecl returns the name and type of s if s is x := []T{}, for a slice
 // type written in full with no elements.
 func emptySliceDecl(s ast.Stmt) (*ast.Ident, *ast.ArrayType, bool) {
@@ -79,8 +35,7 @@ func emptySliceDecl(s ast.Stmt) (*ast.Ident, *ast.ArrayType, bool) {
 // that behaves the same for a nil slice and an empty one: an append assigned back to
 // the name, a range, a len or cap, or an index. Every occurrence must be such a use.
 func onlyNilSafeUses(list []ast.Stmt, name string) bool {
-	total := 0
-	safe := 0
+	var safe, total int
 
 	for _, s := range list {
 		ast.Inspect(s, func(n ast.Node) bool {
@@ -115,4 +70,52 @@ func onlyNilSafeUses(list []ast.Stmt, name string) bool {
 	}
 
 	return total == safe
+}
+
+// emptySliceList rewrites the declarations of list that qualify.
+func emptySliceList(list []ast.Stmt) []ast.Stmt {
+	for i, s := range list {
+		name, typ, ok := emptySliceDecl(s)
+		if !ok || !onlyNilSafeUses(list[i+1:], name.Name) {
+			continue
+		}
+
+		list[i] = &ast.DeclStmt{
+			Decl: &ast.GenDecl{
+				TokPos: s.Pos(),
+				Tok: token.VAR,
+				Specs: []ast.Spec{
+					&ast.ValueSpec{
+						Names: []*ast.Ident{name},
+						Type: typ,
+					},
+				},
+			},
+		}
+	}
+
+	return list
+}
+
+// This file implements the empty slice rewrite of -strict: x := []T{} becomes
+// var x []T, when nil and empty are not told apart by the rest of the block. A
+// slice that is only appended to, ranged over, measured with len or cap, or indexed
+// behaves the same from nil as from empty. Any other use keeps the declaration: a
+// comparison with nil, a return, a call argument, a slice expression, an address,
+// or a further declaration of the name.
+
+// emptySlices rewrites the empty slice declarations of the statement lists of file.
+func emptySlices(file *ast.File) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.BlockStmt:
+			x.List = emptySliceList(x.List)
+		case *ast.CaseClause:
+			x.Body = emptySliceList(x.Body)
+		case *ast.CommClause:
+			x.Body = emptySliceList(x.Body)
+		}
+
+		return true
+	})
 }

@@ -7,46 +7,161 @@ import (
 	"reflect"
 )
 
-// This file implements the loop rewrite of -strict: a loop for i := 0; i < n; i++
-// becomes for i := range n, when the body does not change i or the bound. A bound
-// len(x), where x is a slice or an array, becomes range x. A loop that does not use
-// i becomes for range n. The types come from checkTypes, so a bound whose type
-// cannot be found keeps its loop.
+// integerType reports whether t is an integer type, or an untyped integer.
+func integerType(t types.Type) bool {
+	b, ok := t.Underlying().(*types.Basic)
 
-// rangeLoops rewrites the index loops of file. comments are the file's comments.
-func rangeLoops(fset *token.FileSet, file *ast.File, comments []*ast.CommentGroup) {
-	info := checkTypes(fset, file)
-	repl := map[*ast.ForStmt]ast.Stmt{}
+	return ok && b.Info()&types.IsInteger != 0
+}
 
-	ast.Inspect(file, func(n ast.Node) bool {
-		if fs, ok := n.(*ast.ForStmt); ok {
-			if rs, ok := rangeOf(fs, info, comments); ok {
-				repl[fs] = rs
-			}
+// isIdent reports whether e is the identifier name.
+func isIdent(e ast.Expr, name string) bool {
+	id, ok := e.(*ast.Ident)
+
+	return ok && id.Name == name
+}
+
+// isBuiltinCall reports whether call calls the builtin name.
+func isBuiltinCall(call *ast.CallExpr, name string) bool {
+	return isIdent(call.Fun, name)
+}
+
+// isZeroLit reports whether e is the integer literal 0.
+func isZeroLit(e ast.Expr) bool {
+	lit, ok := e.(*ast.BasicLit)
+
+	return ok && lit.Kind == token.INT && lit.Value == "0"
+}
+
+// loopNames returns the identifiers an expression uses.
+func loopNames(e ast.Expr) map[string]bool {
+	out := map[string]bool{}
+
+	ast.Inspect(e, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok {
+			out[id.Name] = true
 		}
 
 		return true
 	})
+	return out
+}
 
-	if len(repl) == 0 {
-		return
-	}
-
-	forPtrType := reflect.TypeFor[*ast.ForStmt]()
-
-	var rewriteVal func(val reflect.Value) reflect.Value
-
-	rewriteVal = func(val reflect.Value) reflect.Value {
-		if val.IsValid() && val.Type() == forPtrType {
-			if r, ok := repl[val.Interface().(*ast.ForStmt)]; ok {
-				return rewriteVal(reflect.ValueOf(r))
-			}
+// loopPureBound reports whether a bound is an expression whose evaluation has no
+// side effects: identifiers, literals, selectors, dereferences, arithmetic, and the
+// calls len, cap, Len and NumField.
+func loopPureBound(e ast.Expr) bool {
+	switch x := e.(type) {
+	case *ast.Ident, *ast.BasicLit:
+		return true
+	case *ast.BinaryExpr:
+		return loopPureBound(x.X) && loopPureBound(x.Y)
+	case *ast.CallExpr:
+		if len(x.Args) > 1 {
+			return false
 		}
 
-		return apply(rewriteVal, val)
+		if id, ok := x.Fun.(*ast.Ident); ok && (id.Name == "len" || id.Name == "cap") {
+			return len(x.Args) == 1 && loopPureBound(x.Args[0])
+		}
+
+		if sel, ok := x.Fun.(*ast.SelectorExpr); ok && (sel.Sel.Name == "Len" || sel.Sel.Name == "NumField") && len(x.Args) == 0 {
+			return loopPureBound(sel.X)
+		}
+	case *ast.ParenExpr:
+		return loopPureBound(x.X)
+	case *ast.SelectorExpr:
+		return loopPureBound(x.X)
+	case *ast.StarExpr:
+		return loopPureBound(x.X)
 	}
 
-	rewriteVal(reflect.ValueOf(file))
+	return false
+}
+
+// loopRoot returns the identifier at the root of an assignable expression, such as
+// x for x, x.f and x[i], or "" if there is none.
+func loopRoot(e ast.Expr) string {
+	switch x := e.(type) {
+	case *ast.Ident:
+		return x.Name
+	case *ast.IndexExpr:
+		return loopRoot(x.X)
+	case *ast.ParenExpr:
+		return loopRoot(x.X)
+	case *ast.SelectorExpr:
+		return loopRoot(x.X)
+	case *ast.StarExpr:
+		return loopRoot(x.X)
+	}
+
+	return ""
+}
+
+// loopAssigns reports whether the body assigns to, increments, or takes the
+// address of any of the identifiers in set.
+func loopAssigns(body ast.Node, set map[string]bool) bool {
+	var found bool
+
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.AssignStmt:
+			for _, l := range x.Lhs {
+				found = found || set[loopRoot(l)]
+			}
+		case *ast.IncDecStmt:
+			found = found || set[loopRoot(x.X)]
+		case *ast.RangeStmt:
+			for _, l := range []ast.Expr{x.Key, x.Value} {
+				found = found || l != nil && set[loopRoot(l)]
+			}
+		case *ast.UnaryExpr:
+			found = found || x.Op == token.AND && set[loopRoot(x.X)]
+		}
+
+		return !found
+	})
+	return found
+}
+
+// loopSimpleRef reports whether e is an identifier or a selector chain of them.
+func loopSimpleRef(e ast.Expr) bool {
+	switch x := e.(type) {
+	case *ast.Ident:
+		return true
+	case *ast.SelectorExpr:
+		return loopSimpleRef(x.X)
+	}
+
+	return false
+}
+
+// loopUses reports whether the identifier name is referenced in the body.
+func loopUses(body ast.Node, name string) bool {
+	var found bool
+
+	ast.Inspect(body, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && id.Name == name {
+			found = true
+		}
+
+		return !found
+	})
+	return found
+}
+
+// sliceOrArray reports whether t is a slice, an array, or a pointer to an array.
+func sliceOrArray(t types.Type) bool {
+	switch u := t.Underlying().(type) {
+	case *types.Slice, *types.Array:
+		return true
+	case *types.Pointer:
+		_, ok := u.Elem().Underlying().(*types.Array)
+
+		return ok
+	}
+
+	return false
 }
 
 // rangeOf returns the range statement that replaces the index loop fs, if fs
@@ -88,6 +203,7 @@ func rangeOf(fs *ast.ForStmt, info *types.Info, comments []*ast.CommentGroup) (*
 
 	// the range expression: len(x) of a slice or an array is x itself
 	rng := bound
+
 	if call, ok := bound.(*ast.CallExpr); ok && isBuiltinCall(call, "len") && len(call.Args) == 1 {
 		arg := call.Args[0]
 		if at, ok := info.Types[arg]; ok && loopSimpleRef(arg) && sliceOrArray(at.Type) {
@@ -96,12 +212,12 @@ func rangeOf(fs *ast.ForStmt, info *types.Info, comments []*ast.CommentGroup) (*
 	}
 
 	rs := &ast.RangeStmt{
-		For:    fs.For,
+		For: fs.For,
 		TokPos: init.TokPos,
-		Tok:    token.DEFINE,
-		Range:  init.TokPos,
-		X:      rng,
-		Body:   fs.Body,
+		Tok: token.DEFINE,
+		Range: init.TokPos,
+		X: rng,
+		Body: fs.Body,
 	}
 
 	if loopUses(fs.Body, idx.Name) {
@@ -111,162 +227,43 @@ func rangeOf(fs *ast.ForStmt, info *types.Info, comments []*ast.CommentGroup) (*
 	return rs, true
 }
 
-// isZeroLit reports whether e is the integer literal 0.
-func isZeroLit(e ast.Expr) bool {
-	lit, ok := e.(*ast.BasicLit)
+// This file implements the loop rewrite of -strict: a loop for i := 0; i < n; i++
+// becomes for i := range n, when the body does not change i or the bound. A bound
+// len(x), where x is a slice or an array, becomes range x. A loop that does not use
+// i becomes for range n. The types come from checkTypes, so a bound whose type
+// cannot be found keeps its loop.
 
-	return ok && lit.Kind == token.INT && lit.Value == "0"
-}
+// rangeLoops rewrites the index loops of file. comments are the file's comments.
+func rangeLoops(fset *token.FileSet, file *ast.File, comments []*ast.CommentGroup) {
+	info := checkTypes(fset, file)
+	repl := map[*ast.ForStmt]ast.Stmt{}
 
-// isIdent reports whether e is the identifier name.
-func isIdent(e ast.Expr, name string) bool {
-	id, ok := e.(*ast.Ident)
-
-	return ok && id.Name == name
-}
-
-// isBuiltinCall reports whether call calls the builtin name.
-func isBuiltinCall(call *ast.CallExpr, name string) bool {
-	return isIdent(call.Fun, name)
-}
-
-// integerType reports whether t is an integer type, or an untyped integer.
-func integerType(t types.Type) bool {
-	b, ok := t.Underlying().(*types.Basic)
-
-	return ok && b.Info()&types.IsInteger != 0
-}
-
-// sliceOrArray reports whether t is a slice, an array, or a pointer to an array.
-func sliceOrArray(t types.Type) bool {
-	switch u := t.Underlying().(type) {
-	case *types.Slice, *types.Array:
-		return true
-	case *types.Pointer:
-		_, ok := u.Elem().Underlying().(*types.Array)
-
-		return ok
-	}
-
-	return false
-}
-
-// loopPureBound reports whether a bound is an expression whose evaluation has no
-// side effects: identifiers, literals, selectors, dereferences, arithmetic, and the
-// calls len, cap, Len and NumField.
-func loopPureBound(e ast.Expr) bool {
-	switch x := e.(type) {
-	case *ast.Ident, *ast.BasicLit:
-		return true
-	case *ast.SelectorExpr:
-		return loopPureBound(x.X)
-	case *ast.StarExpr:
-		return loopPureBound(x.X)
-	case *ast.ParenExpr:
-		return loopPureBound(x.X)
-	case *ast.BinaryExpr:
-		return loopPureBound(x.X) && loopPureBound(x.Y)
-	case *ast.CallExpr:
-		if len(x.Args) > 1 {
-			return false
-		}
-
-		if id, ok := x.Fun.(*ast.Ident); ok && (id.Name == "len" || id.Name == "cap") {
-			return len(x.Args) == 1 && loopPureBound(x.Args[0])
-		}
-
-		if sel, ok := x.Fun.(*ast.SelectorExpr); ok && (sel.Sel.Name == "Len" || sel.Sel.Name == "NumField") && len(x.Args) == 0 {
-			return loopPureBound(sel.X)
-		}
-	}
-
-	return false
-}
-
-// loopSimpleRef reports whether e is an identifier or a selector chain of them.
-func loopSimpleRef(e ast.Expr) bool {
-	switch x := e.(type) {
-	case *ast.Ident:
-		return true
-	case *ast.SelectorExpr:
-		return loopSimpleRef(x.X)
-	}
-
-	return false
-}
-
-// loopNames returns the identifiers an expression uses.
-func loopNames(e ast.Expr) map[string]bool {
-	out := map[string]bool{}
-
-	ast.Inspect(e, func(n ast.Node) bool {
-		if id, ok := n.(*ast.Ident); ok {
-			out[id.Name] = true
-		}
-
-		return true
-	})
-
-	return out
-}
-
-// loopUses reports whether the identifier name is referenced in the body.
-func loopUses(body ast.Node, name string) bool {
-	found := false
-
-	ast.Inspect(body, func(n ast.Node) bool {
-		if id, ok := n.(*ast.Ident); ok && id.Name == name {
-			found = true
-		}
-
-		return !found
-	})
-
-	return found
-}
-
-// loopAssigns reports whether the body assigns to, increments, or takes the
-// address of any of the identifiers in set.
-func loopAssigns(body ast.Node, set map[string]bool) bool {
-	found := false
-
-	ast.Inspect(body, func(n ast.Node) bool {
-		switch x := n.(type) {
-		case *ast.AssignStmt:
-			for _, l := range x.Lhs {
-				found = found || set[loopRoot(l)]
-			}
-		case *ast.IncDecStmt:
-			found = found || set[loopRoot(x.X)]
-		case *ast.UnaryExpr:
-			found = found || x.Op == token.AND && set[loopRoot(x.X)]
-		case *ast.RangeStmt:
-			for _, l := range []ast.Expr{x.Key, x.Value} {
-				found = found || l != nil && set[loopRoot(l)]
+	ast.Inspect(file, func(n ast.Node) bool {
+		if fs, ok := n.(*ast.ForStmt); ok {
+			if rs, ok := rangeOf(fs, info, comments); ok {
+				repl[fs] = rs
 			}
 		}
 
-		return !found
+		return true
 	})
-
-	return found
-}
-
-// loopRoot returns the identifier at the root of an assignable expression, such as
-// x for x, x.f and x[i], or "" if there is none.
-func loopRoot(e ast.Expr) string {
-	switch x := e.(type) {
-	case *ast.Ident:
-		return x.Name
-	case *ast.SelectorExpr:
-		return loopRoot(x.X)
-	case *ast.IndexExpr:
-		return loopRoot(x.X)
-	case *ast.StarExpr:
-		return loopRoot(x.X)
-	case *ast.ParenExpr:
-		return loopRoot(x.X)
+	if len(repl) == 0 {
+		return
 	}
 
-	return ""
+	forPtrType := reflect.TypeFor[*ast.ForStmt]()
+
+	var rewriteVal func(val reflect.Value) reflect.Value
+
+	rewriteVal = func(val reflect.Value) reflect.Value {
+		if val.IsValid() && val.Type() == forPtrType {
+			if r, ok := repl[val.Interface().(*ast.ForStmt)]; ok {
+				return rewriteVal(reflect.ValueOf(r))
+			}
+		}
+
+		return apply(rewriteVal, val)
+	}
+
+	rewriteVal(reflect.ValueOf(file))
 }

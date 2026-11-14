@@ -354,6 +354,29 @@ it is parenthesised; `-strict` drops parentheses that are not needed.
 It is off by default, and runs on complete files only. Type-checking a file
 loads its imports from source, so it is slower than the other passes.
 
+### `-flatten`: move a final else or default out
+
+`gofmt -flatten` moves the final branch of an `if`/`else` chain, or the
+`default` clause of a `switch` or type switch, to after the statement, when
+every other branch ends in a `return`:
+
+```go
+if x {                          if x {
+	y()                             y()
+	return 1                        return 1
+} else {                  =>    }
+	return 2                    return 2
+}
+```
+
+The statement must be the last one in its block. The move is skipped when it
+would change the meaning of the code: when the branch uses a name declared in
+the statement's header with `:=` (such as `if y := f(); y`, or a type switch's
+`v := x.(type)`), since that name is not in scope after the statement; when an
+unlabeled `break` in a `switch` default would leave the `switch`; or when a
+comment lies between the parts that move. It is applied after `-strict`, and
+off by default.
+
 ## What differs from upstream
 
 Only import paths, so that code outside the Go tree can reach packages that

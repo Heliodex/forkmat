@@ -61,6 +61,7 @@ var (
 	simplifyAST = flag.Bool("s", false, "simplify code")
 	doDiff = flag.Bool("d", false, "display diffs instead of rewriting files")
 	allErrors = flag.Bool("e", false, "report all errors (not just the first 10 on different lines)")
+	flattenFlag = flag.Bool("flatten", false, "move the final else or default branch of a statement after it, when every other branch returns (see flatten.go)")
 	unconvertFlag = flag.Bool("unconvert", false, "remove conversions T(x) where x already has type T (see unconvert.go)")
 	strict = flag.Bool("strict", false, "lay out code from the AST alone, ignoring the source's line breaks (see go/printer/strict.go)")
 
@@ -505,6 +506,10 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 				return err
 			}
 		}
+	}
+
+	if *flattenFlag && sourceAdj == nil {
+		flatten(file, file.Comments)
 	}
 
 	if rewrite != nil {

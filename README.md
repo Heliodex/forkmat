@@ -188,6 +188,11 @@ The rules:
   written `range x`; of a string, `range len(x)`. An index the body does not use
   gives `for range n`. The types come from type-checking the file; a bound whose
   type cannot be found keeps its loop.
+- `x := []T{}` is written `var x []T` when the rest of the block uses `x` only
+  where nil and empty behave the same: an append assigned back to `x`, a range,
+  `len` or `cap`, or an index. Any other use (a comparison with nil, a return, a
+  call argument, a slice expression, an address, or another declaration of the
+  name) keeps the `:=`.
 - `x = x + 1` and `x = x - 1` are written `x++` and `x--`, when `x` is an identifier and the other operand is the integer literal `1`. This includes the post statement of a `for` loop.
 - The clauses of a type switch are sorted alphabetically by their types, when every type is concrete: a pointer, slice, map, array, channel, function or struct type, a predeclared type other than an interface, or a named type whose declaration is not an interface. Interfaces may overlap, so a type switch with one is left alone. The `default` clause keeps its slot. The clause bodies need not return: a type switch cannot fall through, and a `break` leaves the switch whichever clause it is in.
 - The clauses of a switch whose cases are constants declared in the file are put in the order those constants are declared in, typically an `iota` block (`gofmt/switchorder.go`). The `default` clause keeps its slot. The switch is left alone unless every non-default clause ends in a `return` with no unlabeled `break`, and every case is a constant of the package. Constants of the other files of the package are ordered after the file's own by file name, then by declaration, since declaration order across files is not defined.

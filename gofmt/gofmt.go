@@ -490,6 +490,12 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 		rangeLoops(fileSet, file, file.Comments)
 	}
 
+	if *strict && sourceAdj == nil {
+		// -strict declares empty slices that nil can stand in for with var (see
+		// emptyslice.go)
+		emptySlices(file)
+	}
+
 	if *mergeCasesFlag && sourceAdj == nil {
 		mergeCases(fileSet, file)
 	}

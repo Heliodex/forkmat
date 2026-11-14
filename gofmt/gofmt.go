@@ -516,6 +516,11 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 		mergeCases(fileSet, file)
 	}
 
+	if *strict && sourceAdj == nil {
+		// -strict sorts the expressions of each case clause, after clauses have merged (see caseorder.go)
+		caseListOrder(file)
+	}
+
 	if *flattenFlag && sourceAdj == nil {
 		flatten(file, file.Comments)
 	}

@@ -34,6 +34,35 @@ type (
 // strictMaxSize is the width, in characters, of a composite literal that may stay on one line.
 const strictMaxSize = 100
 
+// compareMapKeys orders two map keys by rank, and within a rank by value: booleans false before true, numbers from the least, names and strings alphabetically.
+func compareMapKeys(a, b mapKey) int {
+	if a.rank != b.rank {
+		return a.rank - b.rank
+	}
+
+	switch av := a.key.(type) {
+	case string:
+		return strings.Compare(av, b.key.(string))
+	case constant.Value:
+		switch {
+		case constant.Compare(av, token.LSS, b.key.(constant.Value)):
+			return -1
+		case constant.Compare(b.key.(constant.Value), token.LSS, av):
+			return 1
+		}
+	case bool:
+		if av != b.key.(bool) {
+			if !av {
+				return -1
+			}
+
+			return 1
+		}
+	}
+
+	return 0
+}
+
 // declEnd returns the end of d, including the trailing comment of its last spec.
 func declEnd(d *ast.GenDecl) token.Pos {
 	end := d.End()
@@ -165,7 +194,7 @@ func importPath(s *ast.ImportSpec) string {
 // isGoOrDefer reports whether s is a go or defer statement.
 func isGoOrDefer(s ast.Stmt) bool {
 	switch s.(type) {
-	case *ast.GoStmt, *ast.DeferStmt:
+	case *ast.DeferStmt, *ast.GoStmt:
 		return true
 	}
 
@@ -211,15 +240,6 @@ func mergeDoc(a, b *ast.CommentGroup) *ast.CommentGroup {
 	}
 }
 
-// The ranks that mapKeyOf gives a key: nil, booleans, numbers, strings, and then names, which are constants or variables.
-const (
-	rankNil = iota
-	rankBool
-	rankNumber
-	rankString
-	rankName
-)
-
 // needsParens reports whether x, printed where an operator of precedence prec1 binds, must keep parentheses. Primary expressions never need them. Types, composite and function literals, and unary <- and ~ always keep theirs: for those, dropping the parentheses could change how the code parses. A parenthesized composite literal also keeps its parentheses wherever one appears inside, so that a control clause still parses.
 func needsParens(x ast.Expr, prec1 int) bool {
 	if hasCompositeLit(x) {
@@ -227,7 +247,7 @@ func needsParens(x ast.Expr, prec1 int) bool {
 	}
 
 	switch x := x.(type) {
-	case *ast.Ident, *ast.BasicLit, *ast.CallExpr, *ast.SelectorExpr, *ast.IndexExpr, *ast.IndexListExpr, *ast.SliceExpr, *ast.TypeAssertExpr:
+	case *ast.BasicLit, *ast.CallExpr, *ast.Ident, *ast.IndexExpr, *ast.IndexListExpr, *ast.SelectorExpr, *ast.SliceExpr, *ast.TypeAssertExpr:
 		return false
 	case *ast.BinaryExpr:
 		return x.Op.Precedence() < prec1
@@ -268,28 +288,14 @@ func numberLiteral(e ast.Expr) constant.Value {
 	return nil
 }
 
-// pureTypeNames are the predeclared types, whose conversions have no side effects.
-var pureTypeNames = map[string]bool{
-	"bool": true,
-	"byte": true,
-	"complex128": true,
-	"complex64": true,
-	"float32": true,
-	"float64": true,
-	"int": true,
-	"int16": true,
-	"int32": true,
-	"int64": true,
-	"int8": true,
-	"rune": true,
-	"string": true,
-	"uint": true,
-	"uint16": true,
-	"uint32": true,
-	"uint64": true,
-	"uint8": true,
-	"uintptr": true,
-}
+// The ranks that mapKeyOf gives a key: nil, booleans, numbers, strings, and then names, which are constants or variables.
+const (
+	rankNil = iota
+	rankBool
+	rankNumber
+	rankString
+	rankName
+)
 
 // mapKeyOf returns the sort key of a map key, or false if the key is neither a literal of a basic type nor an identifier.
 func mapKeyOf(e ast.Expr) (mapKey, bool) {
@@ -340,6 +346,67 @@ func mapKeyOf(e ast.Expr) (mapKey, bool) {
 	return mapKey{}, false
 }
 
+// caseKeyOf returns the sort key of an expression of a case list: a map key (see mapKeyOf), or a character literal, which sorts among the numbers by its code point.
+func caseKeyOf(e ast.Expr) (mapKey, bool) {
+	if lit, ok := e.(*ast.BasicLit); ok && lit.Kind == token.CHAR {
+		v := constant.MakeFromLiteral(lit.Value, lit.Kind, 0)
+		if v.Kind() != constant.Int {
+			return mapKey{}, false
+		}
+
+		return mapKey{
+			rank: rankNumber,
+			key: v,
+		}, true
+	}
+
+	return mapKeyOf(e)
+}
+
+// pureTypeNames are the predeclared types, whose conversions have no side effects.
+var pureTypeNames = map[string]bool{
+	"bool": true,
+	"byte": true,
+	"complex128": true,
+	"complex64": true,
+	"float32": true,
+	"float64": true,
+	"int": true,
+	"int16": true,
+	"int32": true,
+	"int64": true,
+	"int8": true,
+	"rune": true,
+	"string": true,
+	"uint": true,
+	"uint16": true,
+	"uint32": true,
+	"uint64": true,
+	"uint8": true,
+	"uintptr": true,
+}
+
+// SortCaseList returns the expressions of a case list ordered the way StrictLayout orders the keys of a map literal: nil, booleans, numbers and characters, strings, and then names, each kind by value. The list is returned as it is, unless every expression is a literal of a basic type or a name: other expressions may have effects, and a case list evaluates them in order.
+func SortCaseList(list []ast.Expr) []ast.Expr {
+	keys := make(map[ast.Expr]mapKey, len(list))
+
+	for _, e := range list {
+		k, ok := caseKeyOf(e)
+		if !ok {
+			return list
+		}
+
+		keys[e] = k
+	}
+
+	out := slices.Clone(list)
+
+	slices.SortStableFunc(out, func(a, b ast.Expr) int {
+		return compareMapKeys(keys[a], keys[b])
+	})
+	return out
+}
+
 // onlyUsedIn reports whether every name that the := declaration list[i] declares is used only inside the if statement is, among the statements of list other than list[i] itself. A name declared earlier in the block is a use outside the if statement, so it keeps the declaration where it is.
 func onlyUsedIn(list []ast.Stmt, i int, is *ast.IfStmt) bool {
 	names := map[string]bool{}
@@ -380,7 +447,7 @@ func onlyUsedIn(list []ast.Stmt, i int, is *ast.IfStmt) bool {
 func (p *printer) afterOpenBrace() bool {
 	for _, c := range slices.Backward(p.output) {
 		switch c {
-		case ' ', '\t', '\n', '\f', '\v', '\r':
+		case '\t', '\n', '\v', '\f', '\r', ' ':
 			continue
 		}
 
@@ -502,7 +569,7 @@ func (p *printer) printsLines(n ast.Node) bool {
 // blankStmt reports whether s gets a blank line on either side under StrictLayout (unless its neighbour is a call statement).
 func (p *printer) blankStmt(s ast.Stmt) bool {
 	switch s := s.(type) {
-	case *ast.BlockStmt, *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.ReturnStmt:
+	case *ast.BlockStmt, *ast.ForStmt, *ast.IfStmt, *ast.RangeStmt, *ast.ReturnStmt, *ast.SelectStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt:
 		return true
 	case *ast.DeclStmt:
 		d, ok := s.Decl.(*ast.GenDecl)
@@ -838,31 +905,7 @@ func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 		return x.Elts
 	}
 	slices.SortStableFunc(elts, func(a, b keyed) int {
-		if a.rank != b.rank {
-			return a.rank - b.rank
-		}
-
-		switch av := a.key.(type) {
-		case string:
-			return strings.Compare(av, b.key.(string))
-		case constant.Value:
-			switch {
-			case constant.Compare(av, token.LSS, b.key.(constant.Value)):
-				return -1
-			case constant.Compare(b.key.(constant.Value), token.LSS, av):
-				return 1
-			}
-		case bool:
-			if av != b.key.(bool) {
-				if !av {
-					return -1
-				}
-
-				return 1
-			}
-		}
-
-		return 0
+		return compareMapKeys(mapKey{a.rank, a.key}, mapKey{b.rank, b.key})
 	})
 
 	out := make([]ast.Expr, len(elts))

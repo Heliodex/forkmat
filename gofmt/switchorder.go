@@ -35,7 +35,8 @@ func packageConstIndex(filename string, file *ast.File) map[string]int {
 	dir := filepath.Dir(filename)
 	self := filepath.Base(filename)
 	entries, err := os.ReadDir(dir)
-	if err != nil {
+	if err != nil || !onDisk(filename) {
+		// read from standard input there is no package to scan, only the file
 		add(file)
 		return index
 	}
@@ -152,4 +153,11 @@ func switchCaseOrder(filename string, file *ast.File) {
 
 		return true
 	})
+}
+
+// onDisk reports whether filename names a file that exists. A file read from
+// standard input has a placeholder name, and its directory is not its package.
+func onDisk(filename string) bool {
+	_, err := os.Stat(filename)
+	return err == nil
 }

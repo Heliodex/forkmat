@@ -102,3 +102,26 @@ func TestSwitchCaseOrder(t *testing.T) {
 		})
 	}
 }
+
+// A file read from standard input has no file name on disk, but its own constants
+// still count, and no other file of its directory does.
+func TestSwitchCaseOrderStdin(t *testing.T) {
+	src := "package p\n\nconst (\n\tia = iota\n\tib\n)\n\nfunc f(k int) int {\n\tswitch k {\n\tcase ib:\n\t\treturn 2\n\tcase ia:\n\t\treturn 1\n\t}\n\treturn 0\n}\n"
+	file, err := parser.ParseFile(token.NewFileSet(), "<standard input>", src, parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	switchCaseOrder("<standard input>", file)
+	var got []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		if s, ok := n.(*ast.SwitchStmt); ok {
+			for _, cl := range s.Body.List {
+				got = append(got, cl.(*ast.CaseClause).List[0].(*ast.Ident).Name)
+			}
+		}
+		return true
+	})
+	if want := []string{"ia", "ib"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("order = %v, want %v", got, want)
+	}
+}

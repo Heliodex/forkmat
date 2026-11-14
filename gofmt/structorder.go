@@ -156,7 +156,11 @@ func sortStructLiteral(x *ast.CompositeLit, names []string, comments []*ast.Comm
 // the other files of its package.
 func structLiteralOrder(filename string, file *ast.File) {
 	// named types by name, in this file and the package's other files
-	types := packageTypes(filepath.Dir(filename), filepath.Base(filename), file.Name.Name)
+	dir := filepath.Dir(filename)
+	if !onDisk(filename) {
+		dir = "" // read from standard input, there are no sibling files
+	}
+	types := packageTypes(dir, filepath.Base(filename), file.Name.Name)
 
 	for _, d := range file.Decls {
 		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {

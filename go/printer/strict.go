@@ -237,26 +237,27 @@ func (p *printer) commentIn(from, to token.Pos) bool {
 	return i < len(cs) && cs[i].Pos() < to
 }
 
-// strictSortedMapElts returns the elements of a map literal ordered by key: string
-// keys alphabetically, number keys numerically. The literal is a map when its keys
-// are all string literals or all number literals, since a struct names its fields
-// with identifiers. The elements are reordered only when the literal has no
-// comment, and every value is free of calls and receives, which Go evaluates in
-// order. Otherwise the elements are returned as they are.
+// strictSortedMapElts returns the elements of a map literal ordered by key. The
+// literal is a map when every key is a literal of a basic type (nil, true or
+// false, a number, or a string), since a struct names its fields with identifiers
+// and an other key is not known to be a literal. Keys are grouped by kind, in the
+// order nil, booleans, numbers, strings, and within a kind are sorted: booleans
+// false before true, numbers from the least, strings alphabetically. A map with
+// keys of one kind is sorted the same way. The elements are reordered only when
+// the literal has no comment, and every value is free of calls and receives,
+// which Go evaluates in order. Otherwise the elements are returned as they are.
 func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 	if len(x.Elts) < 2 || p.commentIn(x.Lbrace, x.Rbrace) {
 		return x.Elts
 	}
 
 	type keyed struct {
-		key  any // a string, or a constant.Value
+		rank int
+		key  any // nil, a bool, a constant.Value, or a string
 		elt  ast.Expr
 	}
 
-	var (
-		kind  string
-		elts  []keyed
-	)
+	elts := make([]keyed, 0, len(x.Elts))
 
 	for _, e := range x.Elts {
 		kv, ok := e.(*ast.KeyValueExpr)
@@ -264,55 +265,37 @@ func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 			return x.Elts
 		}
 
-		var (
-			k  string
-			key any
-		)
-
-		switch lit := kv.Key.(type) {
-		case *ast.BasicLit:
-			if lit.Kind == token.STRING {
-				s, err := strconv.Unquote(lit.Value)
-				if err != nil {
-					return x.Elts
-				}
-
-				k, key = "string", s
-			} else if v := numberLiteral(lit); v != nil {
-				k, key = "number", v
-			} else {
-				return x.Elts
-			}
-		case *ast.UnaryExpr:
-			v := numberLiteral(lit)
-			if v == nil {
-				return x.Elts
-			}
-
-			k, key = "number", v
-		default:
+		k, ok := mapKeyOf(kv.Key)
+		if !ok {
 			return x.Elts
 		}
 
-		if kind != "" && k != kind {
-			return x.Elts
-		}
-
-		kind = k
-		elts = append(elts, keyed{key: key, elt: e})
+		elts = append(elts, keyed{rank: k.rank, key: k.key, elt: e})
 	}
 
 	slices.SortStableFunc(elts, func(a, b keyed) int {
-		if s, ok := a.key.(string); ok {
-			return strings.Compare(s, b.key.(string))
+		if a.rank != b.rank {
+			return a.rank - b.rank
 		}
 
-		av, bv := a.key.(constant.Value), b.key.(constant.Value)
-		switch {
-		case constant.Compare(av, token.LSS, bv):
-			return -1
-		case constant.Compare(bv, token.LSS, av):
-			return 1
+		switch av := a.key.(type) {
+		case string:
+			return strings.Compare(av, b.key.(string))
+		case constant.Value:
+			switch {
+			case constant.Compare(av, token.LSS, b.key.(constant.Value)):
+				return -1
+			case constant.Compare(b.key.(constant.Value), token.LSS, av):
+				return 1
+			}
+		case bool:
+			if av != b.key.(bool) {
+				if !av {
+					return -1
+				}
+
+				return 1
+			}
 		}
 
 		return 0
@@ -324,6 +307,44 @@ func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 	}
 
 	return out
+}
+
+// mapKey is the sort key of a map literal's key: its rank, which orders the kinds,
+// and its value.
+type mapKey struct {
+	rank int
+	key  any
+}
+
+// mapKeyOf returns the sort key of a map key, or false if the key is not a literal
+// of a basic type. The ranks order the kinds: nil, booleans, numbers, strings.
+func mapKeyOf(e ast.Expr) (mapKey, bool) {
+	switch x := e.(type) {
+	case *ast.Ident:
+		switch x.Name {
+		case "nil":
+			return mapKey{rank: 0}, true
+		case "false":
+			return mapKey{rank: 1, key: false}, true
+		case "true":
+			return mapKey{rank: 1, key: true}, true
+		}
+	case *ast.BasicLit:
+		if x.Kind == token.STRING {
+			s, err := strconv.Unquote(x.Value)
+			if err != nil {
+				return mapKey{}, false
+			}
+
+			return mapKey{rank: 3, key: s}, true
+		}
+	}
+
+	if v := numberLiteral(e); v != nil {
+		return mapKey{rank: 2, key: v}, true
+	}
+
+	return mapKey{}, false
 }
 
 // pureValue reports whether evaluating e has no side effects: it has no call,

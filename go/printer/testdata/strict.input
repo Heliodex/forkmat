@@ -472,3 +472,15 @@ var mapCall = map[string]int{
 }
 
 func mapF() int { return 0 }
+
+// A map with keys of several basic types, as a map with an any key holds, is
+// sorted by kind: nil, booleans, numbers, strings; and within each kind as above.
+var mapAny = map[any]string{
+    "b": "s",
+    2: "two",
+    true: "t",
+    nil: "n",
+    "a": "s",
+    -1: "neg",
+    false: "f",
+}

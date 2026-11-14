@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"forkmat/go/printer"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -10,14 +12,71 @@ import (
 	"testing"
 )
 
+// TestSwitchCaseOrderComments checks that a comment inside a clause still sits in that clause in the printed output. A comment is left alone when moving the clauses would put it in another clause.
+func TestSwitchCaseOrderComments(t *testing.T) {
+	tests := []struct {
+		name, body string
+		// the names that must come in this order in the printed output
+		order []string
+	}{
+		{
+			name: "a comment in a clause that moves earlier stays in it",
+			body: "switch k {\ncase KindB:\nreturn 2\ncase KindA:\n// about a\nreturn 1\n}",
+			order: []string{"case KindA:", "// about a", "case KindB:"},
+		},
+		{
+			name: "a comment in a clause that a clause before it would pass keeps the switch",
+			body: "switch k {\ncase KindB:\n// about b\nreturn 2\ncase KindA:\nreturn 1\n}",
+			order: []string{"case KindB:", "// about b", "case KindA:"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := "package p\n\nconst (\n\tKindA = iota\n\tKindB\n)\n\nfunc f(k int) int {\n" + tt.body + "\n\treturn 0\n}\n"
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments|parser.SkipObjectResolution)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			switchCaseOrder(fset, "x.go", file)
+
+			var buf bytes.Buffer
+
+			cfg := printer.Config{
+				Mode: printer.UseSpaces | printer.TabIndent,
+				Tabwidth: 8,
+			}
+
+			if err := cfg.Fprint(&buf, fset, file); err != nil {
+				t.Fatal(err)
+			}
+
+			out := buf.String()
+			last := -1
+
+			for _, want := range tt.order {
+				i := strings.Index(out, want)
+				if i <= last {
+					t.Errorf("%q not after the text before it:\n%s", want, out)
+					return
+				}
+
+				last = i
+			}
+		})
+	}
+}
+
 // A file read from standard input has no file name on disk, but its own constants still count, and no other file of its directory does.
 func TestSwitchCaseOrderStdin(t *testing.T) {
 	src := "package p\n\nconst (\n\tia = iota\n\tib\n)\n\nfunc f(k int) int {\n\tswitch k {\n\tcase ib:\n\t\treturn 2\n\tcase ia:\n\t\treturn 1\n\t}\n\treturn 0\n}\n"
-	file, err := parser.ParseFile(token.NewFileSet(), "<standard input>", src, parser.ParseComments|parser.SkipObjectResolution)
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "<standard input>", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	switchCaseOrder("<standard input>", file)
+	switchCaseOrder(fset, "<standard input>", file)
 
 	var got []string
 
@@ -39,11 +98,12 @@ func TestSwitchCaseOrderStdin(t *testing.T) {
 func caseOrder(t *testing.T, filename, src string) []string {
 	t.Helper()
 
-	file, err := parser.ParseFile(token.NewFileSet(), filename, src, parser.ParseComments|parser.SkipObjectResolution)
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	switchCaseOrder(filename, file)
+	switchCaseOrder(fset, filename, file)
 
 	var out []string
 
@@ -65,7 +125,7 @@ func caseOrder(t *testing.T, filename, src string) []string {
 			var parts []string
 
 			for _, e := range c.List {
-				parts = append(parts, e.(*ast.Ident).Name)
+				parts = append(parts, exprText(e))
 			}
 
 			names = append(names, strings.Join(parts, ","))
@@ -90,9 +150,34 @@ func TestSwitchCaseOrder(t *testing.T) {
 			want: "KindA KindC default KindB",
 		},
 		{
-			name: "a clause that does not return keeps the switch",
+			name: "a clause that does not return is ordered too",
 			body: "switch k {\ncase KindB:\nprintln()\ncase KindA:\nreturn\n}",
+			want: "KindA KindB",
+		},
+		{
+			name: "a clause that falls through keeps the switch",
+			body: "switch k {\ncase KindB:\nprintln()\nfallthrough\ncase KindA:\nreturn\n}",
 			want: "KindB KindA",
+		},
+		{
+			name: "a default that falls through keeps the switch",
+			body: "switch k {\ncase KindB:\nreturn\ndefault:\nprintln()\nfallthrough\ncase KindA:\nreturn\n}",
+			want: "KindB default KindA",
+		},
+		{
+			name: "a comment after a clause's last statement keeps the switch",
+			body: "switch k {\ncase KindB:\nreturn // two\ncase KindA:\nreturn\n}",
+			want: "KindB KindA",
+		},
+		{
+			name: "a comment on a line of its own before a clause keeps the switch",
+			body: "switch k {\ncase KindB:\nreturn\n// about a\ncase KindA:\nreturn\n}",
+			want: "KindB KindA",
+		},
+		{
+			name: "a constant declared in a function keeps the switch",
+			body: "const local = 7\nswitch k {\ncase KindB:\nreturn\ncase local:\nreturn\ncase KindA:\nreturn\n}",
+			want: "KindB local KindA",
 		},
 		{
 			name: "constants of another file of the package count",
@@ -127,15 +212,55 @@ func TestSwitchCaseOrder(t *testing.T) {
 	}
 }
 
+// TestSwitchCaseOrderPackages covers the cases that name constants of other packages, and the values that must be distinct.
+func TestSwitchCaseOrderPackages(t *testing.T) {
+	const (
+		tokenSwitch = "package p\n\nimport \"go/token\"\n\nfunc f(t token.Token) int {\n\tswitch t {\n\tcase token.VAR:\n\t\treturn 4\n\tcase token.CONST:\n\t\treturn 1\n\tcase token.TYPE:\n\t\treturn 3\n\tcase token.FUNC:\n\t\treturn 2\n\t}\n\treturn 0\n}\n"
+		aliasSwitch = "package p\n\ntype K int\n\nconst (\n\tKA K = iota\n\tKZ = KA\n\tKB\n)\n\nfunc f(k K) int {\n\tswitch k {\n\tcase KZ:\n\t\treturn 9\n\tcase KA:\n\t\treturn 1\n\tcase KB:\n\t\treturn 2\n\t}\n\treturn 0\n}\n"
+		mixedSwitch = "package p\n\nimport \"go/token\"\n\nconst KA = token.ILLEGAL\n\nfunc f(t token.Token) int {\n\tswitch t {\n\tcase token.VAR:\n\t\treturn 4\n\tcase KA:\n\t\treturn 1\n\t}\n\treturn 0\n}\n"
+	)
+
+	tests := []struct {
+		name, src, want string
+	}{
+		{
+			name: "constants of an imported package are ordered by their declaration",
+			src: tokenSwitch,
+			want: "token.CONST token.FUNC token.TYPE token.VAR",
+		},
+		{
+			name: "an alias of another constant keeps the switch",
+			src: aliasSwitch,
+			want: "KZ KA KB",
+		},
+		{
+			name: "cases from two packages keep the switch",
+			src: mixedSwitch,
+			want: "token.VAR KA",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name := filepath.Join(t.TempDir(), "x.go")
+
+			if got := strings.Join(caseOrder(t, name, tt.src), ";"); got != tt.want {
+				t.Errorf("order = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // typeCases returns, for each type switch of src after switchCaseOrder, its clauses' types in order ("default" for the default clause).
 func typeCases(t *testing.T, src string) []string {
 	t.Helper()
 
-	file, err := parser.ParseFile(token.NewFileSet(), "x.go", src, parser.ParseComments|parser.SkipObjectResolution)
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	switchCaseOrder("x.go", file)
+	switchCaseOrder(fset, "x.go", file)
 
 	var out []string
 

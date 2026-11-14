@@ -487,7 +487,7 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 
 	if *strict && sourceAdj == nil {
 		// -strict orders the cases of a switch over iota constants by declaration (see switchorder.go)
-		switchCaseOrder(filename, file)
+		switchCaseOrder(fileSet, filename, file)
 	}
 
 	if *strict && sourceAdj == nil {

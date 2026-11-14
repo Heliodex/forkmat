@@ -135,25 +135,6 @@ func defaultNumeric(kind token.Token) string {
 	return "int"
 }
 
-// groupDecls joins a run of single const declarations into one parenthesized declaration.
-func groupDecls(run []*ast.GenDecl) *ast.GenDecl {
-	var specs []ast.Spec
-
-	for _, d := range run {
-		specs = append(specs, d.Specs...)
-	}
-
-	first, last := run[0], run[len(run)-1]
-
-	return &ast.GenDecl{
-		TokPos: first.TokPos,
-		Tok: first.Tok,
-		Lparen: first.TokPos,
-		Specs: specs,
-		Rparen: declEnd(last),
-	}
-}
-
 // hasCompositeLit reports whether x holds a composite literal that is not enclosed in parentheses of its own.
 func hasCompositeLit(x ast.Expr) bool {
 	var found bool
@@ -1212,19 +1193,6 @@ func constJoinable(g *ast.GenDecl) bool {
 	return !usesIota(g)
 }
 
-// singleDecl returns d if it can join a run of const declarations in a block: an ungrouped const declaration of one spec with no comment, whose values do not use iota. iota counts the specs of a group, so grouping such a const would change its value. A doc comment on the declaration keeps it apart.
-func singleDecl(d *ast.GenDecl) *ast.GenDecl {
-	if d == nil || d.Doc != nil || d.Tok != token.CONST || d.Lparen.IsValid() || len(d.Specs) != 1 || usesIota(d) {
-		return nil
-	}
-
-	if vs := d.Specs[0].(*ast.ValueSpec); vs.Doc != nil || vs.Comment != nil {
-		return nil
-	}
-
-	return d
-}
-
 // withDoc returns spec s with the comment group doc placed before it, merged with any doc comment s already has.
 func withDoc(s ast.Spec, doc *ast.CommentGroup) ast.Spec {
 	if doc == nil {
@@ -1370,7 +1338,7 @@ func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
 	return list
 }
 
-// strictGroupStmts is strictGroupDecls for the statements of a block, where head is the position of the token that opens the block. A const declaration joins a run only when it is a single one with no comment.
+// strictGroupStmts is strictGroupDecls for the statements of a block, where head is the position of the token that opens the block. A const declaration whose values use iota stays apart, as at package level.
 func (p *printer) strictGroupStmts(list []ast.Stmt, head token.Pos) []ast.Stmt {
 	declOf := func(s ast.Stmt) *ast.GenDecl {
 		if ds, ok := s.(*ast.DeclStmt); ok {
@@ -1390,48 +1358,16 @@ func (p *printer) strictGroupStmts(list []ast.Stmt, head token.Pos) []ast.Stmt {
 		return true
 	}
 	list = groupTypes(p, list, head, token.TYPE, always, declOf, wrap)
+	list = groupTypes(p, list, head, token.CONST, constJoinable, declOf, wrap)
 	list = groupTypes(p, list, head, token.VAR, always, declOf, wrap)
-	constOf := func(s ast.Stmt) *ast.GenDecl {
-		return singleDecl(declOf(s))
-	}
 
-	var out []ast.Stmt
-
-	for i := 0; i < len(list); {
-		j := i + 1
-
-		var run []*ast.GenDecl
-
-		if d := constOf(list[i]); d != nil {
-			run = append(run, d)
-
-			for j < len(list) {
-				d := constOf(list[j])
-				if d == nil || p.commentIn(list[j-1].End(), list[j].Pos()) {
-					break
-				}
-
-				run = append(run, d)
-				j++
-			}
-		}
-
-		if len(run) > 1 {
-			out = append(out, wrap(groupDecls(run)))
-		} else {
-			out = append(out, list[i])
-		}
-
-		i = j
-	}
-
-	for i, s := range out {
+	for i, s := range list {
 		if g := declOf(s); g != nil {
-			out[i] = wrap(p.mergeVarSpecs(g))
+			list[i] = wrap(p.mergeVarSpecs(g))
 		}
 	}
 
-	return out
+	return list
 }
 
 // zeroNumber reports whether lit is a numeric literal with the value zero.

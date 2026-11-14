@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -16,7 +17,7 @@ func reorderText(t *testing.T, src string) string {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	return string(reorderFuncRuns(fset, file, []byte(src)))
+	return string(reorderDeclRuns(fset, file, []byte(src)))
 }
 
 // declOrder returns the names of the top-level functions and methods of src, in
@@ -29,8 +30,19 @@ func declOrder(t *testing.T, src string) []string {
 	}
 	var names []string
 	for _, d := range file.Decls {
-		if fd, ok := d.(*ast.FuncDecl); ok {
-			names = append(names, fd.Name.Name)
+		switch d := d.(type) {
+		case *ast.FuncDecl:
+			names = append(names, d.Name.Name)
+		case *ast.GenDecl:
+			if d.Tok == token.CONST {
+				var group []string
+				for _, sp := range d.Specs {
+					for _, id := range sp.(*ast.ValueSpec).Names {
+						group = append(group, id.Name)
+					}
+				}
+				names = append(names, strings.Join(group, ","))
+			}
 		}
 	}
 	return names
@@ -81,6 +93,21 @@ func TestReorderFuncs(t *testing.T) {
 			name: "method is a barrier",
 			src:  "package p\n\nfunc a() {\n\tb()\n}\n\nfunc (T) M() {}\n\nfunc b() {}\n",
 			want: []string{"a", "M", "b"},
+		},
+		{
+			name: "const declared before its use moves below it",
+			src:  "package p\n\nconst y = x\n\nconst x = 5\n",
+			want: []string{"x", "y"},
+		},
+		{
+			name: "const group moves as one unit",
+			src:  "package p\n\nconst (\n\tA = iota\n\tB\n)\n\nconst c = A\n",
+			want: []string{"A,B", "c"},
+		},
+		{
+			name: "local const shadowing a package const is not a reference",
+			src:  "package p\n\nfunc p1() {\n\tconst x = 1\n\t_ = x\n}\n\nconst x = 5\n",
+			want: []string{"p1", "x"},
 		},
 		{
 			name: "init is a barrier",

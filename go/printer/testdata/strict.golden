@@ -258,8 +258,10 @@ func kinds(ch chan int) {
 	fmt.Println("a")
 	fmt.Println("b")
 
-	const k = 1
-	const m = 2
+	const (
+		k = 1
+		m = 2
+	)
 
 	x := k
 	x++
@@ -427,3 +429,22 @@ type (
 )
 
 var x = 1
+
+// Single constants group together, except those whose values use iota: iota
+// counts the specs of a group.
+
+const (
+	cA = 1
+	cB = 2
+)
+
+const cC = iota
+const cD = iota
+
+func constGroups() {
+	const kA = "a"
+	const kB = iota
+	const kC = "c"
+
+	_, _, _ = kA, kB, kC
+}

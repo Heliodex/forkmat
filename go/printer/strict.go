@@ -546,15 +546,38 @@ func (p *printer) afterOpenBrace() bool {
 }
 
 // singleDecl returns d if it is an ungrouped var declaration of one spec with
-// no comment, and nil otherwise.
+// no comment, and nil otherwise. A const declaration counts too, unless its
+// values use iota: iota counts the specs of a group, so grouping such a const
+// would change its value.
 func singleDecl(d *ast.GenDecl) *ast.GenDecl {
-	if d == nil || d.Tok != token.VAR || d.Lparen.IsValid() || len(d.Specs) != 1 || d.Doc != nil {
+	if d == nil || d.Lparen.IsValid() || len(d.Specs) != 1 || d.Doc != nil {
+		return nil
+	}
+	switch d.Tok {
+	case token.VAR:
+	case token.CONST:
+		if usesIota(d) {
+			return nil
+		}
+	default:
 		return nil
 	}
 	if vs := d.Specs[0].(*ast.ValueSpec); vs.Doc != nil || vs.Comment != nil {
 		return nil
 	}
 	return d
+}
+
+// usesIota reports whether a declaration mentions iota.
+func usesIota(d *ast.GenDecl) bool {
+	found := false
+	ast.Inspect(d, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && id.Name == "iota" {
+			found = true
+		}
+		return !found
+	})
+	return found
 }
 
 // groupDecls joins a run of single var declarations into one parenthesized

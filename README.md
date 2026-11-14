@@ -178,16 +178,18 @@ decide the layout. It is off by default; the default output is unchanged. The
 rules are documented in `go/printer/strict.go`, and the mode is
 `printer.StrictLayout`.
 
-`-strict` also reorders functions, in `gofmt/reorder.go`, so that each function
-comes after the functions it refers to. In `a` calling `b`, `b` is printed
-above `a`. Only runs of consecutive plain functions move: methods, `init`
-functions and body-less declarations end a run and stay put, as do types and
-variables. A reference is a use of the package-level name, including a function
-passed as a value. Local names that shadow a function, selectors (`x.f`),
-struct-literal keys and labels are not references, and methods are not matched
-by name. A cycle keeps its source order. Each function moves with the comments
-that lead into it. This runs on the source text before printing, so it is
-applied by `gofmt`, not by `go/format`.
+`-strict` also reorders declarations, in `gofmt/reorder.go`, so that each one
+comes after the declarations it refers to. In `a` calling `b`, `b` is printed
+above `a`. Two kinds of run move: consecutive plain functions, and consecutive
+`const` declarations, where a `const (...)` group moves as one unit. Methods,
+`init` functions, body-less functions, and every other kind of declaration end
+a run and stay put, so types and variables are never moved. A reference is a
+use of the package-level name, including a function passed as a value, or a
+constant used in another constant. Local names that shadow a package-level one,
+selectors (`x.f`), struct-literal keys and labels are not references, and
+methods are not matched by name. A cycle keeps its source order. Each
+declaration moves with the comments that lead into it. This runs on the source
+text before printing, so it is applied by `gofmt`, not by `go/format`.
 
 Before, with standard gofmt:
 
@@ -266,6 +268,9 @@ The rules:
 - Adjacent single `var` declarations, at package level or in a block, are
   joined into one `var (...)` group, as before. A doc comment or another
   statement between two of them keeps them apart.
+- Adjacent single `const` declarations are joined into one `const (...)` group
+  the same way, except where a value uses `iota`: `iota` counts the specs of a
+  group, so such a constant stays on its own.
 - Inside a function, a `var` with values and no type becomes `:=`:
   `var x = y` is `x := y`, and `var a, b = 1, 2` is `a, b := 1, 2`. A `var`
   with a type stays a declaration, and so does one whose names are all `_`,

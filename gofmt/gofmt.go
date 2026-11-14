@@ -61,6 +61,7 @@ var (
 	simplifyAST = flag.Bool("s", false, "simplify code")
 	doDiff = flag.Bool("d", false, "display diffs instead of rewriting files")
 	allErrors = flag.Bool("e", false, "report all errors (not just the first 10 on different lines)")
+	omitCasesFlag = flag.Bool("omitcases", false, "remove a case that returns the same code as follows its switch (see omitcases.go)")
 	mergeCasesFlag = flag.Bool("mergecases", false, "merge adjacent switch cases with the same body into one case (see mergecases.go)")
 	flattenFlag = flag.Bool("flatten", false, "move the final else or default branch of a statement after it, when every other branch returns (see flatten.go)")
 	unconvertFlag = flag.Bool("unconvert", false, "remove conversions T(x) where x already has type T (see unconvert.go)")
@@ -507,6 +508,10 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 				return err
 			}
 		}
+	}
+
+	if *omitCasesFlag && sourceAdj == nil {
+		omitCases(fileSet, file, file.Comments)
 	}
 
 	if *mergeCasesFlag && sourceAdj == nil {

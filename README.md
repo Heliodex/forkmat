@@ -392,6 +392,27 @@ Under `-strict` the merged list is laid out on one line. Without it, the printer
 keeps the source's line breaks inside a case list, so the merged list may be
 split over lines.
 
+### `-omitcases`: drop a case that repeats the code after its switch
+
+`gofmt -omitcases` removes a `case` clause whose body is exactly the code that
+follows the switch in the same block, when that body ends in a `return`:
+
+```go
+switch x {                    switch x {
+case 1:                  =>   }
+	return 5                  return 5
+}
+return 5
+```
+
+The removal is made only when it cannot change which code runs. A value that
+the clause matched would reach a later clause or the `default` clause instead,
+so every other clause must have the same body, or the clause must be the last
+one with no `default` clause. The clause's case expressions must have no side
+effects, since they are no longer evaluated. The body must not declare names
+(they would clash with the code after the switch), must not use names the
+switch's header declares, and must not contain a `break` that leaves the switch.
+
 ## What differs from upstream
 
 Only import paths, so that code outside the Go tree can reach packages that

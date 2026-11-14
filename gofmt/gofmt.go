@@ -496,6 +496,11 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 		emptySlices(file)
 	}
 
+	if *strict && sourceAdj == nil {
+		// -strict writes interface{} as any (see anytype.go)
+		anyTypes(file)
+	}
+
 	if *mergeCasesFlag && sourceAdj == nil {
 		mergeCases(fileSet, file)
 	}

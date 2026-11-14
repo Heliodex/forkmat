@@ -193,6 +193,8 @@ The rules:
   `len` or `cap`, or an index. Any other use (a comparison with nil, a return, a
   call argument, a slice expression, an address, or another declaration of the
   name) keeps the `:=`.
+- `interface{}` is written `any`, unless the file declares its own `any` at
+  package level.
 - `x = x + 1` and `x = x - 1` are written `x++` and `x--`, when `x` is an identifier and the other operand is the integer literal `1`. This includes the post statement of a `for` loop.
 - The clauses of a type switch are sorted alphabetically by their types, when every type is concrete: a pointer, slice, map, array, channel, function or struct type, a predeclared type other than an interface, or a named type whose declaration is not an interface. Interfaces may overlap, so a type switch with one is left alone. The `default` clause keeps its slot. The clause bodies need not return: a type switch cannot fall through, and a `break` leaves the switch whichever clause it is in.
 - The clauses of a switch whose cases are constants declared in the file are put in the order those constants are declared in, typically an `iota` block (`gofmt/switchorder.go`). The `default` clause keeps its slot. The switch is left alone unless every non-default clause ends in a `return` with no unlabeled `break`, and every case is a constant of the package. Constants of the other files of the package are ordered after the file's own by file name, then by declaration, since declaration order across files is not defined.

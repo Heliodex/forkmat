@@ -1,7 +1,3 @@
-// Copyright 2018 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 //go:generate go test . -run=^TestGenerated$ -fix
 
 package platform
@@ -12,8 +8,7 @@ type (
 		GOOS, GOARCH string
 	}
 
-	// osArchInfo describes information about an OSArch extracted from cmd/dist and
-	// stored in the generated distInfo map.
+	// osArchInfo describes information about an OSArch extracted from cmd/dist and stored in the generated distInfo map.
 	osArchInfo struct {
 		CgoSupported, FirstClass, Broken bool
 	}
@@ -23,8 +18,7 @@ func (p OSArch) String() string {
 	return p.GOOS + "/" + p.GOARCH
 }
 
-// ASanSupported reports whether goos/goarch supports the address
-// sanitizer option.
+// ASanSupported reports whether goos/goarch supports the address sanitizer option.
 func ASanSupported(goos, goarch string) bool {
 	switch goos {
 	case "linux":
@@ -34,15 +28,12 @@ func ASanSupported(goos, goarch string) bool {
 	return false
 }
 
-// Broken reports whether goos/goarch is considered a broken port.
-// (See https://go.dev/wiki/PortingPolicy#broken-ports.)
+// Broken reports whether goos/goarch is considered a broken port. (See https://go.dev/wiki/PortingPolicy#broken-ports.)
 func Broken(goos, goarch string) bool {
 	return distInfo[OSArch{goos, goarch}].Broken
 }
 
-// BuildModeSupported reports whether goos/goarch supports the given build mode
-// using the given compiler.
-// There is a copy of this function in cmd/dist/test.go.
+// BuildModeSupported reports whether goos/goarch supports the given build mode using the given compiler. There is a copy of this function in cmd/dist/test.go.
 func BuildModeSupported(compiler, buildmode, goos, goarch string) bool {
 	if compiler == "gccgo" {
 		return true
@@ -65,12 +56,7 @@ func BuildModeSupported(compiler, buildmode, goos, goarch string) bool {
 			switch goarch {
 			case "386", "amd64", "arm", "armbe", "arm64", "arm64be", "loong64", "ppc64", "ppc64le", "riscv64", "s390x":
 				return true
-				// Other targets do not support -shared,
-				// per ParseFlags in
-				// cmd/compile/internal/base/flag.go.
-				// For c-archive the Go tool passes -shared,
-				// so that the result is suitable for inclusion
-				// in a PIE or shared library.
+				// Other targets do not support -shared, per ParseFlags in cmd/compile/internal/base/flag.go. For c-archive the Go tool passes -shared, so that the result is suitable for inclusion in a PIE or shared library.
 			}
 
 			return false
@@ -119,17 +105,14 @@ func CgoSupported(goos, goarch string) bool {
 	return distInfo[OSArch{goos, goarch}].CgoSupported
 }
 
-// DefaultPIE reports whether goos/goarch produces a PIE binary when using the
-// "default" buildmode. On Windows this is affected by -race,
-// so force the caller to pass that in to centralize that choice.
+// DefaultPIE reports whether goos/goarch produces a PIE binary when using the "default" buildmode. On Windows this is affected by -race, so force the caller to pass that in to centralize that choice.
 func DefaultPIE(goos, goarch string, isRace bool) bool {
 	switch goos {
 	case "android", "ios":
 		return true
 	case "windows":
 		if isRace {
-			// PIE is not supported with -race on windows;
-			// see https://go.dev/cl/416174.
+			// PIE is not supported with -race on windows; see https://go.dev/cl/416174.
 			return false
 		}
 
@@ -141,8 +124,7 @@ func DefaultPIE(goos, goarch string, isRace bool) bool {
 	return false
 }
 
-// ExecutableHasDWARF reports whether the linked executable includes DWARF
-// symbols on goos/goarch.
+// ExecutableHasDWARF reports whether the linked executable includes DWARF symbols on goos/goarch.
 func ExecutableHasDWARF(goos, goarch string) bool {
 	switch goos {
 	case "plan9", "ios":
@@ -152,10 +134,7 @@ func ExecutableHasDWARF(goos, goarch string) bool {
 	return true
 }
 
-// FIPS140Supported reports whether goos/goarch supports FIPS 140-3 mode.
-// It does not consider non-platform constraints such as the purego build tag,
-// -asan, or GOEXPERIMENT=boringcrypto.
-// There is a copy of this function in cmd/dist/test.go.
+// FIPS140Supported reports whether goos/goarch supports FIPS 140-3 mode. It does not consider non-platform constraints such as the purego build tag, -asan, or GOEXPERIMENT=boringcrypto. There is a copy of this function in cmd/dist/test.go.
 func FIPS140Supported(goos, goarch string) bool {
 	// Keep this in sync with crypto/internal/fips140.Supported.
 	switch {
@@ -166,14 +145,12 @@ func FIPS140Supported(goos, goarch string) bool {
 	return true
 }
 
-// FirstClass reports whether goos/goarch is considered a “first class” port.
-// (See https://go.dev/wiki/PortingPolicy#first-class-ports.)
+// FirstClass reports whether goos/goarch is considered a “first class” port. (See https://go.dev/wiki/PortingPolicy#first-class-ports.)
 func FirstClass(goos, goarch string) bool {
 	return distInfo[OSArch{goos, goarch}].FirstClass
 }
 
-// FuzzSupported reports whether goos/goarch supports fuzzing
-// ('go test -fuzz=.').
+// FuzzSupported reports whether goos/goarch supports fuzzing ('go test -fuzz=.').
 func FuzzSupported(goos, goarch string) bool {
 	switch goos {
 	case "darwin", "freebsd", "linux", "openbsd", "windows":
@@ -183,8 +160,7 @@ func FuzzSupported(goos, goarch string) bool {
 	return false
 }
 
-// FuzzInstrumented reports whether fuzzing on goos/goarch uses coverage
-// instrumentation. (FuzzInstrumented implies FuzzSupported.)
+// FuzzInstrumented reports whether fuzzing on goos/goarch uses coverage instrumentation. (FuzzInstrumented implies FuzzSupported.)
 func FuzzInstrumented(goos, goarch string) bool {
 	switch goarch {
 	case "amd64", "arm64", "loong64":
@@ -204,8 +180,7 @@ func InternalLinkPIESupported(goos, goarch string) bool {
 	return false
 }
 
-// MSanSupported reports whether goos/goarch supports the memory
-// sanitizer option.
+// MSanSupported reports whether goos/goarch supports the memory sanitizer option.
 func MSanSupported(goos, goarch string) bool {
 	switch goos {
 	case "linux":
@@ -217,18 +192,15 @@ func MSanSupported(goos, goarch string) bool {
 	return false
 }
 
-// MustLinkExternal reports whether goos/goarch requires external linking
-// with or without cgo dependencies.
+// MustLinkExternal reports whether goos/goarch requires external linking with or without cgo dependencies.
 func MustLinkExternal(goos, goarch string, withCgo bool) bool {
 	if withCgo {
 		switch goarch {
 		case "mips", "mipsle", "mips64", "mips64le":
-			// Internally linking cgo is incomplete on some architectures.
-			// https://go.dev/issue/14449
+			// Internally linking cgo is incomplete on some architectures. https://go.dev/issue/14449
 			return true
 		case "ppc64":
-			// Big Endian PPC64 cgo internal linking is not implemented for aix.
-			// https://go.dev/issue/8912
+			// Big Endian PPC64 cgo internal linking is not implemented for aix. https://go.dev/issue/8912
 			if goos == "aix" {
 				return true
 			}
@@ -238,9 +210,7 @@ func MustLinkExternal(goos, goarch string, withCgo bool) bool {
 		case "android":
 			return true
 		case "dragonfly":
-			// It seems that on Dragonfly thread local storage is
-			// set up by the dynamic linker, so internal cgo linking
-			// doesn't work. Test case is "go test runtime/cgo".
+			// It seems that on Dragonfly thread local storage is set up by the dynamic linker, so internal cgo linking doesn't work. Test case is "go test runtime/cgo".
 			return true
 		}
 	}
@@ -259,11 +229,7 @@ func MustLinkExternal(goos, goarch string, withCgo bool) bool {
 	return false
 }
 
-// RaceDetectorSupported reports whether goos/goarch supports the race
-// detector. There is a copy of this function in cmd/dist/test.go.
-// Race detector only supports 48-bit VMA on arm64. But it will always
-// return true for arm64, because we don't have VMA size information during
-// the compile time.
+// RaceDetectorSupported reports whether goos/goarch supports the race detector. There is a copy of this function in cmd/dist/test.go. Race detector only supports 48-bit VMA on arm64. But it will always return true for arm64, because we don't have VMA size information during the compile time.
 func RaceDetectorSupported(goos, goarch string) bool {
 	switch goos {
 	case "linux":

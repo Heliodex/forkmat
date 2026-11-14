@@ -40,8 +40,7 @@ func commentWithin(comments []*ast.CommentGroup, from, to token.Pos) bool {
 	return false
 }
 
-// endsInFallthrough reports whether a clause body's last statement is a
-// fallthrough.
+// endsInFallthrough reports whether a clause body's last statement is a fallthrough.
 func endsInFallthrough(list []ast.Stmt) bool {
 	if len(list) == 0 {
 		return false
@@ -93,8 +92,7 @@ func mergeable(fset *token.FileSet, a, b *ast.CaseClause, bound map[string]bool,
 	return sameBody(fset, a.Body, b.Body)
 }
 
-// mergeClauses merges the adjacent clauses of body that can be merged. bound is
-// the variable a type switch binds, or nil.
+// mergeClauses merges the adjacent clauses of body that can be merged. bound is the variable a type switch binds, or nil.
 func mergeClauses(fset *token.FileSet, body *ast.BlockStmt, bound map[string]bool, file *ast.File) {
 	clauses := body.List
 
@@ -112,24 +110,16 @@ func mergeClauses(fset *token.FileSet, body *ast.BlockStmt, bound map[string]boo
 	body.List = clauses
 }
 
-// This file implements -mergecases: two adjacent case clauses of a switch with
-// the same body become one clause with both conditions:
+// This file implements -mergecases: two adjacent case clauses of a switch with the same body become one clause with both conditions:
 //
 //	case 1:              case 1, 2:
 //		f()          =>      f()
 //	case 2:
 //		f()
 //
-// Only adjacent clauses merge, because the conditions of a switch are evaluated
-// in order and a clause in between could change which expressions run. A body
-// that ends in fallthrough is kept apart, since its target would change. In a
-// type switch, the clauses merge only if the body does not use the variable the
-// switch binds: in a clause with several types the variable has the type of the
-// switch's operand, not one of the case types. A default clause never merges.
-// A comment in either clause keeps them apart, so that no comment is lost.
+// Only adjacent clauses merge, because the conditions of a switch are evaluated in order and a clause in between could change which expressions run. A body that ends in fallthrough is kept apart, since its target would change. In a type switch, the clauses merge only if the body does not use the variable the switch binds: in a clause with several types the variable has the type of the switch's operand, not one of the case types. A default clause never merges. A comment in either clause keeps them apart, so that no comment is lost.
 
-// mergeCases merges the adjacent case clauses of every switch statement in file.
-// fset is the fileset of file.
+// mergeCases merges the adjacent case clauses of every switch statement in file. fset is the fileset of file.
 func mergeCases(fset *token.FileSet, file *ast.File) {
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch s := n.(type) {

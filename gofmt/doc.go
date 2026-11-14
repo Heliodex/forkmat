@@ -1,7 +1,3 @@
-// Copyright 2009 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 /*
 Gofmt formats Go programs.
 It uses tabs for indentation and blanks for alignment.
@@ -101,6 +97,4 @@ This may result in changes that are incompatible with earlier versions of Go.
 */
 package main
 
-// BUG(rsc): The implementation of -r is a bit slow.
-// BUG(gri): If -w fails, the restored original file may not have some of the
-// original file attributes.
+// BUG(rsc): The implementation of -r is a bit slow. BUG(gri): If -w fails, the restored original file may not have some of the original file attributes.

@@ -9,8 +9,7 @@ import (
 	"testing"
 )
 
-// flattenText returns src with its final branches moved out, printed with
-// white space collapsed, so that layout does not matter.
+// flattenText returns src with its final branches moved out, printed with white space collapsed, so that layout does not matter.
 func flattenText(t *testing.T, src string) string {
 	t.Helper()
 

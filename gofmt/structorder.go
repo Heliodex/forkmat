@@ -29,9 +29,7 @@ func embeddedName(t ast.Expr) string {
 	return ""
 }
 
-// fieldNames returns the names of the fields of a struct type, in declaration
-// order. A field without a name is embedded, and is named by its type. It
-// reports false if a field has no name that can be found.
+// fieldNames returns the names of the fields of a struct type, in declaration order. A field without a name is embedded, and is named by its type. It reports false if a field has no name that can be found.
 func fieldNames(st *ast.StructType) ([]string, bool) {
 	var names []string
 
@@ -55,9 +53,7 @@ func fieldNames(st *ast.StructType) ([]string, bool) {
 	return names, true
 }
 
-// packageTypes returns the named types declared in the .go files of dir, by name.
-// The file named skip is left out, and so is any file whose package is not pkg,
-// unless pkg is "". A file that cannot be parsed contributes nothing.
+// packageTypes returns the named types declared in the .go files of dir, by name. The file named skip is left out, and so is any file whose package is not pkg, unless pkg is "". A file that cannot be parsed contributes nothing.
 func packageTypes(dir, skip, pkg string) map[string]ast.Expr {
 	types := map[string]ast.Expr{}
 	entries, err := os.ReadDir(dir)
@@ -89,8 +85,7 @@ func packageTypes(dir, skip, pkg string) map[string]ast.Expr {
 	return types
 }
 
-// sortStructLiteral puts the keys of the literal x in the order of names, if the
-// literal can be reordered (see the comment on structLiteralOrder).
+// sortStructLiteral puts the keys of the literal x in the order of names, if the literal can be reordered (see the comment on structLiteralOrder).
 func sortStructLiteral(x *ast.CompositeLit, names []string, comments []*ast.CommentGroup) {
 	if len(x.Elts) < 2 {
 		return
@@ -139,21 +134,11 @@ func sortStructLiteral(x *ast.CompositeLit, names []string, comments []*ast.Comm
 	x.Elts = elts
 }
 
-// This file implements the field order of -strict: the keys of a struct literal
-// are put in the order the fields are declared in. The printer cannot do this,
-// since it has no declarations, so it runs here, on the parsed file.
+// This file implements the field order of -strict: the keys of a struct literal are put in the order the fields are declared in. The printer cannot do this, since it has no declarations, so it runs here, on the parsed file.
 //
-// The type of a literal is found from its declaration when it is a struct type
-// written in the literal, or a named type declared in the file, in a sibling file
-// of the same package, or in a package the file imports (by qualifier, or with a
-// dot). Other literals keep their order: an elided type, a generic type, a type
-// that is not a struct, or a type that cannot be found. A literal is reordered
-// only if every key is a field of the struct, and no key repeats, and it has no
-// comment inside and no value that calls a function or receives from a channel.
+// The type of a literal is found from its declaration when it is a struct type written in the literal, or a named type declared in the file, in a sibling file of the same package, or in a package the file imports (by qualifier, or with a dot). Other literals keep their order: an elided type, a generic type, a type that is not a struct, or a type that cannot be found. A literal is reordered only if every key is a field of the struct, and no key repeats, and it has no comment inside and no value that calls a function or receives from a channel.
 
-// structLiteralOrder reorders the keys of the struct literals of file, in the
-// declaration order of their types. filename is the file's name, which locates
-// the other files of its package.
+// structLiteralOrder reorders the keys of the struct literals of file, in the declaration order of their types. filename is the file's name, which locates the other files of its package.
 func structLiteralOrder(filename string, file *ast.File) {
 	// named types by name, in this file and the package's other files
 	dir := filepath.Dir(filename)
@@ -173,9 +158,7 @@ func structLiteralOrder(filename string, file *ast.File) {
 		}
 	}
 
-	// the packages the file imports: a qualifier maps to its import path, and the
-	// exported types of dot-imported packages are added to types. A qualified
-	// package is only read when a literal's type refers to it.
+	// the packages the file imports: a qualifier maps to its import path, and the exported types of dot-imported packages are added to types. A qualified package is only read when a literal's type refers to it.
 	paths := map[string]string{}
 
 	for _, imp := range file.Imports {

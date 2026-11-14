@@ -1,7 +1,3 @@
-// Copyright 2011 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package main
 
 import (
@@ -61,9 +57,7 @@ func TestCRLF(t *testing.T) {
 //
 //	//gofmt flags
 //
-// within the first maxLines lines of the given file,
-// and returns the flags string, if any. Otherwise it
-// returns the empty string.
+// within the first maxLines lines of the given file, and returns the flags string, if any. Otherwise it returns the empty string.
 func gofmtFlags(filename string, maxLines int) string {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -107,8 +101,7 @@ func resetFlags() {
 	*cpuprofile = ""
 }
 
-// TestDiff runs gofmt with the -d flag on the input files and checks that the
-// expected exit code is set.
+// TestDiff runs gofmt with the -d flag on the input files and checks that the expected exit code is set.
 func TestDiff(t *testing.T) {
 	tests := []struct {
 		in string
@@ -235,9 +228,7 @@ func runTest(t *testing.T, in, out string) {
 	}
 }
 
-// TestRewrite processes testdata/*.input files and compares them to the
-// corresponding testdata/*.golden files. The gofmt flags used to process
-// a file must be provided via a comment of the form
+// TestRewrite processes testdata/*.input files and compares them to the corresponding testdata/*.golden files. The gofmt flags used to process a file must be provided via a comment of the form
 //
 //	//gofmt flags
 //

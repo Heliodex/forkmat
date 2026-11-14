@@ -9,9 +9,7 @@ import (
 	"testing"
 )
 
-// literalKeys returns the keys of each composite literal of src, in source order,
-// after the struct literal order has been applied. Each literal is written as its
-// keys joined by commas, or "-" when it has no keyed elements.
+// literalKeys returns the keys of each composite literal of src, in source order, after the struct literal order has been applied. Each literal is written as its keys joined by commas, or "-" when it has no keyed elements.
 func literalKeys(t *testing.T, src string) []string {
 	t.Helper()
 

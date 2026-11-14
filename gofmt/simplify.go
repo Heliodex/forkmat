@@ -1,7 +1,3 @@
-// Copyright 2010 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package main
 
 import (
@@ -15,17 +11,13 @@ type simplifier struct{}
 func (s simplifier) simplifyLiteral(typ reflect.Value, astType, x ast.Expr, px *ast.Expr) {
 	ast.Walk(s, x) // simplify x
 
-	// if the element is a composite literal and its literal type
-	// matches the outer literal's element type exactly, the inner
-	// literal type may be omitted
+	// if the element is a composite literal and its literal type matches the outer literal's element type exactly, the inner literal type may be omitted
 	if inner, ok := x.(*ast.CompositeLit); ok {
 		if match(nil, typ, reflect.ValueOf(inner.Type)) {
 			inner.Type = nil
 		}
 	}
-	// if the outer literal's element type is a pointer type *T
-	// and the element is & of a composite literal of type T,
-	// the inner &T may be omitted.
+	// if the outer literal's element type is a pointer type *T and the element is & of a composite literal of type T, the inner &T may be omitted.
 	if ptr, ok := astType.(*ast.StarExpr); ok {
 		if addr, ok := x.(*ast.UnaryExpr); ok && addr.Op == token.AND {
 			if inner, ok := addr.X.(*ast.CompositeLit); ok {
@@ -80,19 +72,14 @@ func (s simplifier) Visit(node ast.Node) ast.Visitor {
 			return nil
 		}
 	case *ast.SliceExpr:
-		// a slice expression of the form: s[a:len(s)]
-		// can be simplified to: s[a:]
-		// if s is "simple enough" (for now we only accept identifiers)
+		// a slice expression of the form: s[a:len(s)] can be simplified to: s[a:] if s is "simple enough" (for now we only accept identifiers)
 		//
 		// Note: This may not be correct because len may have been redeclared in
 		//       the same package. However, this is extremely unlikely and so far
 		//       (April 2022, after years of supporting this rewrite feature)
 		//       has never come up, so let's keep it working as is (see also #15153).
 		//
-		// Also note that this code used to use go/ast's object tracking,
-		// which was removed in exchange for go/parser.Mode.SkipObjectResolution.
-		// False positives are extremely unlikely as described above,
-		// and go/ast's object tracking is incomplete in any case.
+		// Also note that this code used to use go/ast's object tracking, which was removed in exchange for go/parser.Mode.SkipObjectResolution. False positives are extremely unlikely as described above, and go/ast's object tracking is incomplete in any case.
 		if n.Max != nil {
 			// - 3-index slices always require the 2nd and 3rd index
 			break

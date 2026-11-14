@@ -9,8 +9,7 @@ import (
 	"testing"
 )
 
-// omitText returns src with its redundant cases removed, printed with white
-// space collapsed.
+// omitText returns src with its redundant cases removed, printed with white space collapsed.
 func omitText(t *testing.T, src string) string {
 	t.Helper()
 

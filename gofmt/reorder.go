@@ -1,21 +1,13 @@
 package main
 
-// The reordering of -strict. It runs before printing, on the source text, in
-// passes that each reorder one kind of thing:
+// The reordering of -strict. It runs before printing, on the source text, in passes that each reorder one kind of thing:
 //
-//   - types move up, after the imports, when the names they use are types,
-//     imports, or type parameters (see hoistTypes);
-//   - the const, var and type declarations of each run of consecutive ones are
-//     split into single declarations and sorted (see reorderSpecRuns);
-//   - each run of consecutive plain functions, and each run of methods, is sorted
-//     by name, methods by receiver type and then name (see reorderDecls);
-//   - each run of consecutive := statements with pure values is sorted by the
-//     names it declares (see reorderAssignRuns).
+//   - types move up, after the imports, when the names they use are types, imports, or type parameters (see hoistTypes);
+//   - the const, var and type declarations of each run of consecutive ones are split into single declarations and sorted (see reorderSpecRuns);
+//   - each run of consecutive plain functions, and each run of methods, is sorted by name, methods by receiver type and then name (see reorderDecls);
+//   - each run of consecutive := statements with pure values is sorted by the names it declares (see reorderAssignRuns).
 //
-// In every run, a declaration comes after the declarations it refers to, and
-// otherwise in alphabetical order. A cycle keeps its source order. Declarations
-// and statements move with the comments that lead into them. A var whose value
-// calls a function is never moved (see pureExpr).
+// In every run, a declaration comes after the declarations it refers to, and otherwise in alphabetical order. A cycle keeps its source order. Declarations and statements move with the comments that lead into them. A var whose value calls a function is never moved (see pureExpr).
 import (
 	"go/ast"
 	"go/build"
@@ -57,9 +49,7 @@ type (
 	}
 )
 
-// pureExpr reports whether the node n is free of calls (other than conversions to
-// predeclared types, make and new) and of receives. A function literal is pure
-// only if funcLitOK: its body may hold blocks, which a move could not cut out.
+// pureExpr reports whether the node n is free of calls (other than conversions to predeclared types, make and new) and of receives. A function literal is pure only if funcLitOK: its body may hold blocks, which a move could not cut out.
 func pureExpr(n ast.Node, funcLitOK bool) bool {
 	pure := true
 
@@ -84,24 +74,12 @@ func pureExpr(n ast.Node, funcLitOK bool) bool {
 	return pure
 }
 
-// pureVars reports whether the values of a var declaration can be evaluated
-// without side effects, so that moving it does not change the order of any
-// effect. Go initialises package variables in declaration order, except where a
-// dependency forces another order, so a move is visible only through a side
-// effect. A call can have one, and a receive can block; a conversion to a
-// predeclared type, make and new cannot. Calls are checked syntactically, so a
-// call to a function named like a predeclared type is taken to be impure.
+// pureVars reports whether the values of a var declaration can be evaluated without side effects, so that moving it does not change the order of any effect. Go initialises package variables in declaration order, except where a dependency forces another order, so a move is visible only through a side effect. A call can have one, and a receive can block; a conversion to a predeclared type, make and new cannot. Calls are checked syntactically, so a call to a function named like a predeclared type is taken to be impure.
 func pureVars(d *ast.GenDecl) bool {
 	return pureExpr(d, true)
 }
 
-// specRunToken returns the token of the declarations that reorderSpecRuns may
-// split into specs and sort, or ILLEGAL if d is not one of them. Types always
-// are. A var declaration is one if its values are pure (see pureVars). A const
-// declaration is one unless it is a group whose specs take their values from
-// their position: a spec without values repeats the one before it, and iota
-// counts the specs, so such a group keeps its order. Single const declarations
-// are always splittable: each is a group of its own.
+// specRunToken returns the token of the declarations that reorderSpecRuns may split into specs and sort, or ILLEGAL if d is not one of them. Types always are. A var declaration is one if its values are pure (see pureVars). A const declaration is one unless it is a group whose specs take their values from their position: a spec without values repeats the one before it, and iota counts the specs, so such a group keeps its order. Single const declarations are always splittable: each is a group of its own.
 func specRunToken(d ast.Decl) token.Token {
 	g, ok := d.(*ast.GenDecl)
 	if !ok {
@@ -207,8 +185,7 @@ func unitOf(d ast.Decl) (unit, bool) {
 	return unit{}, false
 }
 
-// predeclaredPure are the predeclared types, whose conversions have no side
-// effects.
+// predeclaredPure are the predeclared types, whose conversions have no side effects.
 var predeclaredPure = map[string]bool{
 	"bool": true,
 	"byte": true,
@@ -231,9 +208,7 @@ var predeclaredPure = map[string]bool{
 	"uintptr": true,
 }
 
-// reorderSource returns src with the passes of reordering applied: first the
-// specs of type groups, then the runs of declarations. src is returned as it is
-// if nothing moves.
+// reorderSource returns src with the passes of reordering applied: first the specs of type groups, then the runs of declarations. src is returned as it is if nothing moves.
 func reorderSource(filename string, src []byte) []byte {
 	passes := []func(*token.FileSet, *ast.File, []byte) []byte{
 		func(fset *token.FileSet, file *ast.File, src []byte) []byte {
@@ -267,8 +242,7 @@ func (l layout) line(p token.Pos) int {
 	return l.tf.Line(p)
 }
 
-// lineEnd returns the offset just past the newline that ends the line containing
-// offset o, or len(src) if there is none.
+// lineEnd returns the offset just past the newline that ends the line containing offset o, or len(src) if there is none.
 func (l layout) lineEnd(o int) int {
 	for o < len(l.src) && l.src[o] != '\n' {
 		o++
@@ -307,8 +281,7 @@ func (l layout) commentIn(from, to int) bool {
 	return false
 }
 
-// applyEdits returns src with the edits applied. They must be in source order
-// and must not overlap.
+// applyEdits returns src with the edits applied. They must be in source order and must not overlap.
 func applyEdits(src []byte, edits []edit) []byte {
 	if len(edits) == 0 {
 		return src
@@ -328,10 +301,7 @@ func applyEdits(src []byte, edits []edit) []byte {
 	return append(out, src[prev:]...)
 }
 
-// reorderItems returns the edit that reorders run, the units between lo and hi
-// in the source, or reports false if the run is already in order. Unit t
-// occupies the lines from the line after unit t-1 ends, so the comments before
-// it travel with it.
+// reorderItems returns the edit that reorders run, the units between lo and hi in the source, or reports false if the run is already in order. Unit t occupies the lines from the line after unit t-1 ends, so the comments before it travel with it.
 func (l layout) reorderItems(run []unit, lo, hi int) (edit, bool) {
 	k := len(run)
 	starts := make([]int, k+1)
@@ -369,8 +339,7 @@ func (l layout) reorderItems(run []unit, lo, hi int) (edit, bool) {
 	}, true
 }
 
-// receiverType returns the name of the type a method is declared on: the
-// receiver's type without its pointer, parentheses and type arguments.
+// receiverType returns the name of the type a method is declared on: the receiver's type without its pointer, parentheses and type arguments.
 func receiverType(recv *ast.FieldList) string {
 	if recv == nil || len(recv.List) == 0 {
 		return ""
@@ -396,9 +365,7 @@ func receiverType(recv *ast.FieldList) string {
 	}
 }
 
-// runBounds returns the edit for the run decls[i:j], whose units are run, or
-// reports false if the run has no room to move: a declaration before or after
-// it shares a line with it.
+// runBounds returns the edit for the run decls[i:j], whose units are run, or reports false if the run has no room to move: a declaration before or after it shares a line with it.
 func runBounds(l layout, file *ast.File, decls []ast.Decl, i, j int, run []unit) (edit, bool) {
 	var lo int
 
@@ -426,8 +393,7 @@ func runBounds(l layout, file *ast.File, decls []ast.Decl, i, j int, run []unit)
 		}
 
 		if _, ok := unitOf(decls[j]); ok {
-			// the next declaration starts a run of its own, which takes the
-			// lines between: this run ends with its own last line
+			// the next declaration starts a run of its own, which takes the lines between: this run ends with its own last line
 			hi = l.lineEnd(l.off(run[len(run)-1].end))
 		} else {
 			hi = l.off(next)
@@ -437,8 +403,7 @@ func runBounds(l layout, file *ast.File, decls []ast.Decl, i, j int, run []unit)
 	return l.reorderItems(run, lo, hi)
 }
 
-// sameRun reports whether two units can be in one run: both are functions, or
-// both are methods, or both are of the same declaration token.
+// sameRun reports whether two units can be in one run: both are functions, or both are methods, or both are of the same declaration token.
 func sameRun(a, b unit) bool {
 	return a.kind == b.kind && a.method == b.method
 }
@@ -530,11 +495,7 @@ var universeTypes = map[string]bool{
 	"uintptr": true,
 }
 
-// alphabeticalOrder orders the components of a run of types. A component is
-// ready when every component it depends on has been placed; among the ready
-// ones, the one whose first name (in alphabetical order) is smallest goes next.
-// So types are sorted wherever the dependencies allow it, and a type always
-// comes after the types it refers to.
+// alphabeticalOrder orders the components of a run of types. A component is ready when every component it depends on has been placed; among the ready ones, the one whose first name (in alphabetical order) is smallest goes next. So types are sorted wherever the dependencies allow it, and a type always comes after the types it refers to.
 func alphabeticalOrder(run []unit, deps, comps [][]int) []int {
 	compOf := make([]int, len(run))
 
@@ -604,9 +565,7 @@ func assignable(s ast.Stmt) bool {
 	return ok && as.Tok == token.DEFINE && pureExpr(as, false)
 }
 
-// components returns the strongly connected components of the graph deps, in the
-// order Tarjan's algorithm emits them: each after the components it depends on.
-// The units of a component are in source order.
+// components returns the strongly connected components of the graph deps, in the order Tarjan's algorithm emits them: each after the components it depends on. The units of a component are in source order.
 func components(deps [][]int) [][]int {
 	num := make([]int, len(deps)) // discovery number, or -1 before discovery
 	low := make([]int, len(deps)) // lowest number reachable from the unit
@@ -685,8 +644,7 @@ func declStart(d ast.Decl) token.Pos {
 	return d.Pos()
 }
 
-// enclosingModule returns the root directory and the module path of the go.mod
-// file that governs dir, or empty strings if there is none.
+// enclosingModule returns the root directory and the module path of the go.mod file that governs dir, or empty strings if there is none.
 func enclosingModule(dir string) (string, string) {
 	for {
 		if data, err := os.ReadFile(filepath.Join(dir, "go.mod")); err == nil {
@@ -708,14 +666,7 @@ func enclosingModule(dir string) (string, string) {
 	}
 }
 
-// hoistTypes is the pass that moves type declarations to the top of the file,
-// after the imports. Only a type whose names are all types (of this file, or
-// predeclared), imported packages, or its own type parameters moves: a name
-// that is a constant, variable or function, or that cannot be resolved in this
-// file, keeps the type where it is, and so does every type that depends on such
-// a type. Declaration order at package level does not change the meaning of a
-// type, so a move is safe; the restriction keeps a type with a constant length
-// below its constant.
+// hoistTypes is the pass that moves type declarations to the top of the file, after the imports. Only a type whose names are all types (of this file, or predeclared), imported packages, or its own type parameters moves: a name that is a constant, variable or function, or that cannot be resolved in this file, keeps the type where it is, and so does every type that depends on such a type. Declaration order at package level does not change the meaning of a type, so a move is safe; the restriction keeps a type with a constant length below its constant.
 func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[string]bool) []byte {
 	tf := fset.File(file.Pos())
 	if tf == nil {
@@ -755,16 +706,14 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 			}
 		}
 	}
-	// P is where moved types go: the line after the imports, or after the
-	// package clause if there are none
+	// P is where moved types go: the line after the imports, or after the package clause if there are none
 	P := l.lineEnd(l.off(file.Name.End()))
 
 	if m > 0 {
 		P = l.lineEnd(l.off(decls[m-1].End()))
 	}
 
-	// the candidates are the type declarations; specIdx finds a declaration by
-	// one of its specs
+	// the candidates are the type declarations; specIdx finds a declaration by one of its specs
 	cand := map[int]bool{}
 	specIdx := map[any]int{}
 
@@ -778,8 +727,7 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 		}
 	}
 
-	// bad[i] is set for a declaration that uses a name which is neither a type
-	// nor an import; deps[i] lists the candidate declarations it uses
+	// bad[i] is set for a declaration that uses a name which is neither a type nor an import; deps[i] lists the candidate declarations it uses
 	bad := map[int]bool{}
 	deps := map[int][]int{}
 
@@ -836,8 +784,7 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 
 		ast.Inspect(decls[i], walk)
 	}
-	// a declaration with a bad dependency is bad too, and so is one that depends
-	// on a bad declaration
+	// a declaration with a bad dependency is bad too, and so is one that depends on a bad declaration
 	for changed := true; changed; {
 		changed = false
 
@@ -885,8 +832,7 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 		return src
 	}
 
-	// the moved declarations go in at P; each is cut out of its place with the
-	// comments that lead into it
+	// the moved declarations go in at P; each is cut out of its place with the comments that lead into it
 	var text []byte
 
 	edits := []edit{
@@ -916,10 +862,7 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 	return applyEdits(src, edits)
 }
 
-// packageDir returns the directory of the package with import path path, as seen
-// from srcDir: a package of the module that srcDir is in is found from the
-// module's root; any other package is found with go/build. It returns "" if the
-// package cannot be found.
+// packageDir returns the directory of the package with import path path, as seen from srcDir: a package of the module that srcDir is in is found from the module's root; any other package is found with go/build. It returns "" if the package cannot be found.
 func packageDir(path, srcDir string) string {
 	if root, mod := enclosingModule(srcDir); mod != "" {
 		if path == mod {
@@ -939,10 +882,7 @@ func packageDir(path, srcDir string) string {
 	return pkg.Dir
 }
 
-// dotImportTypes returns the names of the exported types of the packages that
-// file imports with a dot, which bring those names in without a qualifier. The
-// packages are located with go/build; a package that cannot be found adds no
-// names.
+// dotImportTypes returns the names of the exported types of the packages that file imports with a dot, which bring those names in without a qualifier. The packages are located with go/build; a package that cannot be found adds no names.
 func dotImportTypes(filename string, file *ast.File) map[string]bool {
 	types := map[string]bool{}
 	dir := filepath.Dir(filename)
@@ -993,11 +933,7 @@ func dotImportTypes(filename string, file *ast.File) map[string]bool {
 	return types
 }
 
-// references returns the indices of the units that n refers to. An identifier
-// refers to a unit if it resolves to one of the unit's declarations, or, when it
-// is not resolved at all, if it has the name of one of the units. The selector
-// in x.f, the name of a field, the key of a struct literal field and labels are
-// not references.
+// references returns the indices of the units that n refers to. An identifier refers to a unit if it resolves to one of the unit's declarations, or, when it is not resolved at all, if it has the name of one of the units. The selector in x.f, the name of a field, the key of a struct literal field and labels are not references.
 func references(n ast.Node, byName map[string]int, byObj map[any]int) []int {
 	var (
 		out []int
@@ -1050,11 +986,7 @@ func references(n ast.Node, byName map[string]int, byObj map[any]int) []int {
 	return out
 }
 
-// dependencyOrder returns the indices of run in an order where each unit comes
-// after the units it refers to, and otherwise in alphabetical order by name (see
-// alphabeticalOrder). The units are grouped into strongly connected components,
-// that is, sets of units that refer to each other, directly or through others;
-// the units of one component keep their source order.
+// dependencyOrder returns the indices of run in an order where each unit comes after the units it refers to, and otherwise in alphabetical order by name (see alphabeticalOrder). The units are grouped into strongly connected components, that is, sets of units that refer to each other, directly or through others; the units of one component keep their source order.
 func dependencyOrder(run []unit) []int {
 	byName := map[string]int{} // for names that are not resolved
 	byObj := map[any]int{} // for names resolved to a unit's declaration
@@ -1098,12 +1030,7 @@ func dependencyOrder(run []unit) []int {
 	return alphabeticalOrder(run, deps, components(deps))
 }
 
-// reorderAssignRuns is the pass over the runs of := statements. A run is a
-// sequence of consecutive := statements with pure values (see pureExpr), each on
-// a line of its own. Within a run, statements that do not depend on each other
-// are sorted by the names they declare, and a statement stays after an earlier
-// one it could interact with (see assignDeps). It runs over every block of the
-// file, and over the clauses of switch and select statements.
+// reorderAssignRuns is the pass over the runs of := statements. A run is a sequence of consecutive := statements with pure values (see pureExpr), each on a line of its own. Within a run, statements that do not depend on each other are sorted by the names they declare, and a statement stays after an earlier one it could interact with (see assignDeps). It runs over every block of the file, and over the clauses of switch and select statements.
 func reorderAssignRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	tf := fset.File(file.Pos())
 	if tf == nil {
@@ -1136,10 +1063,7 @@ func reorderAssignRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	return applyEdits(src, edits)
 }
 
-// siblingTypes returns the names of the types that other files of the package of
-// filename declare. A file's package is the files of its directory with the same
-// package name. A name that a sibling declares as a type is a type, so a type may
-// use it and still move; a constant, variable or function of a sibling is not.
+// siblingTypes returns the names of the types that other files of the package of filename declare. A file's package is the files of its directory with the same package name. A name that a sibling declares as a type is a type, so a type may use it and still move; a constant, variable or function of a sibling is not.
 func siblingTypes(filename, pkg string) map[string]bool {
 	types := map[string]bool{}
 
@@ -1184,8 +1108,7 @@ func siblingTypes(filename, pkg string) map[string]bool {
 	return types
 }
 
-// specTextFrom returns lead followed by a single declaration of sp: the keyword
-// kw, then the spec's own text, through the end of its line.
+// specTextFrom returns lead followed by a single declaration of sp: the keyword kw, then the spec's own text, through the end of its line.
 func specTextFrom(src, lead []byte, sp ast.Spec, kw string, l layout) []byte {
 	out := append([]byte{}, lead...)
 	out = append(out, kw...)
@@ -1193,19 +1116,15 @@ func specTextFrom(src, lead []byte, sp ast.Spec, kw string, l layout) []byte {
 	return append(out, src[l.off(sp.Pos()):l.lineEnd(l.off(sp.End()))]...)
 }
 
-// specText returns the text of a single declaration of spec sp, which starts with
-// the lines src[from:keyword] and whose keyword is at keyword.
+// specText returns the text of a single declaration of spec sp, which starts with the lines src[from:keyword] and whose keyword is at keyword.
 func specText(src []byte, from int, keyword token.Pos, sp ast.Spec, kw string, l layout) []byte {
 	return specTextFrom(src, src[from:l.off(keyword)], sp, kw, l)
 }
 
-// specRunEdit returns the edit that rewrites the declarations decls[i:j] as
-// single declarations in their new order, or reports false if the run is left
-// alone.
+// specRunEdit returns the edit that rewrites the declarations decls[i:j] as single declarations in their new order, or reports false if the run is left alone.
 func specRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bool) {
 	src := l.src
-	// the run's extent: the lines after the declaration before it (or the
-	// package clause) to the end of its last declaration
+	// the run's extent: the lines after the declaration before it (or the package clause) to the end of its last declaration
 	var lo int
 
 	if i == 0 {
@@ -1229,8 +1148,7 @@ func specRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bo
 		return edit{}, false
 	}
 
-	// one unit per spec. text is what the unit prints as: the lines that lead
-	// into it, then a single declaration of the spec.
+	// one unit per spec. text is what the unit prints as: the lines that lead into it, then a single declaration of the spec.
 	var run []unit
 
 	var texts [][]byte
@@ -1300,13 +1218,7 @@ func specRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bo
 	}, true
 }
 
-// reorderSpecRuns is the pass over the runs of const, var and type declarations
-// (see specRunToken). A run is rewritten as single declarations, one per spec, in
-// dependency order, and the printer then joins them into blocks. Within a run,
-// specs that do not depend on each other are sorted alphabetically (see
-// alphabeticalOrder). A group is opened and closed by its own lines, and a
-// comment on those lines is not carried over, so a run with such a comment is
-// left alone.
+// reorderSpecRuns is the pass over the runs of const, var and type declarations (see specRunToken). A run is rewritten as single declarations, one per spec, in dependency order, and the printer then joins them into blocks. Within a run, specs that do not depend on each other are sorted alphabetically (see alphabeticalOrder). A group is opened and closed by its own lines, and a comment on those lines is not carried over, so a run with such a comment is left alone.
 func reorderSpecRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	tf := fset.File(file.Pos())
 	if tf == nil {
@@ -1345,8 +1257,7 @@ func reorderSpecRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	return applyEdits(src, edits)
 }
 
-// assignRun returns the edit that reorders the statements list[i:j], or reports
-// false if the run is already in order or has no room to move.
+// assignRun returns the edit that reorders the statements list[i:j], or reports false if the run is already in order or has no room to move.
 func (l layout) assignRun(list []ast.Stmt, i, j int, head token.Pos) (edit, bool) {
 	var lo int
 
@@ -1392,8 +1303,7 @@ func (l layout) assignRun(list []ast.Stmt, i, j int, head token.Pos) (edit, bool
 			start: as.Pos(),
 			end: as.End(),
 		})
-		// the lines before the statement lead into it; then the statement itself,
-		// through the end of its line
+		// the lines before the statement lead into it; then the statement itself, through the end of its line
 		texts = append(texts, append(append([]byte{}, l.src[cut:l.off(as.Pos())]...), l.src[l.off(as.Pos()):l.lineEnd(l.off(as.End()))]...))
 		cut = l.lineEnd(l.off(as.End()))
 	}
@@ -1426,9 +1336,7 @@ func (l layout) assignRun(list []ast.Stmt, i, j int, head token.Pos) (edit, bool
 	}, true
 }
 
-// assignRunEdits returns the edits that reorder each run of := statements in
-// list. head is the position of the token that opens the list, a brace or a
-// colon.
+// assignRunEdits returns the edits that reorder each run of := statements in list. head is the position of the token that opens the list, a brace or a colon.
 func (l layout) assignRunEdits(list []ast.Stmt, head token.Pos) []edit {
 	var edits []edit
 
@@ -1454,11 +1362,7 @@ func (l layout) assignRunEdits(list []ast.Stmt, head token.Pos) []edit {
 	return edits
 }
 
-// assignDeps returns the dependencies of a run of := statements, by name. A
-// statement j depends on an earlier statement i when one of them declares a name
-// that the other uses or declares. Names are compared as spelled, since a
-// declaration can shadow a name that an earlier statement reads from outside the
-// run.
+// assignDeps returns the dependencies of a run of := statements, by name. A statement j depends on an earlier statement i when one of them declares a name that the other uses or declares. Names are compared as spelled, since a declaration can shadow a name that an earlier statement reads from outside the run.
 func assignDeps(run []unit) [][]int {
 	mentions := make([]map[string]bool, len(run))
 	declares := make([]map[string]bool, len(run))

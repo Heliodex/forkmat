@@ -6,8 +6,7 @@ import (
 	"sort"
 )
 
-// breaksOut reports whether the statement s holds an unlabeled break that is not
-// inside a loop or switch within s; nested reports whether s itself is one.
+// breaksOut reports whether the statement s holds an unlabeled break that is not inside a loop or switch within s; nested reports whether s itself is one.
 func breaksOut(s ast.Stmt, nested bool) bool {
 	switch s := s.(type) {
 	case *ast.BlockStmt:
@@ -43,8 +42,7 @@ func breaksOut(s ast.Stmt, nested bool) bool {
 	return false
 }
 
-// clausesBreakOut reports whether a switch or select body holds an unlabeled
-// break that leaves the statement it belongs to.
+// clausesBreakOut reports whether a switch or select body holds an unlabeled break that leaves the statement it belongs to.
 func clausesBreakOut(body *ast.BlockStmt) bool {
 	for _, cl := range body.List {
 		var list []ast.Stmt
@@ -66,9 +64,7 @@ func clausesBreakOut(body *ast.BlockStmt) bool {
 	return false
 }
 
-// breaksOutOf reports whether the statements of a switch clause hold an
-// unlabeled break that would leave the switch. Such a break refers to the
-// switch, so moving the clause out would change its meaning.
+// breaksOutOf reports whether the statements of a switch clause hold an unlabeled break that would leave the switch. Such a break refers to the switch, so moving the clause out would change its meaning.
 func breaksOutOf(list []ast.Stmt) bool {
 	for _, s := range list {
 		if breaksOut(s, false) {
@@ -79,9 +75,7 @@ func breaksOutOf(list []ast.Stmt) bool {
 	return false
 }
 
-// clausesHoldComments reports whether every comment in the body of a switch lies
-// inside one of its clauses, so that moving a clause out leaves no comment
-// between clauses behind.
+// clausesHoldComments reports whether every comment in the body of a switch lies inside one of its clauses, so that moving a clause out leaves no comment between clauses behind.
 func clausesHoldComments(body *ast.BlockStmt, comments []*ast.CommentGroup) bool {
 	for _, cg := range comments {
 		for _, c := range cg.List {
@@ -159,10 +153,7 @@ func initNames(s ast.Stmt) map[string]bool {
 	return names
 }
 
-// ifFinal returns the owner of the final else block of the if statement s, the
-// block itself, and the names the if statements of the chain declare in their
-// headers. It reports false if s has no final else or if an if statement of the
-// chain does not end in a return.
+// ifFinal returns the owner of the final else block of the if statement s, the block itself, and the names the if statements of the chain declare in their headers. It reports false if s has no final else or if an if statement of the chain does not end in a return.
 func ifFinal(s *ast.IfStmt) (*ast.IfStmt, *ast.BlockStmt, map[string]bool, bool) {
 	cur := s
 	names := map[string]bool{}
@@ -216,9 +207,7 @@ func mentionsList(list []ast.Stmt, names map[string]bool) bool {
 	return false
 }
 
-// flattenSwitch moves the default clause of the switch statement s, the last
-// statement of list, out after it. body is s's body. names are the names the
-// switch declares.
+// flattenSwitch moves the default clause of the switch statement s, the last statement of list, out after it. body is s's body. names are the names the switch declares.
 func flattenSwitch(list *[]ast.Stmt, s ast.Stmt, body *ast.BlockStmt, names map[string]bool, comments []*ast.CommentGroup) bool {
 	def := -1
 
@@ -231,8 +220,7 @@ func flattenSwitch(list *[]ast.Stmt, s ast.Stmt, body *ast.BlockStmt, names map[
 	if def < 0 {
 		return false
 	}
-	// the other clauses must each end in a return: that makes the default clause
-	// the only one that reaches the statement after the switch
+	// the other clauses must each end in a return: that makes the default clause the only one that reaches the statement after the switch
 	for i, cl := range body.List {
 		if i != def && !endsInReturnList(cl.(*ast.CaseClause).Body) {
 			return false
@@ -253,9 +241,7 @@ func flattenSwitch(list *[]ast.Stmt, s ast.Stmt, body *ast.BlockStmt, names map[
 	return true
 }
 
-// flattenList moves the final branch out of the last statement of list, if it
-// can. It reports whether it did, so that the statement now moved out may be
-// flattened in turn.
+// flattenList moves the final branch out of the last statement of list, if it can. It reports whether it did, so that the statement now moved out may be flattened in turn.
 func flattenList(list *[]ast.Stmt, comments []*ast.CommentGroup) bool {
 	l := *list
 	n := len(l)
@@ -296,10 +282,7 @@ func flattenList(list *[]ast.Stmt, comments []*ast.CommentGroup) bool {
 	return false
 }
 
-// This file implements -flatten. When the last statement of a block is an if
-// statement with a final else, or a switch with a default clause, and every
-// other branch of it ends in a return, the final branch is moved out after the
-// statement:
+// This file implements -flatten. When the last statement of a block is an if statement with a final else, or a switch with a default clause, and every other branch of it ends in a return, the final branch is moved out after the statement:
 //
 //	if x {                 if x {
 //		y()                	y()
@@ -308,17 +291,11 @@ func flattenList(list *[]ast.Stmt, comments []*ast.CommentGroup) bool {
 //		return 2           return 2
 //	}
 //
-// The statement is only changed when moving the branch keeps its meaning: the
-// names declared in the statement's header must not be used in the branch, and
-// no unlabeled break may leave a switch through it. Comments in the parts that
-// move are kept where they are, and a statement with a comment between its
-// branches is left alone.
+// The statement is only changed when moving the branch keeps its meaning: the names declared in the statement's header must not be used in the branch, and no unlabeled break may leave a switch through it. Comments in the parts that move are kept where they are, and a statement with a comment between its branches is left alone.
 
-// flatten returns file with the final branches of its statements moved out.
-// comments are the comments of the file.
+// flatten returns file with the final branches of its statements moved out. comments are the comments of the file.
 func flatten(file *ast.File, comments []*ast.CommentGroup) {
-	// the statement lists of the file, in source order: an inner list comes
-	// after the outer list that holds it, so the lists are handled last to first
+	// the statement lists of the file, in source order: an inner list comes after the outer list that holds it, so the lists are handled last to first
 	var lists []*[]ast.Stmt
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch x := n.(type) {

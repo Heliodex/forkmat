@@ -1,7 +1,3 @@
-// Copyright 2022 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package printer
 
 import (
@@ -10,8 +6,7 @@ import (
 	"strings"
 )
 
-// allStars reports whether text is the interior of an
-// old-style /* */ comment with a star at the start of each line.
+// allStars reports whether text is the interior of an old-style /* */ comment with a star at the start of each line.
 func allStars(text string) bool {
 	for i := 0; i < len(text); i++ {
 		if text[i] == '\n' {
@@ -30,20 +25,14 @@ func allStars(text string) bool {
 	return true
 }
 
-// isDirective reports whether c is a comment directive.
-// See go.dev/issue/37974.
-// This code is also in go/ast.
+// isDirective reports whether c is a comment directive. See go.dev/issue/37974. This code is also in go/ast.
 func isDirective(c string) bool {
-	// "//line " is a line directive.
-	// "//extern " is for gccgo.
-	// "//export " is for cgo.
-	// (The // has been removed.)
+	// "//line " is a line directive. "//extern " is for gccgo. "//export " is for cgo. (The // has been removed.)
 	if strings.HasPrefix(c, "line ") || strings.HasPrefix(c, "extern ") || strings.HasPrefix(c, "export ") {
 		return true
 	}
 
-	// "//[a-z0-9]+:[a-z0-9]"
-	// (The // has been removed.)
+	// "//[a-z0-9]+:[a-z0-9]" (The // has been removed.)
 	colon := strings.Index(c, ":")
 	if colon <= 0 || colon+1 >= len(c) {
 		return false
@@ -62,8 +51,7 @@ func isDirective(c string) bool {
 	return true
 }
 
-// formatDocComment reformats the doc comment list,
-// returning the canonical formatting.
+// formatDocComment reformats the doc comment list, returning the canonical formatting.
 func formatDocComment(list []*ast.Comment) []*ast.Comment {
 	// Extract comment text (removing comment markers).
 	var kind, text string
@@ -75,15 +63,11 @@ func formatDocComment(list []*ast.Comment) []*ast.Comment {
 		text = list[0].Text
 
 		if !strings.Contains(text, "\n") || allStars(text) {
-			// Single-line /* .. */ comment in doc comment position,
-			// or multiline old-style comment like
+			// Single-line /* .. */ comment in doc comment position, or multiline old-style comment like
 			//	/*
-			//	 * Comment
-			//	 * text here.
-			//	 */
-			// Should not happen, since it will not work well as a
-			// doc comment, but if it does, just ignore:
-			// reformatting it will only make the situation worse.
+			// 	 * Comment
+			// 	 * text here. */
+			// Should not happen, since it will not work well as a doc comment, but if it does, just ignore: reformatting it will only make the situation worse.
 			return list
 		}
 

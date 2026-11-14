@@ -12,9 +12,7 @@ import (
 	"strings"
 )
 
-// concreteType reports whether the type expression e names a type that is not an
-// interface, so that no two of the types of a type switch can both match a value.
-// A named type is looked up in types; a type that cannot be found is not concrete.
+// concreteType reports whether the type expression e names a type that is not an interface, so that no two of the types of a type switch can both match a value. A named type is looked up in types; a type that cannot be found is not concrete.
 func concreteType(e ast.Expr, types map[string]ast.Expr) bool {
 	for range 8 {
 		switch x := e.(type) {
@@ -56,18 +54,14 @@ func exprText(e ast.Expr) string {
 	return buf.String()
 }
 
-// onDisk reports whether filename names a file that exists. A file read from
-// standard input has a placeholder name, and its directory is not its package.
+// onDisk reports whether filename names a file that exists. A file read from standard input has a placeholder name, and its directory is not its package.
 func onDisk(filename string) bool {
 	_, err := os.Stat(filename)
 
 	return err == nil
 }
 
-// packageConstIndex returns the position of each constant of the package of the
-// file named filename, in the order of the files of the package, by name, and
-// then of the declarations within each file. file is that file, parsed. A file
-// that cannot be read adds no constants.
+// packageConstIndex returns the position of each constant of the package of the file named filename, in the order of the files of the package, by name, and then of the declarations within each file. file is that file, parsed. A file that cannot be read adds no constants.
 func packageConstIndex(filename string, file *ast.File) map[string]int {
 	index := map[string]int{}
 	add := func(f *ast.File) {
@@ -116,8 +110,7 @@ func packageConstIndex(filename string, file *ast.File) map[string]int {
 	return index
 }
 
-// packageTypeExprs returns the named types of the file and of the other files of
-// its package, by name, as their type expressions.
+// packageTypeExprs returns the named types of the file and of the other files of its package, by name, as their type expressions.
 func packageTypeExprs(filename string, file *ast.File) map[string]ast.Expr {
 	dir := filepath.Dir(filename)
 
@@ -139,8 +132,7 @@ func packageTypeExprs(filename string, file *ast.File) map[string]ast.Expr {
 	return types
 }
 
-// reorderSwitchCases orders the non-default clauses of body by the declaration
-// index of their constants, if the switch qualifies (see switchCaseOrder).
+// reorderSwitchCases orders the non-default clauses of body by the declaration index of their constants, if the switch qualifies (see switchCaseOrder).
 func reorderSwitchCases(body *ast.BlockStmt, index map[string]int, comments []*ast.CommentGroup) {
 	// the key of a clause: the smallest index among its cases
 	keys := map[*ast.CaseClause]int{}
@@ -206,12 +198,7 @@ func reorderSwitchCases(body *ast.BlockStmt, index map[string]int, comments []*a
 	body.List = list
 }
 
-// reorderTypeSwitchCases orders the non-default clauses of a type switch by their
-// types, alphabetically, if every type is concrete (see concreteType). The clause
-// bodies do not change. A type switch cannot fall through, and a break leaves the
-// switch whichever clause it is in, so the bodies need not return. A clause with
-// several types is ordered by its first type in alphabetical order. The default
-// clause keeps its slot.
+// reorderTypeSwitchCases orders the non-default clauses of a type switch by their types, alphabetically, if every type is concrete (see concreteType). The clause bodies do not change. A type switch cannot fall through, and a break leaves the switch whichever clause it is in, so the bodies need not return. A clause with several types is ordered by its first type in alphabetical order. The default clause keeps its slot.
 func reorderTypeSwitchCases(body *ast.BlockStmt, types map[string]ast.Expr, comments []*ast.CommentGroup) {
 	keys := map[*ast.CaseClause]string{}
 
@@ -267,18 +254,9 @@ func reorderTypeSwitchCases(body *ast.BlockStmt, types map[string]ast.Expr, comm
 	body.List = list
 }
 
-// This file implements the case order of -strict: the clauses of a switch whose
-// cases are constants declared in the file are put in the order the constants
-// are declared in, typically the order of an iota block. A clause moves only
-// among the slots of the other clauses of its kind; the default clause keeps its
-// slot. The switch is changed only if its behaviour cannot change: every clause
-// that is not the default returns, and none of them can fall through or leave the
-// switch with a break. Each case is a constant named in the file, so no case
-// expression runs code, and a value matches at most one case.
+// This file implements the case order of -strict: the clauses of a switch whose cases are constants declared in the file are put in the order the constants are declared in, typically the order of an iota block. A clause moves only among the slots of the other clauses of its kind; the default clause keeps its slot. The switch is changed only if its behaviour cannot change: every clause that is not the default returns, and none of them can fall through or leave the switch with a break. Each case is a constant named in the file, so no case expression runs code, and a value matches at most one case.
 
-// switchCaseOrder reorders the clauses of the switch statements of file, whose
-// name is filename. The constants of the whole package count: those of the file
-// and of the other files of its directory with the same package name.
+// switchCaseOrder reorders the clauses of the switch statements of file, whose name is filename. The constants of the whole package count: those of the file and of the other files of its directory with the same package name.
 func switchCaseOrder(filename string, file *ast.File) {
 	index := packageConstIndex(filename, file)
 	types := packageTypeExprs(filename, file)

@@ -1,7 +1,3 @@
-// Copyright 2020 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package printer
 
 import (
@@ -15,13 +11,7 @@ func (p *printer) fixGoBuildLines() {
 		return
 	}
 
-	// Find latest possible placement of //go:build and // +build comments.
-	// That's just after the last blank line before we find a non-comment.
-	// (We'll add another blank line after our comment block.)
-	// When we start dropping // +build comments, we can skip over /* */ comments too.
-	// Note that we are processing tabwriter input, so every comment
-	// begins and ends with a tabwriter.Escape byte.
-	// And some newlines have turned into \f bytes.
+	// Find latest possible placement of //go:build and // +build comments. That's just after the last blank line before we find a non-comment. (We'll add another blank line after our comment block.) When we start dropping // +build comments, we can skip over /* */ comments too. Note that we are processing tabwriter input, so every comment begins and ends with a tabwriter.Escape byte. And some newlines have turned into \f bytes.
 	var insert int
 
 	for pos := 0; ; {
@@ -51,8 +41,7 @@ func (p *printer) fixGoBuildLines() {
 		}
 	}
 
-	// If there is a //go:build comment before the place we identified,
-	// use that point instead. (Earlier in the file is always fine.)
+	// If there is a //go:build comment before the place we identified, use that point instead. (Earlier in the file is always fine.)
 	if len(p.goBuild) > 0 && p.goBuild[0] < insert {
 		insert = p.goBuild[0]
 	} else if len(p.plusBuild) > 0 && p.plusBuild[0] < insert {
@@ -88,9 +77,7 @@ func (p *printer) fixGoBuildLines() {
 	var block []byte
 
 	if x == nil {
-		// Don't have a valid //go:build expression to treat as truth.
-		// Bring all the lines together but leave them alone.
-		// Note that these are already tabwriter-escaped.
+		// Don't have a valid //go:build expression to treat as truth. Bring all the lines together but leave them alone. Note that these are already tabwriter-escaped.
 		for _, pos := range p.goBuild {
 			block = append(block, p.lineAt(pos)...)
 		}
@@ -150,11 +137,7 @@ func (p *printer) fixGoBuildLines() {
 	p.output = append(p.output, after...)
 }
 
-// appendLines is like append(x, y...)
-// but it avoids creating doubled blank lines,
-// which would not be gofmt-standard output.
-// It assumes that only whole blocks of lines are being appended,
-// not line fragments.
+// appendLines is like append(x, y...) but it avoids creating doubled blank lines, which would not be gofmt-standard output. It assumes that only whole blocks of lines are being appended, not line fragments.
 func appendLines(x, y []byte) []byte {
 	if len(y) > 0 && isNL(y[0]) && // y starts in blank line
 	(len(x) == 0 || len(x) >= 2 && isNL(x[len(x)-1]) && isNL(x[len(x)-2])) { // x is empty or ends in blank line

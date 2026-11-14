@@ -9,8 +9,7 @@ import (
 	"testing"
 )
 
-// mergeText returns src with its adjacent cases merged, printed with white space
-// collapsed.
+// mergeText returns src with its adjacent cases merged, printed with white space collapsed.
 func mergeText(t *testing.T, src string) string {
 	t.Helper()
 

@@ -1,10 +1,4 @@
-// Copyright 2011 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-// This test applies gofmt to all Go files under -root.
-// To test specific files provide a list of comma-separated
-// filenames via the -files flag: go test -files=gofmt.go .
+// This test applies gofmt to all Go files under -root. To test specific files provide a list of comma-separated filenames via the -files flag: go test -files=gofmt.go .
 
 package main
 
@@ -131,8 +125,7 @@ func testFile(t *testing.T, b1, b2 *bytes.Buffer, filename string) {
 
 	// the first and 2nd result should be identical
 	if !bytes.Equal(b1.Bytes(), b2.Bytes()) {
-		// A known instance of gofmt not being idempotent
-		// (see Issue #24472)
+		// A known instance of gofmt not being idempotent (see Issue #24472)
 		if strings.HasSuffix(filename, "issue22662.go") {
 			t.Log("known gofmt idempotency bug (Issue #24472)")
 			return

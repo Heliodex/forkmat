@@ -10,8 +10,7 @@ import (
 	"testing"
 )
 
-// A file read from standard input has no file name on disk, but its own constants
-// still count, and no other file of its directory does.
+// A file read from standard input has no file name on disk, but its own constants still count, and no other file of its directory does.
 func TestSwitchCaseOrderStdin(t *testing.T) {
 	src := "package p\n\nconst (\n\tia = iota\n\tib\n)\n\nfunc f(k int) int {\n\tswitch k {\n\tcase ib:\n\t\treturn 2\n\tcase ia:\n\t\treturn 1\n\t}\n\treturn 0\n}\n"
 	file, err := parser.ParseFile(token.NewFileSet(), "<standard input>", src, parser.ParseComments|parser.SkipObjectResolution)
@@ -36,8 +35,7 @@ func TestSwitchCaseOrderStdin(t *testing.T) {
 	}
 }
 
-// caseOrder returns, for each switch of the file after switchCaseOrder, its
-// clauses' case expressions in order ("default" for the default clause).
+// caseOrder returns, for each switch of the file after switchCaseOrder, its clauses' case expressions in order ("default" for the default clause).
 func caseOrder(t *testing.T, filename, src string) []string {
 	t.Helper()
 
@@ -129,8 +127,7 @@ func TestSwitchCaseOrder(t *testing.T) {
 	}
 }
 
-// typeCases returns, for each type switch of src after switchCaseOrder, its
-// clauses' types in order ("default" for the default clause).
+// typeCases returns, for each type switch of src after switchCaseOrder, its clauses' types in order ("default" for the default clause).
 func typeCases(t *testing.T, src string) []string {
 	t.Helper()
 

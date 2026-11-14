@@ -1,7 +1,3 @@
-// Copyright 2009 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package main
 
 import (
@@ -16,10 +12,7 @@ import (
 	"unicode/utf8"
 )
 
-// parseExpr parses s as an expression.
-// It might make sense to expand this to allow statement patterns,
-// but there are problems with preserving formatting and also
-// with what a wildcard for a statement looks like.
+// parseExpr parses s as an expression. It might make sense to expand this to allow statement patterns, but there are problems with preserving formatting and also with what a wildcard for a statement looks like.
 func parseExpr(s, what string) ast.Expr {
 	x, err := parser.ParseExpr(s)
 	if err != nil {
@@ -113,30 +106,25 @@ var (
 	positionType = reflect.TypeFor[token.Pos]()
 	callExprType = reflect.TypeFor[*ast.CallExpr]()
 
-	// The types of ast.Ident.Obj and ast.File.Scope, reached through their
-	// fields so that the deprecated ast.Object and ast.Scope names are not used.
-	// Parsing skips object resolution, so these fields are always nil.
+	// The types of ast.Ident.Obj and ast.File.Scope, reached through their fields so that the deprecated ast.Object and ast.Scope names are not used. Parsing skips object resolution, so these fields are always nil.
 	objectPtrType = fieldType[ast.Ident]("Obj")
 	scopePtrType = fieldType[ast.File]("Scope")
 	objectPtrNil = reflect.Zero(objectPtrType)
 	scopePtrNil = reflect.Zero(scopePtrType)
 )
 
-// apply replaces each AST field x in val with f(x), returning val.
-// To avoid extra conversions, f operates on the reflect.Value form.
+// apply replaces each AST field x in val with f(x), returning val. To avoid extra conversions, f operates on the reflect.Value form.
 func apply(f func(reflect.Value) reflect.Value, val reflect.Value) reflect.Value {
 	if !val.IsValid() {
 		return reflect.Value{}
 	}
 
-	// *ast.Objects introduce cycles and are likely incorrect after
-	// rewrite; don't follow them but replace with nil instead
+	// *ast.Objects introduce cycles and are likely incorrect after rewrite; don't follow them but replace with nil instead
 	if val.Type() == objectPtrType {
 		return objectPtrNil
 	}
 
-	// similarly for scopes: they are likely incorrect after a rewrite;
-	// replace them with nil
+	// similarly for scopes: they are likely incorrect after a rewrite; replace them with nil
 	if val.Type() == scopePtrType {
 		return scopePtrNil
 	}
@@ -177,13 +165,9 @@ func isWildcard(s string) bool {
 	return size == len(s) && unicode.IsLower(rune)
 }
 
-// match reports whether pattern matches val,
-// recording wildcard submatches in m.
-// If m == nil, match checks whether pattern == val.
+// match reports whether pattern matches val, recording wildcard submatches in m. If m == nil, match checks whether pattern == val.
 func match(m map[string]reflect.Value, pattern, val reflect.Value) bool {
-	// Wildcard matches any expression. If it appears multiple
-	// times in the pattern, it must match the same expression
-	// each time.
+	// Wildcard matches any expression. If it appears multiple times in the pattern, it must match the same expression each time.
 	if m != nil && pattern.IsValid() && pattern.Type() == identType {
 		name := pattern.Interface().(*ast.Ident).Name
 		if isWildcard(name) && val.IsValid() {
@@ -212,10 +196,7 @@ func match(m map[string]reflect.Value, pattern, val reflect.Value) bool {
 	// Special cases.
 	switch pattern.Type() {
 	case identType:
-		// For identifiers, only the names need to match
-		// (and none of the other *ast.Object information).
-		// This is a common case, handle it all here instead
-		// of recursing down any further via reflection.
+		// For identifiers, only the names need to match (and none of the other *ast.Object information). This is a common case, handle it all here instead of recursing down any further via reflection.
 		p := pattern.Interface().(*ast.Ident)
 		v := val.Interface().(*ast.Ident)
 
@@ -224,9 +205,7 @@ func match(m map[string]reflect.Value, pattern, val reflect.Value) bool {
 		// object pointers and token positions always match
 		return true
 	case callExprType:
-		// For calls, the Ellipsis fields (token.Pos) must
-		// match since that is how f(x) and f(x...) are different.
-		// Check them here but fall through for the remaining fields.
+		// For calls, the Ellipsis fields (token.Pos) must match since that is how f(x) and f(x...) are different. Check them here but fall through for the remaining fields.
 		p := pattern.Interface().(*ast.CallExpr)
 		if v := val.Interface().(*ast.CallExpr); p.Ellipsis.IsValid() != v.Ellipsis.IsValid() {
 			return false
@@ -268,10 +247,7 @@ func match(m map[string]reflect.Value, pattern, val reflect.Value) bool {
 	return p.Interface() == v.Interface()
 }
 
-// subst returns a copy of pattern with values from m substituted in place
-// of wildcards and pos used as the position of tokens from the pattern.
-// if m == nil, subst returns a copy of pattern and doesn't change the line
-// number information.
+// subst returns a copy of pattern with values from m substituted in place of wildcards and pos used as the position of tokens from the pattern. if m == nil, subst returns a copy of pattern and doesn't change the line number information.
 func subst(m map[string]reflect.Value, pattern, pos reflect.Value) reflect.Value {
 	if !pattern.IsValid() {
 		return reflect.Value{}
@@ -299,9 +275,7 @@ func subst(m map[string]reflect.Value, pattern, pos reflect.Value) reflect.Value
 	switch p := pattern; p.Kind() {
 	case reflect.Slice:
 		if p.IsNil() {
-			// Do not turn nil slices into empty slices. go/ast
-			// guarantees that certain lists will be nil if not
-			// populated.
+			// Do not turn nil slices into empty slices. go/ast guarantees that certain lists will be nil if not populated.
 			return reflect.Zero(p.Type())
 		}
 

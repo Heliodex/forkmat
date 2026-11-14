@@ -1,7 +1,3 @@
-// Copyright 2009 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package main
 
 import (
@@ -44,8 +40,7 @@ type (
 		state *reporterState
 	}
 
-	// A sequencer performs concurrent tasks that may write output, but emits that
-	// output in a deterministic order.
+	// A sequencer performs concurrent tasks that may write output, but emits that output in a deterministic order.
 	sequencer struct {
 		sem *semaphore.Weighted // weighted by input bytes (an approximate proxy for memory overhead)
 		prev <-chan *reporterState // 1-buffered
@@ -82,8 +77,7 @@ const tabWidth = 8
 var printerMode = printer.UseSpaces | printer.TabIndent | printerNormalizeNumbers
 
 const (
-	// printerNormalizeNumbers means to canonicalize number literal prefixes
-	// and exponents while printing. See https://golang.org/doc/go1.13#gofmt.
+	// printerNormalizeNumbers means to canonicalize number literal prefixes and exponents while printing. See https://golang.org/doc/go1.13#gofmt.
 	//
 	// This value is defined in go/printer specifically for go/format and cmd/gofmt.
 	printerNormalizeNumbers = 1 << 30
@@ -91,12 +85,9 @@ const (
 
 // fdSem guards the number of concurrently-open file descriptors.
 //
-// For now, this is arbitrarily set to 200, based on the observation that many
-// platforms default to a kernel limit of 256. Ideally, perhaps we should derive
-// it from rlimit on platforms that support that system call.
+// For now, this is arbitrarily set to 200, based on the observation that many platforms default to a kernel limit of 256. Ideally, perhaps we should derive it from rlimit on platforms that support that system call.
 //
-// File descriptors opened from outside of this package are not tracked,
-// so this limit may be approximate.
+// File descriptors opened from outside of this package are not tracked, so this limit may be approximate.
 var fdSem = make(chan bool, 200)
 
 var (
@@ -110,8 +101,7 @@ func initParserMode() {
 	if *allErrors {
 		parserMode |= parser.AllErrors
 	}
-	// It's only -r that makes use of go/ast's object resolution,
-	// so avoid the unnecessary work if the flag isn't used.
+	// It's only -r that makes use of go/ast's object resolution, so avoid the unnecessary work if the flag isn't used.
 	if *rewriteRule == "" {
 		parserMode |= parser.SkipObjectResolution
 	}
@@ -121,8 +111,7 @@ func isGoFilename(name string) bool {
 	return !strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".go")
 }
 
-// newSequencer returns a sequencer that allows concurrent tasks up to maxWeight
-// and writes tasks' output to out and err.
+// newSequencer returns a sequencer that allows concurrent tasks up to maxWeight and writes tasks' output to out and err.
 func newSequencer(maxWeight int64, out, err io.Writer) *sequencer {
 	sem := semaphore.NewWeighted(maxWeight)
 	prev := make(chan *reporterState, 1)
@@ -143,12 +132,10 @@ func usage() {
 	flag.PrintDefaults()
 }
 
-// exclusive is a weight that can be passed to a sequencer to cause
-// a task to be executed without any other concurrent tasks.
+// exclusive is a weight that can be passed to a sequencer to cause a task to be executed without any other concurrent tasks.
 const exclusive = -1
 
-// getState blocks until any prior reporters are finished with the reporter
-// state, then returns the state for manipulation.
+// getState blocks until any prior reporters are finished with the reporter state, then returns the state for manipulation.
 func (r *reporter) getState() *reporterState {
 	if r.state == nil {
 		r.state = <-r.prev
@@ -161,8 +148,7 @@ func (r *reporter) ExitCode() int {
 	return r.getState().exitCode
 }
 
-// Report emits a non-nil error to the reporter's error stream,
-// changing its exit code to a nonzero value.
+// Report emits a non-nil error to the reporter's error stream, changing its exit code to a nonzero value.
 func (r *reporter) Report(err error) {
 	if err == nil {
 		panic("Report with nil error")
@@ -177,36 +163,27 @@ func (r *reporter) Report(err error) {
 	}
 }
 
-// Warnf emits a warning message to the reporter's error stream,
-// without changing its exit code.
+// Warnf emits a warning message to the reporter's error stream, without changing its exit code.
 func (r *reporter) Warnf(format string, args ...any) {
 	fmt.Fprintf(r.getState().err, format, args...)
 }
 
 // Write emits a slice to the reporter's output stream.
 //
-// Any error is returned to the caller, and does not otherwise affect the
-// reporter's exit code.
+// Any error is returned to the caller, and does not otherwise affect the reporter's exit code.
 func (r *reporter) Write(p []byte) (int, error) {
 	return r.getState().out.Write(p)
 }
 
-// Add blocks until the sequencer has enough weight to spare, then adds f as a
-// task to be executed concurrently.
+// Add blocks until the sequencer has enough weight to spare, then adds f as a task to be executed concurrently.
 //
-// If the weight is either negative or larger than the sequencer's maximum
-// weight, Add blocks until all other tasks have completed, then the task
-// executes exclusively (blocking all other calls to Add until it completes).
+// If the weight is either negative or larger than the sequencer's maximum weight, Add blocks until all other tasks have completed, then the task executes exclusively (blocking all other calls to Add until it completes).
 //
-// f may run concurrently in a goroutine, but its output to the passed-in
-// reporter will be sequential relative to the other tasks in the sequencer.
+// f may run concurrently in a goroutine, but its output to the passed-in reporter will be sequential relative to the other tasks in the sequencer.
 //
-// If f invokes a method on the reporter, execution of that method may block
-// until the previous task has finished. (To maximize concurrency, f should
-// avoid invoking the reporter until it has finished any parallelizable work.)
+// If f invokes a method on the reporter, execution of that method may block until the previous task has finished. (To maximize concurrency, f should avoid invoking the reporter until it has finished any parallelizable work.)
 //
-// If f returns a non-nil error, that error will be reported after f's output
-// (if any) and will cause a nonzero final exit code.
+// If f returns a non-nil error, that error will be reported after f's output (if any) and will cause a nonzero final exit code.
 func (s *sequencer) Add(weight int64, f func(*reporter) error) {
 	if weight < 0 || weight > s.maxWeight {
 		weight = s.maxWeight
@@ -226,8 +203,7 @@ func (s *sequencer) Add(weight int64, f func(*reporter) error) {
 	}
 	s.prev = next
 
-	// Start f in parallel: it can run until it invokes a method on r, at which
-	// point it will block until the previous task releases the output state.
+	// Start f in parallel: it can run until it invokes a method on r, at which point it will block until the previous task releases the output state.
 	go func() {
 		if err := f(r); err != nil {
 			r.Report(err)
@@ -238,16 +214,14 @@ func (s *sequencer) Add(weight int64, f func(*reporter) error) {
 	}()
 }
 
-// AddReport prints an error to s after the output of any previously-added
-// tasks, causing the final exit code to be nonzero.
+// AddReport prints an error to s after the output of any previously-added tasks, causing the final exit code to be nonzero.
 func (s *sequencer) AddReport(err error) {
 	s.Add(0, func(*reporter) error {
 		return err
 	})
 }
 
-// GetExitCode waits for all previously-added tasks to complete, then returns an
-// exit code for the sequence suitable for passing to os.Exit.
+// GetExitCode waits for all previously-added tasks to complete, then returns an exit code for the sequence suitable for passing to os.Exit.
 func (s *sequencer) GetExitCode() int {
 	c := make(chan int, 1)
 
@@ -259,9 +233,7 @@ func (s *sequencer) GetExitCode() int {
 	return <-c
 }
 
-// backupFile writes data to a new file named filename<number> with permissions perm,
-// with <number> randomly chosen such that the file name is unique. backupFile returns
-// the chosen file name.
+// backupFile writes data to a new file named filename<number> with permissions perm, with <number> randomly chosen such that the file name is unique. backupFile returns the chosen file name.
 func backupFile(filename string, data []byte, perm fs.FileMode) (string, error) {
 	fdSem <- true
 
@@ -320,18 +292,14 @@ func fileWeight(path string, info fs.FileInfo) int64 {
 	}
 
 	if !info.Mode().IsRegular() {
-		// For non-regular files, FileInfo.Size is system-dependent and thus not a
-		// reliable indicator of weight.
+		// For non-regular files, FileInfo.Size is system-dependent and thus not a reliable indicator of weight.
 		return exclusive
 	}
 
 	return info.Size()
 }
 
-// readFile reads the contents of filename, described by info.
-// If in is non-nil, readFile reads directly from it.
-// Otherwise, readFile opens and reads the file itself,
-// with the number of concurrently-open files limited by fdSem.
+// readFile reads the contents of filename, described by info. If in is non-nil, readFile reads directly from it. Otherwise, readFile opens and reads the file itself, with the number of concurrently-open files limited by fdSem.
 func readFile(filename string, info fs.FileInfo, in io.Reader) ([]byte, error) {
 	if in == nil {
 		fdSem <- true
@@ -352,11 +320,9 @@ func readFile(filename string, info fs.FileInfo, in io.Reader) ([]byte, error) {
 
 	// Compute the file's size and read its contents with minimal allocations.
 	//
-	// If we have the FileInfo from filepath.WalkDir, use it to make
-	// a buffer of the right size and avoid ReadAll's reallocations.
+	// If we have the FileInfo from filepath.WalkDir, use it to make a buffer of the right size and avoid ReadAll's reallocations.
 	//
-	// If the size is unknown (or bogus, or overflows an int), fall back to
-	// a size-independent ReadAll.
+	// If the size is unknown (or bogus, or overflows an int), fall back to a size-independent ReadAll.
 	size := -1
 
 	if info != nil && info.Mode().IsRegular() && int64(int(info.Size())) == info.Size() {
@@ -375,20 +341,13 @@ func readFile(filename string, info fs.FileInfo, in io.Reader) ([]byte, error) {
 		return src, nil
 	}
 
-	// We try to read size+1 bytes so that we can detect modifications: if we
-	// read more than size bytes, then the file was modified concurrently.
-	// (If that happens, we could, say, append to src to finish the read, or
-	// proceed with a truncated buffer — but the fact that it changed at all
-	// indicates a possible race with someone editing the file, so we prefer to
-	// stop to avoid corrupting it.)
+	// We try to read size+1 bytes so that we can detect modifications: if we read more than size bytes, then the file was modified concurrently. (If that happens, we could, say, append to src to finish the read, or proceed with a truncated buffer — but the fact that it changed at all indicates a possible race with someone editing the file, so we prefer to stop to avoid corrupting it.)
 	src := make([]byte, size+1)
 	n, err := io.ReadFull(in, src)
 
 	switch err {
 	case nil, io.EOF, io.ErrUnexpectedEOF:
-		// io.ReadFull returns io.EOF (for an empty file) or io.ErrUnexpectedEOF
-		// (for a non-empty file) if the file was changed unexpectedly. Continue
-		// with comparing file sizes in those cases.
+		// io.ReadFull returns io.EOF (for an empty file) or io.ErrUnexpectedEOF (for a non-empty file) if the file was changed unexpectedly. Continue with comparing file sizes in those cases.
 	default:
 		return nil, err
 	}
@@ -418,8 +377,7 @@ func writeFile(filename string, orig, formatted []byte, perm fs.FileMode) error 
 
 	fout, err := os.OpenFile(filename, os.O_WRONLY, perm)
 	if err != nil {
-		// We couldn't even open the file, so it should
-		// not have changed.
+		// We couldn't even open the file, so it should not have changed.
 		os.Remove(bakname)
 		return err
 	}
@@ -480,8 +438,7 @@ func writeFile(filename string, orig, formatted []byte, perm fs.FileMode) error 
 	return nil
 }
 
-// If info == nil, we are formatting stdin instead of a file.
-// If in == nil, the source is the contents of the file with the given filename.
+// If info == nil, we are formatting stdin instead of a file. If in == nil, the source is the contents of the file with the given filename.
 func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) error {
 	src, err := readFile(filename, info, in)
 	if err != nil {
@@ -489,8 +446,7 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 	}
 
 	fileSet := token.NewFileSet()
-	// If we are formatting stdin, we accept a program fragment in lieu of a
-	// complete source file.
+	// If we are formatting stdin, we accept a program fragment in lieu of a complete source file.
 	fragmentOk := info == nil
 	file, sourceAdj, indentAdj, err := parse(fileSet, filename, src, fragmentOk)
 	if err != nil {
@@ -502,8 +458,7 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 	}
 
 	if *strict && sourceAdj == nil {
-		// -strict also reorders declarations below the ones they depend on
-		// (see reorder.go). The reordered source is parsed again, for printing.
+		// -strict also reorders declarations below the ones they depend on (see reorder.go). The reordered source is parsed again, for printing.
 		if reordered := reorderSource(filename, src); !bytes.Equal(reordered, src) {
 			if file, err = parser.ParseFile(fileSet, filename, reordered, parserMode); err != nil {
 				return err
@@ -516,14 +471,12 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 	}
 
 	if *strict && sourceAdj == nil {
-		// -strict puts the keys of struct literals in declaration order (see
-		// structorder.go)
+		// -strict puts the keys of struct literals in declaration order (see structorder.go)
 		structLiteralOrder(filename, file)
 	}
 
 	if *strict && sourceAdj == nil {
-		// -strict orders the cases of a switch over iota constants by declaration
-		// (see switchorder.go)
+		// -strict orders the cases of a switch over iota constants by declaration (see switchorder.go)
 		switchCaseOrder(filename, file)
 	}
 
@@ -641,9 +594,7 @@ func gofmtMain(s *sequencer) {
 	}
 
 	for _, arg := range args {
-		// Walk each given argument as a directory tree.
-		// If the argument is not a directory, it's always formatted as a Go file.
-		// If the argument is a directory, we walk it, ignoring non-Go files.
+		// Walk each given argument as a directory tree. If the argument is not a directory, it's always formatted as a Go file. If the argument is a directory, we walk it, ignoring non-Go files.
 		if err := filepath.WalkDir(arg, func(path string, d fs.DirEntry, err error) error {
 			switch {
 			case err != nil:
@@ -673,15 +624,11 @@ func gofmtMain(s *sequencer) {
 func main() {
 	// Arbitrarily limit in-flight work to 2MiB times the number of threads.
 	//
-	// The actual overhead for the parse tree and output will depend on the
-	// specifics of the file, but this at least keeps the footprint of the process
-	// roughly proportional to GOMAXPROCS.
+	// The actual overhead for the parse tree and output will depend on the specifics of the file, but this at least keeps the footprint of the process roughly proportional to GOMAXPROCS.
 	maxWeight := 2 << 20 * int64(runtime.GOMAXPROCS(0))
 	s := newSequencer(maxWeight, os.Stdout, os.Stderr)
 
-	// call gofmtMain in a separate function
-	// so that it can use defer and have them
-	// run before the exit.
+	// call gofmtMain in a separate function so that it can use defer and have them run before the exit.
 	gofmtMain(s)
 	os.Exit(s.GetExitCode())
 }

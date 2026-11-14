@@ -12,43 +12,26 @@ import (
 )
 
 type (
-	// mapKey is the sort key of a map literal's key: its rank, which orders the kinds,
-	// and its value.
+	// mapKey is the sort key of a map literal's key: its rank, which orders the kinds, and its value.
 	mapKey struct {
 		rank int
 		key any
 	}
 
-	// stmtKind classifies a statement for the blank lines of StrictLayout. A run
-	// of statements of one kind is printed without blank lines; two adjacent
-	// statements of different kinds are set off by one.
+	// stmtKind classifies a statement for the blank lines of StrictLayout. A run of statements of one kind is printed without blank lines; two adjacent statements of different kinds are set off by one.
 	stmtKind int
 )
 
-// Rules for StrictLayout. The source's line breaks are never consulted, except
-// for comments:
+// Rules for StrictLayout. The source's line breaks are never consulted, except for comments:
 //
-//   - Expression lists (call arguments, right-hand sides, parameters, results)
-//     are one line. A composite literal is one line if it fits in
-//     strictMaxSize characters and has no comments; otherwise each element is
-//     on its own line.
+//   - Expression lists (call arguments, right-hand sides, parameters, results) are one line. A composite literal is one line if it fits in strictMaxSize characters and has no comments; otherwise each element is on its own line.
 //   - Binary expressions and selector chains are never broken.
-//   - Struct and interface bodies are one line only when empty; otherwise each
-//     member is on its own line.
-//   - Statements are one per line. A blank line goes between two statements
-//     when one of them is a block statement (if, for, range, switch, select,
-//     or a bare block), a return, or a grouped var declaration, unless the
-//     other is a call statement. Calls, assignments, const declarations and
-//     var declarations form runs: a blank line goes between two adjacent
-//     statements of different kinds, and none within a run.
-//   - Top-level declarations are separated by a blank line when the token
-//     changes, when the next declaration has a doc comment, or when either
-//     declaration spans several lines (a grouped declaration, or a function
-//     with statements in its body).
+//   - Struct and interface bodies are one line only when empty; otherwise each member is on its own line.
+//   - Statements are one per line. A blank line goes between two statements when one of them is a block statement (if, for, range, switch, select, or a bare block), a return, or a grouped var declaration, unless the other is a call statement. Calls, assignments, const declarations and var declarations form runs: a blank line goes between two adjacent statements of different kinds, and none within a run.
+//   - Top-level declarations are separated by a blank line when the token changes, when the next declaration has a doc comment, or when either declaration spans several lines (a grouped declaration, or a function with statements in its body).
 //   - A function body with statements is always multi-line.
 
-// strictMaxSize is the width, in characters, of a composite literal that may
-// stay on one line.
+// strictMaxSize is the width, in characters, of a composite literal that may stay on one line.
 const strictMaxSize = 100
 
 // elemSpan returns the source range of e as it prints under StrictLayout.
@@ -56,13 +39,9 @@ func (p *printer) elemSpan(e ast.Expr) (token.Pos, token.Pos) {
 	return leftmostPos(e, token.LowestPrec), e.End()
 }
 
-// listHasComment reports whether a comment sits between the tokens of a list:
-// after the opening token prev0 (if known), between two elements, or before
-// the closing token next0 (if known). Comments nested inside an element do not
-// count, since they are that element's business.
+// listHasComment reports whether a comment sits between the tokens of a list: after the opening token prev0 (if known), between two elements, or before the closing token next0 (if known). Comments nested inside an element do not count, since they are that element's business.
 func (p *printer) listHasComment(list []ast.Expr, prev0, next0 token.Pos) bool {
-	// Each element is measured as it prints: a parenthesized element whose
-	// parentheses are dropped starts at its content.
+	// Each element is measured as it prints: a parenthesized element whose parentheses are dropped starts at its content.
 	first, _ := p.elemSpan(list[0])
 	from := first
 
@@ -96,10 +75,7 @@ func (p *printer) strict() bool {
 	return p.Mode&StrictLayout != 0
 }
 
-// layoutLine returns the line argument for linebreak. Without StrictLayout it
-// is the source line of pos. With StrictLayout it is gap lines below the
-// current position, so that linebreak prints exactly gap newlines (gap is at
-// most maxNewlines, which is the same cap the source would get).
+// layoutLine returns the line argument for linebreak. Without StrictLayout it is the source line of pos. With StrictLayout it is gap lines below the current position, so that linebreak prints exactly gap newlines (gap is at most maxNewlines, which is the same cap the source would get).
 func (p *printer) layoutLine(pos token.Pos, gap int) int {
 	if p.strict() {
 		return p.pos.Line + gap
@@ -108,10 +84,7 @@ func (p *printer) layoutLine(pos token.Pos, gap int) int {
 	return p.lineFor(pos)
 }
 
-// measured returns what to print to measure n. Under StrictLayout that is n
-// with the comments inside it: a comment can force line breaks, so a node
-// without its comments would be measured too small. Without StrictLayout it
-// is n itself, so the default layout is unchanged.
+// measured returns what to print to measure n. Under StrictLayout that is n with the comments inside it: a comment can force line breaks, so a node without its comments would be measured too small. Without StrictLayout it is n itself, so the default layout is unchanged.
 func (p *printer) measured(n ast.Node) any {
 	if !p.strict() {
 		return n
@@ -137,10 +110,7 @@ func (p *printer) measured(n ast.Node) any {
 	}
 }
 
-// sizeConfig is the configuration nodes are printed with to measure them.
-// Sizes are cached per node (p.nodeSizes), so every measurement must use the
-// same configuration. Under StrictLayout the measured text is that of the
-// output, so number literals are spelled as they will be printed.
+// sizeConfig is the configuration nodes are printed with to measure them. Sizes are cached per node (p.nodeSizes), so every measurement must use the same configuration. Under StrictLayout the measured text is that of the output, so number literals are spelled as they will be printed.
 func (p *printer) sizeConfig() Config {
 	if p.strict() {
 		return Config{
@@ -153,11 +123,7 @@ func (p *printer) sizeConfig() Config {
 	}
 }
 
-// strictExprList prints an expression list under StrictLayout. Without the
-// strictBreak mode the list is printed on one line. With it, each element is
-// printed on its own line, and a trailing comma is added if commaTerm is set.
-// A list with a comment in it is always broken, since a line comment cannot
-// share a line with the code after it.
+// strictExprList prints an expression list under StrictLayout. Without the strictBreak mode the list is printed on one line. With it, each element is printed on its own line, and a trailing comma is added if commaTerm is set. A list with a comment in it is always broken, since a line comment cannot share a line with the code after it.
 func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode, prev0, next0 token.Pos) {
 	if p.listHasComment(list, prev0, next0) {
 		mode |= strictBreak
@@ -184,8 +150,7 @@ func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode, 
 		if i > 0 {
 			p.print(token.COMMA)
 		}
-		// Without an opening token there is no line break before the first
-		// element: after "return" a newline would end the statement.
+		// Without an opening token there is no line break before the first element: after "return" a newline would end the statement.
 		if i > 0 || prev0.IsValid() {
 			p.linebreak(p.pos.Line+1, 1, ws, i == 0)
 
@@ -208,9 +173,7 @@ func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode, 
 	}
 }
 
-// leftmostPos returns the position of the first token of e when it prints
-// under StrictLayout. That can differ from e.Pos(): if the parentheses around
-// the leftmost operand are dropped, the operand starts the expression.
+// leftmostPos returns the position of the first token of e when it prints under StrictLayout. That can differ from e.Pos(): if the parentheses around the leftmost operand are dropped, the operand starts the expression.
 func leftmostPos(e ast.Expr, prec int) token.Pos {
 	e = strictOperand(e, prec)
 
@@ -246,15 +209,7 @@ func (p *printer) commentIn(from, to token.Pos) bool {
 	return i < len(cs) && cs[i].Pos() < to
 }
 
-// strictSortedMapElts returns the elements of a map literal ordered by key. The
-// literal is a map when every key is a literal of a basic type (nil, true or
-// false, a number, or a string), since a struct names its fields with identifiers
-// and an other key is not known to be a literal. Keys are grouped by kind, in the
-// order nil, booleans, numbers, strings, and within a kind are sorted: booleans
-// false before true, numbers from the least, strings alphabetically. A map with
-// keys of one kind is sorted the same way. The elements are reordered only when
-// the literal has no comment, and every value is free of calls and receives,
-// which Go evaluates in order. Otherwise the elements are returned as they are.
+// strictSortedMapElts returns the elements of a map literal ordered by key. The literal is a map when every key is a literal of a basic type (nil, true or false, a number, or a string), since a struct names its fields with identifiers and an other key is not known to be a literal. Keys are grouped by kind, in the order nil, booleans, numbers, strings, and within a kind are sorted: booleans false before true, numbers from the least, strings alphabetically. A map with keys of one kind is sorted the same way. The elements are reordered only when the literal has no comment, and every value is free of calls and receives, which Go evaluates in order. Otherwise the elements are returned as they are.
 func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 	if len(x.Elts) < 2 || p.commentIn(x.Lbrace, x.Rbrace) {
 		return x.Elts
@@ -266,9 +221,7 @@ func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 		elt ast.Expr
 	}
 	elts := make([]keyed, 0, len(x.Elts))
-	// a literal with only identifier keys may be a struct, whose fields are put in
-	// declaration order by gofmt (see structorder.go): it is a map only if some
-	// key is a literal
+	// a literal with only identifier keys may be a struct, whose fields are put in declaration order by gofmt (see structorder.go): it is a map only if some key is a literal
 	var literal bool
 
 	for _, e := range x.Elts {
@@ -333,8 +286,7 @@ func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 	return out
 }
 
-// The ranks that mapKeyOf gives a key: nil, booleans, numbers, strings, and then
-// names, which are constants or variables.
+// The ranks that mapKeyOf gives a key: nil, booleans, numbers, strings, and then names, which are constants or variables.
 const (
 	rankNil = iota
 	rankBool
@@ -343,8 +295,7 @@ const (
 	rankName
 )
 
-// mapKeyOf returns the sort key of a map key, or false if the key is neither a
-// literal of a basic type nor an identifier.
+// mapKeyOf returns the sort key of a map key, or false if the key is neither a literal of a basic type nor an identifier.
 func mapKeyOf(e ast.Expr) (mapKey, bool) {
 	switch x := e.(type) {
 	case *ast.BasicLit:
@@ -393,9 +344,7 @@ func mapKeyOf(e ast.Expr) (mapKey, bool) {
 	return mapKey{}, false
 }
 
-// pureValue reports whether evaluating e has no side effects: it has no call,
-// other than a conversion to a predeclared type, make or new, no receive, and no
-// function literal.
+// pureValue reports whether evaluating e has no side effects: it has no call, other than a conversion to a predeclared type, make or new, no receive, and no function literal.
 func pureValue(e ast.Expr) bool {
 	pure := true
 
@@ -441,8 +390,7 @@ var pureTypeNames = map[string]bool{
 	"uintptr": true,
 }
 
-// numberLiteral returns the value of an integer or floating-point literal, with an
-// optional minus sign, or nil if e is anything else.
+// numberLiteral returns the value of an integer or floating-point literal, with an optional minus sign, or nil if e is anything else.
 func numberLiteral(e ast.Expr) constant.Value {
 	switch x := e.(type) {
 	case *ast.BasicLit:
@@ -470,11 +418,7 @@ func numberLiteral(e ast.Expr) constant.Value {
 	return nil
 }
 
-// strictFitsOneLine reports whether a composite literal is printed on one
-// line under StrictLayout: it has no comments, and its type and elements each
-// fit, with the whole literal within strictMaxSize. A literal that initialises
-// fields by name (T{X: 1}) is never on one line, unless its type is a map type,
-// whose keys are not fields.
+// strictFitsOneLine reports whether a composite literal is printed on one line under StrictLayout: it has no comments, and its type and elements each fit, with the whole literal within strictMaxSize. A literal that initialises fields by name (T{X: 1}) is never on one line, unless its type is a map type, whose keys are not fields.
 func (p *printer) strictFitsOneLine(x *ast.CompositeLit) bool {
 	if x.Incomplete || p.commentBefore(p.posFor(x.Rbrace)) {
 		return false
@@ -510,15 +454,12 @@ func (p *printer) strictFitsOneLine(x *ast.CompositeLit) bool {
 	return size <= strictMaxSize
 }
 
-// strictSingleSpec reports whether a parenthesized declaration with one spec is
-// printed without its parentheses under StrictLayout: a group of one spec, with no
-// comment inside its parentheses, reads as the single declaration it holds.
+// strictSingleSpec reports whether a parenthesized declaration with one spec is printed without its parentheses under StrictLayout: a group of one spec, with no comment inside its parentheses, reads as the single declaration it holds.
 func (p *printer) strictSingleSpec(d *ast.GenDecl) bool {
 	return p.strict() && len(d.Specs) == 1 && !p.commentIn(d.Lparen, d.Rparen)
 }
 
-// hasKeyedElt reports whether any element of a composite literal is a key: value
-// pair.
+// hasKeyedElt reports whether any element of a composite literal is a key: value pair.
 func hasKeyedElt(elts []ast.Expr) bool {
 	for _, e := range elts {
 		if _, ok := e.(*ast.KeyValueExpr); ok {
@@ -565,8 +506,7 @@ func kindOf(s ast.Stmt) stmtKind {
 	return kindNone
 }
 
-// blankStmt reports whether s gets a blank line on either side under
-// StrictLayout (unless its neighbour is a call statement).
+// blankStmt reports whether s gets a blank line on either side under StrictLayout (unless its neighbour is a call statement).
 func (p *printer) blankStmt(s ast.Stmt) bool {
 	switch s := s.(type) {
 	case *ast.BlockStmt, *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.ReturnStmt:
@@ -580,16 +520,13 @@ func (p *printer) blankStmt(s ast.Stmt) bool {
 	return false
 }
 
-// blankLineBetween reports whether StrictLayout puts a blank line between two
-// adjacent statements.
+// blankLineBetween reports whether StrictLayout puts a blank line between two adjacent statements.
 func (p *printer) blankLineBetween(prev, next ast.Stmt) bool {
-	// A run of go and defer statements is set off from the statements around
-	// it, but its members are not separated from each other.
+	// A run of go and defer statements is set off from the statements around it, but its members are not separated from each other.
 	if isGoOrDefer(prev) || isGoOrDefer(next) {
 		return !(isGoOrDefer(prev) && isGoOrDefer(next))
 	}
-	// An if statement whose condition uses a name that the statement before it
-	// declares stays with that declaration.
+	// An if statement whose condition uses a name that the statement before it declares stays with that declaration.
 	if declaresUsedBy(prev, next) {
 		return false
 	}
@@ -597,17 +534,13 @@ func (p *printer) blankLineBetween(prev, next ast.Stmt) bool {
 	if p.blankStmt(prev) || p.blankStmt(next) {
 		return !isCallStmt(prev) && !isCallStmt(next)
 	}
-	// Calls, assignments, and const and var declarations are each set off from
-	// the others. A statement of kindNone is never set off by this rule.
+	// Calls, assignments, and const and var declarations are each set off from the others. A statement of kindNone is never set off by this rule.
 	kp, kn := kindOf(prev), kindOf(next)
 
 	return kp != kindNone && kn != kindNone && kp != kn
 }
 
-// declaresUsedBy reports whether next is an if statement whose condition uses a
-// name that prev declares, with := or a var declaration. Names are compared by
-// spelling, so a shadowing name counts as a use: the blank line is only a
-// layout choice.
+// declaresUsedBy reports whether next is an if statement whose condition uses a name that prev declares, with := or a var declaration. Names are compared by spelling, so a shadowing name counts as a use: the blank line is only a layout choice.
 func declaresUsedBy(prev, next ast.Stmt) bool {
 	is, ok := next.(*ast.IfStmt)
 	if !ok {
@@ -663,8 +596,7 @@ func isGoOrDefer(s ast.Stmt) bool {
 	return false
 }
 
-// printsLines reports whether n is printed over several lines under
-// StrictLayout. Unlike nodeSize it is not limited to a width.
+// printsLines reports whether n is printed over several lines under StrictLayout. Unlike nodeSize it is not limited to a width.
 func (p *printer) printsLines(n ast.Node) bool {
 	cfg := p.sizeConfig()
 
@@ -677,10 +609,7 @@ func (p *printer) printsLines(n ast.Node) bool {
 	return counter.hasNewline
 }
 
-// multiLineDecl reports whether a declaration is printed over several lines
-// under StrictLayout (a grouped declaration, a function with statements, a
-// multi-line type or call, and so on). It is decided by printing the node, so
-// that it follows the same rules as the output.
+// multiLineDecl reports whether a declaration is printed over several lines under StrictLayout (a grouped declaration, a function with statements, a multi-line type or call, and so on). It is decided by printing the node, so that it follows the same rules as the output.
 func (p *printer) multiLineDecl(d ast.Decl) bool {
 	if d == nil {
 		return false // no previous declaration
@@ -689,10 +618,7 @@ func (p *printer) multiLineDecl(d ast.Decl) bool {
 	return p.printsLines(d)
 }
 
-// strictParenExpr prints a parenthesized expression under StrictLayout. The
-// parentheses are dropped when the precedence of the context already groups
-// the expression (see needsParens), and any chain of parentheses collapses to
-// a single pair.
+// strictParenExpr prints a parenthesized expression under StrictLayout. The parentheses are dropped when the precedence of the context already groups the expression (see needsParens), and any chain of parentheses collapses to a single pair.
 func (p *printer) strictParenExpr(x *ast.ParenExpr, prec1, depth int) {
 	inner := x.X
 
@@ -715,8 +641,7 @@ func (p *printer) strictParenExpr(x *ast.ParenExpr, prec1, depth int) {
 	p.print(token.RPAREN)
 }
 
-// hasCompositeLit reports whether x holds a composite literal that is not
-// enclosed in parentheses of its own.
+// hasCompositeLit reports whether x holds a composite literal that is not enclosed in parentheses of its own.
 func hasCompositeLit(x ast.Expr) bool {
 	var found bool
 
@@ -733,12 +658,7 @@ func hasCompositeLit(x ast.Expr) bool {
 	return found
 }
 
-// needsParens reports whether x, printed where an operator of precedence prec1
-// binds, must keep parentheses. Primary expressions never need them. Types,
-// composite and function literals, and unary <- and ~ always keep theirs: for
-// those, dropping the parentheses could change how the code parses. A
-// parenthesized composite literal also keeps its parentheses wherever one
-// appears inside, so that a control clause still parses.
+// needsParens reports whether x, printed where an operator of precedence prec1 binds, must keep parentheses. Primary expressions never need them. Types, composite and function literals, and unary <- and ~ always keep theirs: for those, dropping the parentheses could change how the code parses. A parenthesized composite literal also keeps its parentheses wherever one appears inside, so that a control clause still parses.
 func needsParens(x ast.Expr, prec1 int) bool {
 	if hasCompositeLit(x) {
 		return true
@@ -758,9 +678,7 @@ func needsParens(x ast.Expr, prec1 int) bool {
 	return true
 }
 
-// strictOperand returns the operand e as it prints under StrictLayout when it
-// is an operand of an operator of precedence prec1: if its parentheses are
-// dropped, the parenthesized expression itself, otherwise e.
+// strictOperand returns the operand e as it prints under StrictLayout when it is an operand of an operator of precedence prec1: if its parentheses are dropped, the parenthesized expression itself, otherwise e.
 func strictOperand(e ast.Expr, prec1 int) ast.Expr {
 	px, ok := e.(*ast.ParenExpr)
 	if !ok {
@@ -785,9 +703,7 @@ func strictOperand(e ast.Expr, prec1 int) ast.Expr {
 	return inner
 }
 
-// afterOpenBrace reports whether the last token written, ignoring white space,
-// is an opening brace. The printer's lastTok does not serve here: white space
-// clears it.
+// afterOpenBrace reports whether the last token written, ignoring white space, is an opening brace. The printer's lastTok does not serve here: white space clears it.
 func (p *printer) afterOpenBrace() bool {
 	for _, c := range slices.Backward(p.output) {
 		switch c {
@@ -801,8 +717,7 @@ func (p *printer) afterOpenBrace() bool {
 	return false
 }
 
-// commentInExcepts reports whether a comment starts in the source range [from, to),
-// other than the comment groups in except, which are printed where they stand.
+// commentInExcepts reports whether a comment starts in the source range [from, to), other than the comment groups in except, which are printed where they stand.
 func (p *printer) commentInExcepts(from, to token.Pos, except []*ast.CommentGroup) bool {
 	cs := p.allComments
 	i := sort.Search(len(cs), func(i int) bool {
@@ -818,14 +733,12 @@ func (p *printer) commentInExcepts(from, to token.Pos, except []*ast.CommentGrou
 	return false
 }
 
-// commentInExcept reports whether a comment starts in the source range [from, to),
-// other than the comment group except, which is printed where it stands.
+// commentInExcept reports whether a comment starts in the source range [from, to), other than the comment group except, which is printed where it stands.
 func (p *printer) commentInExcept(from, to token.Pos, except *ast.CommentGroup) bool {
 	return p.commentInExcepts(from, to, []*ast.CommentGroup{except})
 }
 
-// sameType reports whether a and b print the same type, with no comment in
-// either.
+// sameType reports whether a and b print the same type, with no comment in either.
 func (p *printer) sameType(a, b ast.Expr) bool {
 	if p.commentIn(a.Pos(), a.End()) || p.commentIn(b.Pos(), b.End()) {
 		return false
@@ -851,10 +764,7 @@ func (p *printer) mergeable(prev, cur *ast.Field) bool {
 	return !p.commentInExcept(prev.End(), cur.Pos(), prev.Comment) && p.sameType(prev.Type, cur.Type)
 }
 
-// strictFields returns the fields of a parameter or struct list as they print
-// under StrictLayout. Consecutive named fields of the same type are merged into
-// one field with several names: x int, y int becomes x, y int. Fields with a
-// tag or a comment, or with a comment between them, are not merged.
+// strictFields returns the fields of a parameter or struct list as they print under StrictLayout. Consecutive named fields of the same type are merged into one field with several names: x int, y int becomes x, y int. Fields with a tag or a comment, or with a comment between them, are not merged.
 func (p *printer) strictFields(list []*ast.Field) []*ast.Field {
 	if !p.strict() || len(list) < 2 {
 		return list
@@ -881,8 +791,7 @@ func (p *printer) strictFields(list []*ast.Field) []*ast.Field {
 	return out
 }
 
-// groupDecls joins a run of single var declarations into one parenthesized
-// declaration.
+// groupDecls joins a run of single var declarations into one parenthesized declaration.
 func groupDecls(run []*ast.GenDecl) *ast.GenDecl {
 	var specs []ast.Spec
 
@@ -926,9 +835,7 @@ func usesIota(d *ast.GenDecl) bool {
 	return found
 }
 
-// constJoinable reports whether a const declaration can join a group. Its specs
-// must all have values, since a spec without one repeats the value before it,
-// and no value may use iota, which counts the specs of a group.
+// constJoinable reports whether a const declaration can join a group. Its specs must all have values, since a spec without one repeats the value before it, and no value may use iota, which counts the specs of a group.
 func constJoinable(g *ast.GenDecl) bool {
 	for _, sp := range g.Specs {
 		if len(sp.(*ast.ValueSpec).Values) == 0 {
@@ -939,12 +846,7 @@ func constJoinable(g *ast.GenDecl) bool {
 	return !usesIota(g)
 }
 
-// singleDecl returns d if it can join a run of declarations of its token: an
-// ungrouped var or const declaration of one spec with no comment, or a var
-// group, whose specs can be joined with others without changing their meaning.
-// A const declaration is joined only if its values do not use iota: iota
-// counts the specs of a group, so grouping such a const would change its value.
-// A const group is never joined. A doc comment on the declaration keeps it apart.
+// singleDecl returns d if it can join a run of declarations of its token: an ungrouped var or const declaration of one spec with no comment, or a var group, whose specs can be joined with others without changing their meaning. A const declaration is joined only if its values do not use iota: iota counts the specs of a group, so grouping such a const would change its value. A const group is never joined. A doc comment on the declaration keeps it apart.
 func singleDecl(d *ast.GenDecl) *ast.GenDecl {
 	if d == nil || d.Doc != nil {
 		return nil
@@ -975,8 +877,7 @@ func singleDecl(d *ast.GenDecl) *ast.GenDecl {
 	return d
 }
 
-// withDoc returns spec s with the comment group doc placed before it, merged
-// with any doc comment s already has.
+// withDoc returns spec s with the comment group doc placed before it, merged with any doc comment s already has.
 func withDoc(s ast.Spec, doc *ast.CommentGroup) ast.Spec {
 	if doc == nil {
 		return s
@@ -998,10 +899,7 @@ func withDoc(s ast.Spec, doc *ast.CommentGroup) ast.Spec {
 	return s
 }
 
-// joinTypeDecls joins a run of type declarations into one type (...)
-// declaration. Each declaration's doc comment moves onto its first spec, inside
-// the group, so that no doc comment is left outside the block. pos is the
-// position of the keyword and the parenthesis (see typeBlockPos).
+// joinTypeDecls joins a run of type declarations into one type (...) declaration. Each declaration's doc comment moves onto its first spec, inside the group, so that no doc comment is left outside the block. pos is the position of the keyword and the parenthesis (see typeBlockPos).
 func joinTypeDecls(run []*ast.GenDecl, pos token.Pos) *ast.GenDecl {
 	var specs []ast.Spec
 
@@ -1026,13 +924,7 @@ func joinTypeDecls(run []*ast.GenDecl, pos token.Pos) *ast.GenDecl {
 	}
 }
 
-// typeBlockPos returns the position of the keyword and the parenthesis of a
-// type block that starts with the declaration first, after the position before.
-// The printer writes a comment before the first token that comes after it in
-// the source, and writes a comment on the line of the previous token as a
-// trailing one. So the position is on the line just above the first comment
-// that leads into first, or above first itself: the block then opens on the
-// line before, and the comments come after it, on lines of their own.
+// typeBlockPos returns the position of the keyword and the parenthesis of a type block that starts with the declaration first, after the position before. The printer writes a comment before the first token that comes after it in the source, and writes a comment on the line of the previous token as a trailing one. So the position is on the line just above the first comment that leads into first, or above first itself: the block then opens on the line before, and the comments come after it, on lines of their own.
 func (p *printer) typeBlockPos(before token.Pos, first *ast.GenDecl) token.Pos {
 	anchor := first.TokPos
 
@@ -1052,10 +944,7 @@ func (p *printer) typeBlockPos(before token.Pos, first *ast.GenDecl) token.Pos {
 	return token.Pos(int(anchor) - col) // the newline that ends the line above
 }
 
-// groupTypes joins each run of adjacent type declarations into one type (...)
-// declaration. A declaration may be a single one or a group already, and may
-// carry doc comments. Comments between two declarations stay where they are,
-// inside the block.
+// groupTypes joins each run of adjacent type declarations into one type (...) declaration. A declaration may be a single one or a group already, and may carry doc comments. Comments between two declarations stay where they are, inside the block.
 func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, tok token.Token, joinable func(*ast.GenDecl) bool, decl func(T) *ast.GenDecl, wrap func(*ast.GenDecl) T) []T {
 	var out []T
 
@@ -1077,8 +966,7 @@ func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, tok token.Toke
 				j++
 			}
 		}
-		// the block needs a position before the run (see joinTypeDecls); where
-		// there is none, a run that starts with a doc comment is left alone
+		// the block needs a position before the run (see joinTypeDecls); where there is none, a run that starts with a doc comment is left alone
 		var before token.Pos
 
 		if i > 0 {
@@ -1105,16 +993,12 @@ func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, tok token.Toke
 	return out
 }
 
-// mergeableVars reports whether var spec cur can join the names of prev: both
-// have the same type written out, and neither has values or comments.
+// mergeableVars reports whether var spec cur can join the names of prev: both have the same type written out, and neither has values or comments.
 func (p *printer) mergeableVars(prev, cur *ast.ValueSpec) bool {
 	return prev.Type != nil && cur.Type != nil && len(prev.Values) == 0 && len(cur.Values) == 0 && prev.Doc == nil && cur.Doc == nil && p.sameType(prev.Type, cur.Type)
 }
 
-// mergeVarSpecs joins consecutive specs of a var declaration that name the same
-// type and have no values, so that var pc int32; var top int32 is written as
-// var pc, top int32. A declaration with a comment inside is left alone. When one
-// spec is left, the parentheses of the group are dropped.
+// mergeVarSpecs joins consecutive specs of a var declaration that name the same type and have no values, so that var pc int32; var top int32 is written as var pc, top int32. A declaration with a comment inside is left alone. When one spec is left, the parentheses of the group are dropped.
 func (p *printer) mergeVarSpecs(d *ast.GenDecl) *ast.GenDecl {
 	// a comment inside the group keeps it, unless it is the trailing comment of a spec
 	if d.Tok != token.VAR {
@@ -1174,10 +1058,7 @@ func (p *printer) mergeVarSpecs(d *ast.GenDecl) *ast.GenDecl {
 	return out
 }
 
-// strictGroupDecls groups each run of adjacent single var declarations at
-// package level into one var (...) declaration, and each run of type
-// declarations into one type (...) declaration (see groupTypes). A comment
-// between two var declarations keeps them apart.
+// strictGroupDecls groups each run of adjacent single var declarations at package level into one var (...) declaration, and each run of type declarations into one type (...) declaration (see groupTypes). A comment between two var declarations keeps them apart.
 func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
 	list = groupTypes(p, list, p.head, token.TYPE, func(*ast.GenDecl) bool {
 		return true
@@ -1189,8 +1070,7 @@ func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
 		return g
 	})
 
-	// constants join as types do, with their doc comments, when no value takes
-	// its meaning from its place in the group (see constJoinable)
+	// constants join as types do, with their doc comments, when no value takes its meaning from its place in the group (see constJoinable)
 	list = groupTypes(p, list, p.head, token.CONST, constJoinable, func(d ast.Decl) *ast.GenDecl {
 		g, _ := d.(*ast.GenDecl)
 
@@ -1319,9 +1199,7 @@ func importPath(s *ast.ImportSpec) string {
 	return s.Path.Value
 }
 
-// shortVarOK reports whether a var spec can be written as a := assignment: it
-// has no type, has values, has no comment, and declares at least one new name
-// (:= needs one, so var _ = x stays a declaration).
+// shortVarOK reports whether a var spec can be written as a := assignment: it has no type, has values, has no comment, and declares at least one new name (:= needs one, so var _ = x stays a declaration).
 func shortVarOK(vs *ast.ValueSpec) bool {
 	if vs.Type != nil || len(vs.Values) == 0 || vs.Doc != nil || vs.Comment != nil {
 		return false
@@ -1336,18 +1214,14 @@ func shortVarOK(vs *ast.ValueSpec) bool {
 	return false
 }
 
-// stdImport reports whether an import spec names a standard library package:
-// the first element of its path has no dot.
+// stdImport reports whether an import spec names a standard library package: the first element of its path has no dot.
 func stdImport(s *ast.ImportSpec) bool {
 	first, _, _ := strings.Cut(importPath(s), "/")
 
 	return !strings.Contains(first, ".")
 }
 
-// strictImportSpecs returns the specs of an import declaration in the order
-// StrictLayout prints them: standard library packages first, then the rest,
-// each sorted by path and then by name. A declaration with a comment inside
-// keeps its order.
+// strictImportSpecs returns the specs of an import declaration in the order StrictLayout prints them: standard library packages first, then the rest, each sorted by path and then by name. A declaration with a comment inside keeps its order.
 func (p *printer) strictImportSpecs(d *ast.GenDecl) []ast.Spec {
 	if p.commentIn(d.Pos(), d.End()) {
 		return d.Specs
@@ -1383,8 +1257,7 @@ func (p *printer) strictImportSpecs(d *ast.GenDecl) []ast.Spec {
 	return specs
 }
 
-// numericTypes are the predeclared numeric types, which a conversion of a zero
-// value can name.
+// numericTypes are the predeclared numeric types, which a conversion of a zero value can name.
 var numericTypes = map[string]bool{
 	"byte": true,
 	"complex128": true,
@@ -1405,8 +1278,7 @@ var numericTypes = map[string]bool{
 	"uintptr": true,
 }
 
-// defaultNumeric returns the type that := gives an untyped numeric literal of
-// the given kind.
+// defaultNumeric returns the type that := gives an untyped numeric literal of the given kind.
 func defaultNumeric(kind token.Token) string {
 	switch kind {
 	case token.FLOAT:
@@ -1430,12 +1302,7 @@ func zeroNumber(lit *ast.BasicLit) bool {
 	return false
 }
 
-// zeroVarType returns the type that a := declaration of e takes, when e is a
-// zero value that can be written as a var declaration with that type: a zero
-// literal (0 is int, 0. is float64, 0i is complex128, "" is string), false, or
-// a conversion of a zero value to a predeclared type (int32(0), string(""),
-// bool(false)). It returns nil otherwise. The type is written as the source
-// spells it, so it names the same type as := gives e.
+// zeroVarType returns the type that a := declaration of e takes, when e is a zero value that can be written as a var declaration with that type: a zero literal (0 is int, 0. is float64, 0i is complex128, "" is string), false, or a conversion of a zero value to a predeclared type (int32(0), string(""), bool(false)). It returns nil otherwise. The type is written as the source spells it, so it names the same type as := gives e.
 func zeroVarType(e ast.Expr) ast.Expr {
 	switch x := e.(type) {
 	case *ast.BasicLit:
@@ -1484,10 +1351,7 @@ func zeroVarType(e ast.Expr) ast.Expr {
 	return nil
 }
 
-// strictIfInits moves an := declaration into the header of the if statement
-// that directly follows it, as the init statement, when every name the
-// declaration declares is used only inside that if statement. The if must have
-// no init statement of its own, and no comment may lie between the two.
+// strictIfInits moves an := declaration into the header of the if statement that directly follows it, as the init statement, when every name the declaration declares is used only inside that if statement. The if must have no init statement of its own, and no comment may lie between the two.
 func (p *printer) strictIfInits(list []ast.Stmt) []ast.Stmt {
 	out := make([]ast.Stmt, 0, len(list))
 
@@ -1517,8 +1381,7 @@ func (p *printer) strictIfInits(list []ast.Stmt) []ast.Stmt {
 	return out
 }
 
-// strictZeroVars rewrites a := declaration of a block whose value is a zero
-// value (see zeroVarType) as a var declaration that names the type.
+// strictZeroVars rewrites a := declaration of a block whose value is a zero value (see zeroVarType) as a var declaration that names the type.
 func (p *printer) strictZeroVars(list []ast.Stmt) []ast.Stmt {
 	out := make([]ast.Stmt, 0, len(list))
 
@@ -1558,10 +1421,7 @@ func (p *printer) strictZeroVars(list []ast.Stmt) []ast.Stmt {
 	return out
 }
 
-// onlyUsedIn reports whether every name that the := declaration list[i] declares
-// is used only inside the if statement is, among the statements of list other
-// than list[i] itself. A name declared earlier in the block is a use outside
-// the if statement, so it keeps the declaration where it is.
+// onlyUsedIn reports whether every name that the := declaration list[i] declares is used only inside the if statement is, among the statements of list other than list[i] itself. A name declared earlier in the block is a use outside the if statement, so it keeps the declaration where it is.
 func onlyUsedIn(list []ast.Stmt, i int, is *ast.IfStmt) bool {
 	names := map[string]bool{}
 
@@ -1597,8 +1457,7 @@ func onlyUsedIn(list []ast.Stmt, i int, is *ast.IfStmt) bool {
 	return true
 }
 
-// strictShortVars rewrites the var declarations of a block that qualify (see
-// shortVarOK) as := assignments. A group keeps its other specs as a declaration.
+// strictShortVars rewrites the var declarations of a block that qualify (see shortVarOK) as := assignments. A group keeps its other specs as a declaration.
 func (p *printer) strictShortVars(list []ast.Stmt) []ast.Stmt {
 	var out []ast.Stmt
 
@@ -1610,8 +1469,7 @@ func (p *printer) strictShortVars(list []ast.Stmt) []ast.Stmt {
 		}
 
 		g, ok := ds.Decl.(*ast.GenDecl)
-		// a group with a comment inside is left alone: splitting it would
-		// move the comments
+		// a group with a comment inside is left alone: splitting it would move the comments
 		if !ok || g.Tok != token.VAR || g.Doc != nil || p.commentIn(g.Pos(), g.End()) {
 			out = append(out, s)
 			continue

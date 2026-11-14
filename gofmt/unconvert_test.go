@@ -9,8 +9,7 @@ import (
 	"testing"
 )
 
-// unconvertText returns src with its redundant conversions removed, printed
-// without comments changing layout.
+// unconvertText returns src with its redundant conversions removed, printed without comments changing layout.
 func unconvertText(t *testing.T, src string) string {
 	t.Helper()
 
@@ -77,8 +76,7 @@ func TestUnconvert(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// the printer lays out function bodies over several lines, so the
-			// comparison is of the tokens, with white space collapsed
+			// the printer lays out function bodies over several lines, so the comparison is of the tokens, with white space collapsed
 			got := strings.Join(strings.Fields(unconvertText(t, tt.src)), " ")
 			if want := strings.Join(strings.Fields(tt.want), " "); got != want {
 				t.Errorf("got:\n%s\nwant:\n%s", got, want)

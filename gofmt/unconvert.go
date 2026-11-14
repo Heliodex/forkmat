@@ -8,19 +8,11 @@ import (
 	"reflect"
 )
 
-// This file implements -unconvert: a conversion T(x) is removed when x already
-// has the type T. The types come from type-checking the file on its own. Names
-// that cannot be resolved from this file (declared in another file, or in a
-// package that cannot be imported) have no type, so a conversion of them is
-// kept: the check only removes what it can prove redundant.
+// This file implements -unconvert: a conversion T(x) is removed when x already has the type T. The types come from type-checking the file on its own. Names that cannot be resolved from this file (declared in another file, or in a package that cannot be imported) have no type, so a conversion of them is kept: the check only removes what it can prove redundant.
 //
-// A conversion of a constant is kept. Removing int64(5) would change the type
-// of the constant from int64 to its default. A conversion whose type names a
-// member of an imported package is kept too, since removing it could leave the
-// import unused.
+// A conversion of a constant is kept. Removing int64(5) would change the type of the constant from int64 to its default. A conversion whose type names a member of an imported package is kept too, since removing it could leave the import unused.
 
-// unconvert returns file with its redundant conversions removed. file must be
-// parsed with comments; it is type-checked as a package of its own.
+// unconvert returns file with its redundant conversions removed. file must be parsed with comments; it is type-checked as a package of its own.
 func unconvert(fset *token.FileSet, file *ast.File) *ast.File {
 	info := &types.Info{
 		Types: map[ast.Expr]types.TypeAndValue{},
@@ -91,18 +83,14 @@ func hasSelector(e ast.Expr) bool {
 	return found
 }
 
-// isUntyped reports whether t is an untyped basic type, such as an untyped
-// boolean from a comparison.
+// isUntyped reports whether t is an untyped basic type, such as an untyped boolean from a comparison.
 func isUntyped(t types.Type) bool {
 	b, ok := t.(*types.Basic)
 
 	return ok && b.Info()&types.IsUntyped != 0
 }
 
-// operand returns the expression that stands in for a conversion T(x) once it
-// is removed: x itself, in parentheses when its operators would bind differently
-// in the place of the conversion. The parentheses are dropped again by the
-// printer under -strict when they are not needed.
+// operand returns the expression that stands in for a conversion T(x) once it is removed: x itself, in parentheses when its operators would bind differently in the place of the conversion. The parentheses are dropped again by the printer under -strict when they are not needed.
 func operand(x ast.Expr) ast.Expr {
 	switch x.(type) {
 	case *ast.Ident, *ast.BasicLit, *ast.CallExpr, *ast.SelectorExpr, *ast.IndexExpr, *ast.IndexListExpr, *ast.SliceExpr, *ast.ParenExpr, *ast.CompositeLit, *ast.TypeAssertExpr:

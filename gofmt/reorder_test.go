@@ -78,8 +78,7 @@ func TestSiblingTypes(t *testing.T) {
 	}
 }
 
-// declOrder returns the names of the top-level functions and methods of src, in
-// order.
+// declOrder returns the names of the top-level functions and methods of src, in order.
 func declOrder(t *testing.T, src string) []string {
 	t.Helper()
 

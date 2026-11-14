@@ -105,7 +105,7 @@ func isLiteralType(x ast.Expr) bool {
 		_, isIdent := t.X.(*ast.Ident)
 
 		return isIdent
-	case *ast.ArrayType, *ast.StructType, *ast.MapType:
+	case *ast.ArrayType, *ast.MapType, *ast.StructType:
 	default:
 		return false // all other nodes are not legal composite literal types
 	}
@@ -203,10 +203,10 @@ func (p *parser) errorExpected(pos token.Pos, msg string) {
 // checkExpr checks that x is an expression (and not a type).
 func (p *parser) checkExpr(x ast.Expr) ast.Expr {
 	switch t := ast.Unparen(x).(type) {
-	case *ast.BadExpr, *ast.Ident, *ast.BasicLit, *ast.FuncLit, *ast.CompositeLit:
+	case *ast.BadExpr, *ast.BasicLit, *ast.CompositeLit, *ast.FuncLit, *ast.Ident:
 	case *ast.ParenExpr:
 		panic("unreachable")
-	case *ast.SelectorExpr, *ast.IndexExpr, *ast.SliceExpr:
+	case *ast.IndexExpr, *ast.SelectorExpr, *ast.SliceExpr:
 	case *ast.TypeAssertExpr:
 		if t.Type == nil {
 			// the form X.(type) is only allowed in type switch expressions

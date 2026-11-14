@@ -95,7 +95,7 @@ func (l *lockedImporter) Import(path string) (*types.Package, error) {
 // operand returns the expression that stands in for a conversion T(x) once it is removed: x itself, in parentheses when its operators would bind differently in the place of the conversion. The parentheses are dropped again by the printer under -strict when they are not needed.
 func operand(x ast.Expr) ast.Expr {
 	switch x.(type) {
-	case *ast.Ident, *ast.BasicLit, *ast.CallExpr, *ast.SelectorExpr, *ast.IndexExpr, *ast.IndexListExpr, *ast.SliceExpr, *ast.ParenExpr, *ast.CompositeLit, *ast.TypeAssertExpr:
+	case *ast.BasicLit, *ast.CallExpr, *ast.CompositeLit, *ast.Ident, *ast.IndexExpr, *ast.IndexListExpr, *ast.ParenExpr, *ast.SelectorExpr, *ast.SliceExpr, *ast.TypeAssertExpr:
 		return x
 	}
 

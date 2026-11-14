@@ -44,10 +44,12 @@ func format(fset *token.FileSet, file *ast.File, sourceAdj func(src []byte, inde
 
 	res = append(res, src[:i]...)
 
-	var hasSpace bool
+	var (
+		hasSpace bool
 
-	// Determine and prepend indentation of first code line. Spaces are ignored unless there are no tabs, in which case spaces count as one tab.
-	var indent int
+		// Determine and prepend indentation of first code line. Spaces are ignored unless there are no tabs, in which case spaces count as one tab.
+		indent int
+	)
 
 	for _, b := range src[i:j] {
 		switch b {

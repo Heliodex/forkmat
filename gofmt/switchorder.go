@@ -15,7 +15,7 @@ import (
 func concreteType(e ast.Expr, types map[string]ast.Expr) bool {
 	for range 8 {
 		switch x := e.(type) {
-		case *ast.StarExpr, *ast.ArrayType, *ast.MapType, *ast.ChanType, *ast.FuncType, *ast.StructType:
+		case *ast.ArrayType, *ast.ChanType, *ast.FuncType, *ast.MapType, *ast.StarExpr, *ast.StructType:
 			return true
 		case *ast.Ident:
 			if predeclaredPure[x.Name] {

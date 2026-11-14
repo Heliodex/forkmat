@@ -1112,10 +1112,11 @@ func specRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bo
 		return edit{}, false
 	}
 
-	// one unit per spec. text is what the unit prints as: the lines that lead into it, then a single declaration of the spec.
-	var run []unit
-
-	var texts [][]byte
+	var (
+		// one unit per spec. text is what the unit prints as: the lines that lead into it, then a single declaration of the spec.
+		run []unit
+		texts [][]byte
+	)
 
 	cut := lo
 

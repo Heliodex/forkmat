@@ -53,10 +53,11 @@ func isDirective(c string) bool {
 
 // formatDocComment reformats the doc comment list, returning the canonical formatting.
 func formatDocComment(list []*ast.Comment) []*ast.Comment {
-	// Extract comment text (removing comment markers).
-	var kind, text string
-
-	var directives []*ast.Comment
+	var (
+		// Extract comment text (removing comment markers).
+		kind, text string
+		directives []*ast.Comment
+	)
 
 	if len(list) == 1 && strings.HasPrefix(list[0].Text, "/*") {
 		kind = "/*"

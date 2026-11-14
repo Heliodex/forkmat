@@ -30,8 +30,10 @@ func TestBackupFile(t *testing.T) {
 
 // Test case for issue 3961.
 func TestCRLF(t *testing.T) {
-	const input = "testdata/crlf.input" // must contain CR/LF's
-	const golden = "testdata/crlf.golden" // must not contain any CR's
+	const (
+		input = "testdata/crlf.input" // must contain CR/LF's
+		golden = "testdata/crlf.golden" // must not contain any CR's
+	)
 
 	data, err := os.ReadFile(input)
 	if err != nil {

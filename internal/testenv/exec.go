@@ -40,7 +40,7 @@ func CleanCmdEnv(cmd *exec.Cmd) *exec.Cmd {
 
 var tryExec = sync.OnceValue(func() error {
 	switch runtime.GOOS {
-	case "wasip1", "js", "ios":
+	case "ios", "js", "wasip1":
 	default:
 		// Assume that exec always works on non-mobile platforms and Android.
 		return nil
@@ -84,11 +84,12 @@ func MustHaveExec(t testing.TB) {
 	}
 }
 
-var exePath = sync.OnceValues(func() (string, error) {
-	return os.Executable()
-})
-
-var execPaths sync.Map // path -> error
+var (
+	exePath = sync.OnceValues(func() (string, error) {
+		return os.Executable()
+	})
+	execPaths sync.Map // path -> error
+)
 
 // CommandContext is like exec.CommandContext, but:
 //   - skips t if the platform does not support os/exec,

@@ -38,7 +38,7 @@ func Builder() string {
 // CPUIsSlow reports whether the CPU running the test is suspected to be slow.
 func CPUIsSlow() bool {
 	switch runtime.GOARCH {
-	case "arm", "mips", "mipsle", "mips64", "mips64le", "wasm":
+	case "arm", "mips", "mips64", "mips64le", "mipsle", "wasm":
 		return true
 	}
 
@@ -105,7 +105,7 @@ func CPUProfilingBroken() bool {
 	case "aix":
 		// See https://golang.org/issue/45170.
 		return true
-	case "ios", "dragonfly", "netbsd", "illumos", "solaris":
+	case "dragonfly", "illumos", "ios", "netbsd", "solaris":
 		// See https://golang.org/issue/13841.
 		return true
 	case "openbsd":

@@ -99,7 +99,7 @@ func isLegacyOctal(x string) bool {
 // isTypeElem reports whether x is a (possibly parenthesized) type element expression. The result is false if x could be a type element OR an ordinary (value) expression.
 func isTypeElem(x ast.Expr) bool {
 	switch x := x.(type) {
-	case *ast.ArrayType, *ast.StructType, *ast.FuncType, *ast.InterfaceType, *ast.MapType, *ast.ChanType:
+	case *ast.ArrayType, *ast.ChanType, *ast.FuncType, *ast.InterfaceType, *ast.MapType, *ast.StructType:
 		return true
 	case *ast.BinaryExpr:
 		return isTypeElem(x.X) || isTypeElem(x.Y)
@@ -578,7 +578,7 @@ func walkBinary(e *ast.BinaryExpr, strict bool) (has4, has5 bool, maxProblem int
 		}
 	case *ast.UnaryExpr:
 		switch e.Op.String() + r.Op.String() {
-		case "/*", "&&", "&^":
+		case "&&", "&^", "/*":
 			maxProblem = 5
 		case "++", "--":
 			maxProblem = max(maxProblem, 4)
@@ -689,10 +689,12 @@ func (p *printer) exprList(prev0 token.Pos, list []ast.Expr, depth int, mode exp
 		prevBreak = 0
 	}
 
-	var count int
+	var (
+		count int
 
-	// We use the ratio between the geometric mean of the previous key sizes and the current size to determine if there should be a break in the alignment. To compute the geometric mean we accumulate the log₂(size) values (log2sum) and the number of sizes included (count).
-	var log2sum float64
+		// We use the ratio between the geometric mean of the previous key sizes and the current size to determine if there should be a break in the alignment. To compute the geometric mean we accumulate the log₂(size) values (log2sum) and the number of sizes included (count).
+		log2sum float64
+	)
 
 	// print all list elements
 	prevLine := prev.Line
@@ -1007,11 +1009,14 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 			p.flush(p.posFor(rbrace), token.RBRACE) // make sure we don't lose the last line comment
 			p.setLineComment("// " + filteredMsg)
 		}
-	} else { // interface
+	} else {
+		var (
+			// interface
 
-		var line int
+			line int
+			prev *ast.Ident // previous "type" identifier
+		)
 
-		var prev *ast.Ident // previous "type" identifier
 		for i, f := range list {
 			var name *ast.Ident // first name, or nil
 			if len(f.Names) > 0 {
@@ -1458,10 +1463,11 @@ func (p *printer) stmtList(list []ast.Stmt, head token.Pos, nindent int, nextIsR
 		p.print(indent)
 	}
 
-	var line int
-
-	var prev ast.Stmt // previous non-empty statement
-	var i int
+	var (
+		line int
+		prev ast.Stmt // previous non-empty statement
+		i int
+	)
 
 	for _, s := range list {
 		// ignore empty statements (was issue 3466)

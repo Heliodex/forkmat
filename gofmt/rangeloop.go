@@ -52,7 +52,7 @@ func loopNames(e ast.Expr) map[string]bool {
 // calls len, cap, Len and NumField.
 func loopPureBound(e ast.Expr) bool {
 	switch x := e.(type) {
-	case *ast.Ident, *ast.BasicLit:
+	case *ast.BasicLit, *ast.Ident:
 		return true
 	case *ast.BinaryExpr:
 		return loopPureBound(x.X) && loopPureBound(x.Y)
@@ -153,7 +153,7 @@ func loopUses(body ast.Node, name string) bool {
 // sliceOrArray reports whether t is a slice, an array, or a pointer to an array.
 func sliceOrArray(t types.Type) bool {
 	switch u := t.Underlying().(type) {
-	case *types.Slice, *types.Array:
+	case *types.Array, *types.Slice:
 		return true
 	case *types.Pointer:
 		_, ok := u.Elem().Underlying().(*types.Array)

@@ -84,14 +84,13 @@ const (
 	printerNormalizeNumbers = 1 << 30
 )
 
-// fdSem guards the number of concurrently-open file descriptors.
-//
-// For now, this is arbitrarily set to 200, based on the observation that many platforms default to a kernel limit of 256. Ideally, perhaps we should derive it from rlimit on platforms that support that system call.
-//
-// File descriptors opened from outside of this package are not tracked, so this limit may be approximate.
-var fdSem = make(chan bool, 200)
-
 var (
+	// fdSem guards the number of concurrently-open file descriptors.
+	//
+	// For now, this is arbitrarily set to 200, based on the observation that many platforms default to a kernel limit of 256. Ideally, perhaps we should derive it from rlimit on platforms that support that system call.
+	//
+	// File descriptors opened from outside of this package are not tracked, so this limit may be approximate.
+	fdSem = make(chan bool, 200)
 	parserMode parser.Mode
 	rewrite func(*token.FileSet, *ast.File) *ast.File
 )

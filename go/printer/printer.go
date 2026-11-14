@@ -453,10 +453,12 @@ func (p *printer) writeString(pos token.Position, s string, isLit bool) {
 
 	p.output = append(p.output, s...)
 
-	// update positions
-	var nlines int
+	var (
+		// update positions
+		nlines int
+		li int // index of last newline; valid if nlines > 0
+	)
 
-	var li int // index of last newline; valid if nlines > 0
 	for i := range len(s) {
 		// Raw string literals may contain any character except back quote (`).
 		if ch := s[i]; ch == '\n' || ch == '\f' {
@@ -505,7 +507,7 @@ func (p *printer) writeWhitespace(n int) {
 
 				p.indent = 0
 			}
-		case newline, formfeed:
+		case formfeed, newline:
 			// A line break immediately followed by a "correcting" unindent is swapped with the unindent - this permits proper label positioning. If a comment is between the line break and the label, the unindent is not part of the comment whitespace prefix and the comment will be positioned correctly indented.
 			if i+1 < n && p.wsbuf[i+1] == unindent {
 				// Use a formfeed to terminate the current section. Otherwise, a long label name on the next line leading to a wide column may increase the indentation column of lines before the label; effectively leading to wrong indentation.
@@ -595,7 +597,7 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 				if tok != token.RBRACE && pos.Column == next.Column {
 					continue
 				}
-			case newline, formfeed:
+			case formfeed, newline:
 				p.wsbuf[i] = ignore
 				droppedLinebreak = prev == nil // record only if first comment of a group
 			}
@@ -643,7 +645,7 @@ func (p *printer) writeCommentSuffix(needsLinebreak bool) (wroteNewline, dropped
 			p.wsbuf[i] = ignore
 		case indent, unindent:
 			// don't lose indentation information
-		case newline, formfeed:
+		case formfeed, newline:
 			// if we need a line break, keep exactly one but remember if we dropped any formfeeds
 			if needsLinebreak {
 				needsLinebreak = false
@@ -924,12 +926,12 @@ const (
 // Whitespace is accumulated until a non-whitespace token appears. Any comments that need to appear before that token are printed first, taking into account the amount and structure of any pending white- space for best comment placement. Then, any leftover whitespace is printed, followed by the actual token.
 func (p *printer) print(args ...any) {
 	for _, arg := range args {
-		// information about the current arg
-		var data string
-
-		var isLit bool
-
-		var impliedSemi bool // value for p.impliedSemi after this arg
+		var (
+			// information about the current arg
+			data string
+			isLit bool
+			impliedSemi bool // value for p.impliedSemi after this arg
+		)
 
 		// record previous opening token, if any
 		switch p.lastTok {

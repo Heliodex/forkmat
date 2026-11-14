@@ -316,10 +316,10 @@ func mergeVars() {
 	_, _, _, _, _ = pc, top, n, m, k
 }
 
-// Sequential type declarations, at package level or in a block, share one
-// type (...) declaration. A var between them keeps them apart.
-
 type (
+	// Sequential type declarations, at package level or in a block, share one
+	// type (...) declaration. A var between them keeps them apart.
+
 	tA int
 
 	tB struct {
@@ -364,8 +364,8 @@ func ifUse(a int) error {
 	return nil
 }
 
-// Compiler allows programs to be compiled and deserialised with a cache and given optimisation level.
 type (
+	// Compiler allows programs to be compiled and deserialised with a cache and given optimisation level.
 	Compiler struct {
 		Cache map[[32]byte]internal.Deserpath
 		O uint8

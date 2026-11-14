@@ -52,6 +52,10 @@ type commentInfo struct {
 }
 
 type printer struct {
+	// head is where the declarations of the file begin: the end of its package
+	// clause. It places a type block that starts the file (see joinTypeDecls).
+	head token.Pos
+
 	// Positions
 	// The out position differs from the pos position when the result
 	// formatting differs from the source formatting (in the amount of

@@ -2047,6 +2047,7 @@ func (p *printer) file(src *ast.File) {
 	p.setPos(src.Pos())
 	p.print(token.PACKAGE, blank)
 	p.expr(src.Name)
+	p.head = src.Name.End()
 	p.declList(src.Decls)
 	p.print(newline)
 }

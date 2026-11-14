@@ -625,34 +625,55 @@ func mergeDoc(a, b *ast.CommentGroup) *ast.CommentGroup {
 }
 
 // joinTypeDecls joins a run of type declarations into one type (...)
-// declaration. The doc comment of the first declaration becomes the doc comment
-// of the group; that of each later declaration moves onto its first spec.
-func joinTypeDecls(run []*ast.GenDecl) *ast.GenDecl {
+// declaration. Each declaration's doc comment moves onto its first spec, inside
+// the group, so that no doc comment is left outside the block. pos is the
+// position of the keyword and the parenthesis (see typeBlockPos).
+func joinTypeDecls(run []*ast.GenDecl, pos token.Pos) *ast.GenDecl {
 	var specs []ast.Spec
-	for i, d := range run {
+	for _, d := range run {
 		for j, sp := range d.Specs {
-			if i > 0 && j == 0 {
+			if j == 0 {
 				sp = withDoc(sp, d.Doc)
 			}
 			specs = append(specs, sp)
 		}
 	}
-	first, last := run[0], run[len(run)-1]
+	last := run[len(run)-1]
 	return &ast.GenDecl{
-		Doc:    first.Doc,
-		TokPos: first.TokPos,
+		TokPos: pos,
 		Tok:    token.TYPE,
-		Lparen: first.TokPos,
+		Lparen: pos,
 		Specs:  specs,
 		Rparen: last.End(),
 	}
+}
+
+// typeBlockPos returns the position of the keyword and the parenthesis of a
+// type block that starts with the declaration first, after the position before.
+// The printer writes a comment before the first token that comes after it in
+// the source, and writes a comment on the line of the previous token as a
+// trailing one. So the position is on the line just above the first comment
+// that leads into first, or above first itself: the block then opens on the
+// line before, and the comments come after it, on lines of their own.
+func (p *printer) typeBlockPos(before token.Pos, first *ast.GenDecl) token.Pos {
+	anchor := first.TokPos
+	if first.Doc != nil {
+		anchor = first.Doc.Pos()
+	}
+	cs := p.allComments
+	i := sort.Search(len(cs), func(i int) bool { return cs[i].Pos() > before })
+	if i < len(cs) && cs[i].Pos() < anchor {
+		anchor = cs[i].Pos()
+	}
+	col := p.fset.Position(anchor).Column
+	return token.Pos(int(anchor) - col) // the newline that ends the line above
 }
 
 // groupTypes joins each run of adjacent type declarations into one type (...)
 // declaration. A declaration may be a single one or a group already, and may
 // carry doc comments. Comments between two declarations stay where they are,
 // inside the block.
-func groupTypes[T ast.Node](p *printer, list []T, decl func(T) *ast.GenDecl, wrap func(*ast.GenDecl) T) []T {
+func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, decl func(T) *ast.GenDecl, wrap func(*ast.GenDecl) T) []T {
 	var out []T
 	for i := 0; i < len(list); {
 		j := i + 1
@@ -668,8 +689,20 @@ func groupTypes[T ast.Node](p *printer, list []T, decl func(T) *ast.GenDecl, wra
 				j++
 			}
 		}
-		if len(run) > 1 {
-			out = append(out, wrap(joinTypeDecls(run)))
+		// the block needs a position before the run (see joinTypeDecls); where
+		// there is none, a run that starts with a doc comment is left alone
+		var before token.Pos
+		if i > 0 {
+			before = list[i-1].End()
+		} else {
+			before = head
+		}
+		if len(run) > 1 && (before.IsValid() || run[0].Doc == nil) {
+			pos := run[0].TokPos
+			if before.IsValid() {
+				pos = p.typeBlockPos(before, run[0])
+			}
+			out = append(out, wrap(joinTypeDecls(run, pos)))
 		} else {
 			out = append(out, list[i])
 		}
@@ -683,7 +716,7 @@ func groupTypes[T ast.Node](p *printer, list []T, decl func(T) *ast.GenDecl, wra
 // declarations into one type (...) declaration (see groupTypes). A comment
 // between two var declarations keeps them apart.
 func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
-	list = groupTypes(p, list,
+	list = groupTypes(p, list, p.head,
 		func(d ast.Decl) *ast.GenDecl { g, _ := d.(*ast.GenDecl); return g },
 		func(g *ast.GenDecl) ast.Decl { return g })
 	var out []ast.Decl
@@ -718,7 +751,7 @@ func (p *printer) strictGroupDecls(list []ast.Decl) []ast.Decl {
 
 // strictGroupStmts is strictGroupDecls for the statements of a block.
 func (p *printer) strictGroupStmts(list []ast.Stmt) []ast.Stmt {
-	list = groupTypes(p, list,
+	list = groupTypes(p, list, token.NoPos,
 		func(s ast.Stmt) *ast.GenDecl {
 			if ds, ok := s.(*ast.DeclStmt); ok {
 				g, _ := ds.Decl.(*ast.GenDecl)

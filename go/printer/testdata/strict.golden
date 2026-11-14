@@ -347,8 +347,7 @@ func ifUse(a int) error {
 		return err
 	}
 
-	m := a * 2
-	if m > 3 {
+	if m := a * 2; m > 3 {
 		return nil
 	}
 

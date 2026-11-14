@@ -866,6 +866,61 @@ func (p *printer) strictZeroVars(list []ast.Stmt) []ast.Stmt {
 	return out
 }
 
+// strictIfInits moves an := declaration into the header of the if statement
+// that directly follows it, as the init statement, when every name the
+// declaration declares is used only inside that if statement. The if must have
+// no init statement of its own, and no comment may lie between the two.
+func (p *printer) strictIfInits(list []ast.Stmt) []ast.Stmt {
+	out := make([]ast.Stmt, 0, len(list))
+	for i := 0; i < len(list); i++ {
+		as, ok := list[i].(*ast.AssignStmt)
+		if !ok || as.Tok != token.DEFINE || i+1 >= len(list) {
+			out = append(out, list[i])
+			continue
+		}
+		is, ok := list[i+1].(*ast.IfStmt)
+		if !ok || is.Init != nil || is.Cond == nil || p.commentIn(as.Pos(), is.End()) || !onlyUsedIn(list, i, is) {
+			out = append(out, list[i])
+			continue
+		}
+		out = append(out, &ast.IfStmt{If: is.If, Init: as, Cond: is.Cond, Body: is.Body, Else: is.Else})
+		i++
+	}
+	return out
+}
+
+// onlyUsedIn reports whether every name that the := declaration list[i] declares
+// is used only inside the if statement is, among the statements of list other
+// than list[i] itself. A name declared earlier in the block is a use outside
+// the if statement, so it keeps the declaration where it is.
+func onlyUsedIn(list []ast.Stmt, i int, is *ast.IfStmt) bool {
+	names := map[string]bool{}
+	for _, l := range list[i].(*ast.AssignStmt).Lhs {
+		if id, ok := l.(*ast.Ident); ok && id.Name != "_" {
+			names[id.Name] = true
+		}
+	}
+	if len(names) == 0 {
+		return false
+	}
+	for k, s := range list {
+		if k == i {
+			continue
+		}
+		outside := false
+		ast.Inspect(s, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok && names[id.Name] && !(id.Pos() >= is.Pos() && id.Pos() < is.End()) {
+				outside = true
+			}
+			return !outside
+		})
+		if outside {
+			return false
+		}
+	}
+	return true
+}
+
 // strictShortVars rewrites the var declarations of a block that qualify (see
 // shortVarOK) as := assignments. A group keeps its other specs as a declaration.
 func (p *printer) strictShortVars(list []ast.Stmt) []ast.Stmt {

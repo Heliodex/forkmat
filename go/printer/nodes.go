@@ -1232,7 +1232,7 @@ func (p *printer) expr(x ast.Expr) {
 // empty line is printed between statements.
 func (p *printer) stmtList(list []ast.Stmt, nindent int, nextIsRBrace bool) {
 	if p.strict() {
-		list = p.strictGroupStmts(p.strictZeroVars(p.strictShortVars(list)))
+		list = p.strictGroupStmts(p.strictZeroVars(p.strictIfInits(p.strictShortVars(list))))
 	}
 	if nindent > 0 {
 		p.print(indent)

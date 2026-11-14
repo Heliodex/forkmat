@@ -222,6 +222,12 @@ The rules:
   The exception is an `if` whose condition uses a name that the statement
   before it declares with `:=` or `var`: the two stay together, as in
   `err := f()` followed by `if err != nil {`.
+- An `:=` declaration directly before an `if` statement moves into the `if`
+  header when every name it declares is used only inside that `if`:
+  `m := a * 2` followed by `if m > 3 {` becomes `if m := a * 2; m > 3 {`. The
+  `if` must have no init statement of its own, and no comment may lie between
+  the two. A name that is used anywhere else in the block keeps the declaration
+  where it is.
   Calls, assignments (`=`, `:=`, `op=`, `++`, `--`), `const` declarations and
   `var` declarations form runs: a blank line goes between two adjacent
   statements of different kinds, and none within a run.

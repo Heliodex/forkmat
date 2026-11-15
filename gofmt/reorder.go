@@ -56,7 +56,6 @@ type (
 const maxStrictRounds = 3
 
 var (
-
 	// moduleDepDirs remembers, for each module root, the directories of the packages its build depends on, by import path (see moduleDeps).
 	moduleDepDirs memo[string, map[string]string]
 
@@ -869,9 +868,7 @@ func receiverType(recv *ast.FieldList) string {
 		return ""
 	}
 
-	t := recv.List[0].Type
-
-	for {
+	for t := recv.List[0].Type; ; {
 		switch x := t.(type) {
 		case *ast.Ident:
 			return x.Name

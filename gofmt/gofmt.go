@@ -63,7 +63,6 @@ const (
 )
 
 var (
-
 	// main operation modes
 	list = flag.Bool("l", false, "list files whose formatting differs from gofmt's")
 	write = flag.Bool("w", false, "write result to (source) file instead of stdout")

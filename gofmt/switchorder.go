@@ -33,7 +33,6 @@ type (
 )
 
 var (
-
 	// checkedPackages remembers the packages that packageOf has checked, by directory and package name.
 	checkedPackages memo[string, *types.Package]
 

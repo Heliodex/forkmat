@@ -1466,7 +1466,6 @@ func (p *printer) stmtList(list []ast.Stmt, head token.Pos, nindent int, nextIsR
 		// the names of the function's parameters and results belong to the first statement list printed, its body
 		outer := p.bodyNames
 		p.bodyNames = nil
-
 		list = p.strictGroupStmts(p.strictZeroVars(p.strictHeaders(p.strictShortVars(list), outer)), head)
 	}
 
@@ -1890,7 +1889,9 @@ func (p *printer) genDecl(d *ast.GenDecl) {
 		// group of parenthesized declarations
 		p.setPos(d.Lparen)
 		p.print(token.LPAREN)
+
 		p.declOpen = len(p.output) - 1
+
 		if n := len(d.Specs); n > 0 {
 			p.print(indent, formfeed)
 			if n > 1 && (d.Tok == token.CONST || d.Tok == token.VAR) {

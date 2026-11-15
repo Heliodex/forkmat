@@ -330,9 +330,7 @@ func (p *parser) next0() {
 	// very first token (!p.pos.IsValid()) is not initialized
 	// (it is token.ILLEGAL), so don't print it.
 	if p.trace && p.pos.IsValid() {
-		s := p.tok.String()
-
-		switch {
+		switch s := p.tok.String(); {
 		case p.tok.IsLiteral():
 			p.printTrace(s, p.lit)
 		case p.tok.IsOperator(), p.tok.IsKeyword():

@@ -103,11 +103,9 @@ func clausesHoldComments(body *ast.BlockStmt, comments []*ast.CommentGroup) bool
 
 // commentIn reports whether a comment starts in the source range [from, to).
 func commentIn(comments []*ast.CommentGroup, from, to token.Pos) bool {
-	i := sort.Search(len(comments), func(i int) bool {
+	for i := sort.Search(len(comments), func(i int) bool {
 		return comments[i].End() > from
-	})
-
-	for ; i < len(comments) && comments[i].Pos() < to; i++ {
+	}); i < len(comments) && comments[i].Pos() < to; i++ {
 		if comments[i].Pos() >= from {
 			return true
 		}
@@ -156,9 +154,8 @@ func initNames(s ast.Stmt) map[string]bool {
 // ifFinal returns the owner of the final else block of the if statement s, the block itself, and the names the if statements of the chain declare in their headers. It reports false if s has no final else or if an if statement of the chain does not end in a return.
 func ifFinal(s *ast.IfStmt) (*ast.IfStmt, *ast.BlockStmt, map[string]bool, bool) {
 	cur := s
-	names := map[string]bool{}
 
-	for {
+	for names := map[string]bool{}; ; {
 		for name := range initNames(cur.Init) {
 			names[name] = true
 		}

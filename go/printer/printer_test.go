@@ -1095,6 +1095,39 @@ func TestStrictDeclGroupLeadingBlank(t *testing.T) {
 	}
 }
 
+// TestStrictIfInitKeepsHeaderValid checks that an := moved into an if header still parses there, and does not shadow a named result.
+func TestStrictIfInitKeepsHeaderValid(t *testing.T) {
+	tests := []struct {
+		name, src string
+		// want is text the output must contain
+		want string
+	}{
+		{
+			name: "a composite literal of a named type stays out of the header",
+			src: "package p\n\ntype T struct{ A int }\n\nfunc f() int {\n\tx := T{A: 1}\n\tif x.A > 0 {\n\t\treturn 1\n\t}\n\treturn 0\n}\n",
+			want: "x := T{\n\t\tA: 1,\n\t}\n\tif x.A > 0 {",
+		},
+		{
+			name: "a named result that a bare return gives stays unshadowed",
+			src: "package p\n\nfunc read(p string) ([]byte, error) { return nil, nil }\n\nfunc g(p string) (b []byte) {\n\tb, err := read(p)\n\tif err != nil {\n\t\tpanic(err)\n\t}\n\treturn\n}\n",
+			want: "b, err := read(p)\n\tif err != nil {",
+		},
+		{
+			name: "a value without those problems still moves into the header",
+			src: "package p\n\nfunc f() int { return 1 }\n\nfunc g() int {\n\tx := f()\n\tif x > 0 {\n\t\treturn x\n\t}\n\treturn 0\n}\n",
+			want: "if x := f(); x > 0 {",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := strictText(t, tt.src); !strings.Contains(got, tt.want) {
+				t.Errorf("output lacks %q:\n%s", tt.want, got)
+			}
+		})
+	}
+}
+
 // TestStrictVarHeaders checks that a var declaration without a value moves into the header of the for or if statement after it when that statement is the only place its name is used, and stays where it is otherwise.
 func TestStrictVarHeaders(t *testing.T) {
 	tests := []struct {
@@ -1194,39 +1227,6 @@ func TestStrictVarHeaders(t *testing.T) {
 			// the header form is what the formatter writes, so formatting it again changes nothing
 			if again := strictText(t, got); again != got {
 				t.Errorf("second pass differs:\n%s", again)
-			}
-		})
-	}
-}
-
-// TestStrictIfInitKeepsHeaderValid checks that an := moved into an if header still parses there, and does not shadow a named result.
-func TestStrictIfInitKeepsHeaderValid(t *testing.T) {
-	tests := []struct {
-		name, src string
-		// want is text the output must contain
-		want string
-	}{
-		{
-			name: "a composite literal of a named type stays out of the header",
-			src: "package p\n\ntype T struct{ A int }\n\nfunc f() int {\n\tx := T{A: 1}\n\tif x.A > 0 {\n\t\treturn 1\n\t}\n\treturn 0\n}\n",
-			want: "x := T{\n\t\tA: 1,\n\t}\n\tif x.A > 0 {",
-		},
-		{
-			name: "a named result that a bare return gives stays unshadowed",
-			src: "package p\n\nfunc read(p string) ([]byte, error) { return nil, nil }\n\nfunc g(p string) (b []byte) {\n\tb, err := read(p)\n\tif err != nil {\n\t\tpanic(err)\n\t}\n\treturn\n}\n",
-			want: "b, err := read(p)\n\tif err != nil {",
-		},
-		{
-			name: "a value without those problems still moves into the header",
-			src: "package p\n\nfunc f() int { return 1 }\n\nfunc g() int {\n\tx := f()\n\tif x > 0 {\n\t\treturn x\n\t}\n\treturn 0\n}\n",
-			want: "if x := f(); x > 0 {",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := strictText(t, tt.src); !strings.Contains(got, tt.want) {
-				t.Errorf("output lacks %q:\n%s", tt.want, got)
 			}
 		})
 	}

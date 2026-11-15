@@ -119,6 +119,37 @@ func bareReturn(list []ast.Stmt) bool {
 	return found
 }
 
+// capturedIn reports whether a function literal in n uses one of the names, or the address of one of them is taken in n.
+func capturedIn(n ast.Node, names []string) bool {
+	set := map[string]bool{}
+
+	for _, name := range names {
+		set[name] = true
+	}
+
+	var found bool
+
+	ast.Inspect(n, func(m ast.Node) bool {
+		switch x := m.(type) {
+		case *ast.FuncLit:
+			ast.Inspect(x.Body, func(k ast.Node) bool {
+				if id, ok := k.(*ast.Ident); ok && set[id.Name] {
+					found = true
+				}
+
+				return !found
+			})
+		case *ast.UnaryExpr:
+			if id, ok := x.X.(*ast.Ident); ok && x.Op == token.AND && set[id.Name] {
+				found = true
+			}
+		}
+
+		return !found
+	})
+	return found
+}
+
 // compareMapKeys orders two map keys by rank, and within a rank by value: booleans false before true, numbers from the least, names and strings alphabetically.
 func compareMapKeys(a, b mapKey) int {
 	if a.rank != b.rank {
@@ -160,6 +191,38 @@ func declEnd(d *ast.GenDecl) token.Pos {
 	}
 
 	return end
+}
+
+// declNames returns the names that the declaration s declares with := or var, other than the blank identifier.
+func declNames(s ast.Stmt) []string {
+	var names []string
+
+	add := func(id *ast.Ident) {
+		if id.Name != "_" {
+			names = append(names, id.Name)
+		}
+	}
+
+	switch s := s.(type) {
+	case *ast.AssignStmt:
+		if s.Tok == token.DEFINE {
+			for _, l := range s.Lhs {
+				if id, ok := l.(*ast.Ident); ok {
+					add(id)
+				}
+			}
+		}
+	case *ast.DeclStmt:
+		if d, ok := s.Decl.(*ast.GenDecl); ok && d.Tok == token.VAR {
+			for _, sp := range d.Specs {
+				for _, id := range sp.(*ast.ValueSpec).Names {
+					add(id)
+				}
+			}
+		}
+	}
+
+	return names
 }
 
 // declaresUsedBy reports whether next is an if statement whose condition uses a name that prev declares, with := or a var declaration. Names are compared by spelling, so a shadowing name counts as a use: the blank line is only a layout choice.
@@ -218,6 +281,27 @@ func defaultNumeric(kind token.Token) string {
 	}
 
 	return "int"
+}
+
+// fieldNames returns the names declared by the field lists, other than the blank identifier.
+func fieldNames(lists []*ast.FieldList) map[string]bool {
+	names := map[string]bool{}
+
+	for _, fl := range lists {
+		if fl == nil {
+			continue
+		}
+
+		for _, f := range fl.List {
+			for _, id := range f.Names {
+				if id.Name != "_" {
+					names[id.Name] = true
+				}
+			}
+		}
+	}
+
+	return names
 }
 
 // hasCompositeLit reports whether x holds a composite literal that is not enclosed in parentheses of its own.
@@ -482,6 +566,7 @@ func SortCaseList(list []ast.Expr) []ast.Expr {
 // onlyUsedIn reports whether every name that the declaration list[i] declares, with := or var, is used only inside scope, which is the if or for statement that follows it, among the statements of list other than list[i] itself. A name declared earlier in the block is a use outside scope, so it keeps the declaration where it is.
 func onlyUsedIn(list []ast.Stmt, i int, scope ast.Node) bool {
 	names := map[string]bool{}
+
 	for _, name := range declNames(list[i]) {
 		names[name] = true
 	}
@@ -512,18 +597,51 @@ func onlyUsedIn(list []ast.Stmt, i int, scope ast.Node) bool {
 	return true
 }
 
-// afterOpenBrace reports whether the last token written, ignoring white space, is an opening brace. The printer's lastTok does not serve here: white space clears it.
-func (p *printer) afterOpenBrace() bool {
-	for _, c := range slices.Backward(p.output) {
-		switch c {
-		case '\t', '\n', '\v', '\f', '\r', ' ':
-			continue
-		}
-
-		return c == '{'
+// headerStmt returns the statement that follows list[i] with as as its init statement, or nil when as cannot move into it: a name it declares is used outside that statement, the statement has an init statement of its own, or the move would change the program.
+func headerStmt(list []ast.Stmt, i int, as *ast.AssignStmt) ast.Stmt {
+	next := list[i+1]
+	if !onlyUsedIn(list, i, next) {
+		return nil
 	}
 
-	return false
+	if as.Tok == token.DEFINE && (headAmbiguousList(as.Rhs) || bareReturn(list[i+1:])) {
+		return nil
+	}
+
+	switch s := next.(type) {
+	case *ast.IfStmt:
+		if s.Init == nil && s.Cond != nil {
+			return &ast.IfStmt{
+				If: s.If,
+				Init: as,
+				Cond: s.Cond,
+				Body: s.Body,
+				Else: s.Else,
+			}
+		}
+	case *ast.ForStmt:
+		// each iteration of a for loop has its own copy of the variables of its init statement, so a name that a function literal captures, or whose address is taken, keeps the declaration: it would then not be the variable declared before the loop
+		if s.Init == nil && !capturedIn(s, declNames(as)) {
+			return &ast.ForStmt{
+				For: s.For,
+				Init: as,
+				Cond: s.Cond,
+				Post: s.Post,
+				Body: s.Body,
+			}
+		}
+	case *ast.SwitchStmt:
+		if s.Init == nil {
+			return &ast.SwitchStmt{
+				Switch: s.Switch,
+				Init: as,
+				Tag: s.Tag,
+				Body: s.Body,
+			}
+		}
+	}
+
+	return nil
 }
 
 // afterDeclParen reports whether the parenthesis that opens the declaration group being printed is the last token written, with only white space after it. A comment there sits right after the parenthesis, as after a brace (see afterOpenBrace).
@@ -544,6 +662,20 @@ func (p *printer) afterDeclParen() bool {
 	return true
 }
 
+// afterOpenBrace reports whether the last token written, ignoring white space, is an opening brace. The printer's lastTok does not serve here: white space clears it.
+func (p *printer) afterOpenBrace() bool {
+	for _, c := range slices.Backward(p.output) {
+		switch c {
+		case '\t', '\n', '\v', '\f', '\r', ' ':
+			continue
+		}
+
+		return c == '{'
+	}
+
+	return false
+}
+
 // commentIn reports whether a comment starts in the source range [from, to).
 func (p *printer) commentIn(from, to token.Pos) bool {
 	if !from.IsValid() || !to.IsValid() || to <= from {
@@ -561,11 +693,10 @@ func (p *printer) commentIn(from, to token.Pos) bool {
 // commentInExcepts reports whether a comment starts in the source range [from, to), other than the comment groups in except, which are printed where they stand.
 func (p *printer) commentInExcepts(from, to token.Pos, except []*ast.CommentGroup) bool {
 	cs := p.allComments
-	i := sort.Search(len(cs), func(i int) bool {
-		return cs[i].Pos() >= from
-	})
 
-	for ; i < len(cs) && cs[i].Pos() < to; i++ {
+	for i := sort.Search(len(cs), func(i int) bool {
+		return cs[i].Pos() >= from
+	}); i < len(cs) && cs[i].Pos() < to; i++ {
 		if !slices.Contains(except, cs[i]) {
 			return true
 		}
@@ -849,239 +980,6 @@ func (p *printer) strictFitsOneLine(x *ast.CompositeLit) bool {
 	return size <= strictMaxSize
 }
 
-// strictHeaders moves a declaration into the header of the if, for or switch statement that directly follows it, as its init statement, when the names it declares are used only inside that statement (see onlyUsedIn). An := declaration with a value moves as it is, and a var declaration without a value moves as an := declaration of its zero value (see headerInit). The statement must have no init statement of its own, and no comment may lie between the two.
-//
-// outer holds the names of the parameters and results when list is the body of a function (see funcBody). A := that declares one of them assigns it rather than declaring a new variable, so it keeps its place.
-func (p *printer) strictHeaders(list []ast.Stmt, outer map[string]bool) []ast.Stmt {
-	out := make([]ast.Stmt, 0, len(list))
-
-	for i := 0; i < len(list); i++ {
-		as := headerInit(list[i])
-		if as == nil || i+1 >= len(list) || p.commentIn(list[i].Pos(), list[i+1].End()) || redeclares(as, outer) {
-			out = append(out, list[i])
-			continue
-		}
-
-		next := headerStmt(list, i, as)
-		if next == nil {
-			out = append(out, list[i])
-			continue
-		}
-
-		out = append(out, next)
-		i++
-	}
-
-	return out
-}
-
-// fieldNames returns the names declared by the field lists, other than the blank identifier.
-func fieldNames(lists []*ast.FieldList) map[string]bool {
-	names := map[string]bool{}
-
-	for _, fl := range lists {
-		if fl == nil {
-			continue
-		}
-
-		for _, f := range fl.List {
-			for _, id := range f.Names {
-				if id.Name != "_" {
-					names[id.Name] = true
-				}
-			}
-		}
-	}
-
-	return names
-}
-
-// redeclares reports whether as is a := declaration that declares one of the names in outer, so that it assigns that variable.
-func redeclares(as *ast.AssignStmt, outer map[string]bool) bool {
-	for _, name := range declNames(as) {
-		if outer[name] {
-			return true
-		}
-	}
-
-	return false
-}
-
-// headerInit returns the statement s as the init statement of a header: an := declaration as it is, or a var declaration without a value as an := declaration of its zero value. It returns nil for any other statement.
-func headerInit(s ast.Stmt) *ast.AssignStmt {
-	if as, ok := s.(*ast.AssignStmt); ok {
-		if as.Tok != token.DEFINE {
-			return nil
-		}
-
-		return as
-	}
-
-	name, zero, ok := zeroDecl(s)
-	if !ok {
-		return nil
-	}
-
-	return &ast.AssignStmt{
-		Lhs: []ast.Expr{name},
-		TokPos: name.Pos(),
-		Tok: token.DEFINE,
-		Rhs: []ast.Expr{zero},
-	}
-}
-
-// headerStmt returns the statement that follows list[i] with as as its init statement, or nil when as cannot move into it: a name it declares is used outside that statement, the statement has an init statement of its own, or the move would change the program.
-func headerStmt(list []ast.Stmt, i int, as *ast.AssignStmt) ast.Stmt {
-	next := list[i+1]
-
-	if !onlyUsedIn(list, i, next) {
-		return nil
-	}
-
-	if as.Tok == token.DEFINE && (headAmbiguousList(as.Rhs) || bareReturn(list[i+1:])) {
-		return nil
-	}
-
-	switch s := next.(type) {
-	case *ast.IfStmt:
-		if s.Init == nil && s.Cond != nil {
-			return &ast.IfStmt{
-				If: s.If,
-				Init: as,
-				Cond: s.Cond,
-				Body: s.Body,
-				Else: s.Else,
-			}
-		}
-	case *ast.ForStmt:
-		// each iteration of a for loop has its own copy of the variables of its init statement, so a name that a function literal captures, or whose address is taken, keeps the declaration: it would then not be the variable declared before the loop
-		if s.Init == nil && !capturedIn(s, declNames(as)) {
-			return &ast.ForStmt{
-				For: s.For,
-				Init: as,
-				Cond: s.Cond,
-				Post: s.Post,
-				Body: s.Body,
-			}
-		}
-	case *ast.SwitchStmt:
-		if s.Init == nil {
-			return &ast.SwitchStmt{
-				Switch: s.Switch,
-				Init: as,
-				Tag: s.Tag,
-				Body: s.Body,
-			}
-		}
-	}
-
-	return nil
-}
-
-// declNames returns the names that the declaration s declares with := or var, other than the blank identifier.
-func declNames(s ast.Stmt) []string {
-	var names []string
-
-	add := func(id *ast.Ident) {
-		if id.Name != "_" {
-			names = append(names, id.Name)
-		}
-	}
-
-	switch s := s.(type) {
-	case *ast.AssignStmt:
-		if s.Tok == token.DEFINE {
-			for _, l := range s.Lhs {
-				if id, ok := l.(*ast.Ident); ok {
-					add(id)
-				}
-			}
-		}
-	case *ast.DeclStmt:
-		if d, ok := s.Decl.(*ast.GenDecl); ok && d.Tok == token.VAR {
-			for _, sp := range d.Specs {
-				for _, id := range sp.(*ast.ValueSpec).Names {
-					add(id)
-				}
-			}
-		}
-	}
-
-	return names
-}
-
-// zeroDecl reports whether s is a var declaration of one name, with no value, of a predeclared numeric, string or bool type. It returns the name and the zero value of the type as an expression: 0 for int, int64(0) or float64(0) for the other numeric types, "" for string, and false for bool.
-func zeroDecl(s ast.Stmt) (*ast.Ident, ast.Expr, bool) {
-	ds, ok := s.(*ast.DeclStmt)
-	if !ok {
-		return nil, nil, false
-	}
-
-	d, ok := ds.Decl.(*ast.GenDecl)
-	if !ok || d.Tok != token.VAR || len(d.Specs) != 1 {
-		return nil, nil, false
-	}
-
-	vs := d.Specs[0].(*ast.ValueSpec)
-	if len(vs.Names) != 1 || len(vs.Values) != 0 || vs.Names[0].Name == "_" {
-		return nil, nil, false
-	}
-
-	typ, ok := vs.Type.(*ast.Ident)
-	if !ok {
-		return nil, nil, false
-	}
-
-	name := vs.Names[0]
-
-	switch {
-	case typ.Name == "int":
-		return name, &ast.BasicLit{ValuePos: typ.Pos(), Kind: token.INT, Value: "0"}, true
-	case numericTypes[typ.Name]:
-		return name, &ast.CallExpr{
-			Fun: typ,
-			Args: []ast.Expr{&ast.BasicLit{ValuePos: typ.Pos(), Kind: token.INT, Value: "0"}},
-		}, true
-	case typ.Name == "string":
-		return name, &ast.BasicLit{ValuePos: typ.Pos(), Kind: token.STRING, Value: `""`}, true
-	case typ.Name == "bool":
-		return name, &ast.Ident{NamePos: typ.Pos(), Name: "false"}, true
-	}
-
-	return nil, nil, false
-}
-
-// capturedIn reports whether a function literal in n uses one of the names, or the address of one of them is taken in n.
-func capturedIn(n ast.Node, names []string) bool {
-	set := map[string]bool{}
-	for _, name := range names {
-		set[name] = true
-	}
-
-	var found bool
-
-	ast.Inspect(n, func(m ast.Node) bool {
-		switch x := m.(type) {
-		case *ast.FuncLit:
-			ast.Inspect(x.Body, func(k ast.Node) bool {
-				if id, ok := k.(*ast.Ident); ok && set[id.Name] {
-					found = true
-				}
-
-				return !found
-			})
-		case *ast.UnaryExpr:
-			if id, ok := x.X.(*ast.Ident); ok && x.Op == token.AND && set[id.Name] {
-				found = true
-			}
-		}
-
-		return !found
-	})
-
-	return found
-}
-
 // strictParenExpr prints a parenthesized expression under StrictLayout. The parentheses are dropped when the precedence of the context already groups the expression (see needsParens), and any chain of parentheses collapses to a single pair.
 func (p *printer) strictParenExpr(x *ast.ParenExpr, prec1, depth int) {
 	inner := x.X
@@ -1216,6 +1114,17 @@ func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 	}
 
 	return out
+}
+
+// redeclares reports whether as is a := declaration that declares one of the names in outer, so that it assigns that variable.
+func redeclares(as *ast.AssignStmt, outer map[string]bool) bool {
+	for _, name := range declNames(as) {
+		if outer[name] {
+			return true
+		}
+	}
+
+	return false
 }
 
 // shortVarOK reports whether a var spec can be written as a := assignment: it has no type, has values, has no comment, and declares at least one new name (:= needs one, so var _ = x stays a declaration).
@@ -1675,6 +1584,111 @@ func (p *printer) strictGroupStmts(list []ast.Stmt, head token.Pos) []ast.Stmt {
 	}
 
 	return list
+}
+
+// zeroDecl reports whether s is a var declaration of one name, with no value, of a predeclared numeric, string or bool type. It returns the name and the zero value of the type as an expression: 0 for int, int64(0) or float64(0) for the other numeric types, "" for string, and false for bool.
+func zeroDecl(s ast.Stmt) (*ast.Ident, ast.Expr, bool) {
+	ds, ok := s.(*ast.DeclStmt)
+	if !ok {
+		return nil, nil, false
+	}
+
+	d, ok := ds.Decl.(*ast.GenDecl)
+	if !ok || d.Tok != token.VAR || len(d.Specs) != 1 {
+		return nil, nil, false
+	}
+
+	vs := d.Specs[0].(*ast.ValueSpec)
+	if len(vs.Names) != 1 || len(vs.Values) != 0 || vs.Names[0].Name == "_" {
+		return nil, nil, false
+	}
+
+	typ, ok := vs.Type.(*ast.Ident)
+	if !ok {
+		return nil, nil, false
+	}
+
+	switch name := vs.Names[0]; {
+	case typ.Name == "int":
+		return name, &ast.BasicLit{
+			ValuePos: typ.Pos(),
+			Kind: token.INT,
+			Value: "0",
+		}, true
+	case numericTypes[typ.Name]:
+		return name, &ast.CallExpr{
+			Fun: typ,
+			Args: []ast.Expr{
+				&ast.BasicLit{
+					ValuePos: typ.Pos(),
+					Kind: token.INT,
+					Value: "0",
+				},
+			},
+		}, true
+	case typ.Name == "string":
+		return name, &ast.BasicLit{
+			ValuePos: typ.Pos(),
+			Kind: token.STRING,
+			Value: `""`,
+		}, true
+	case typ.Name == "bool":
+		return name, &ast.Ident{
+			NamePos: typ.Pos(),
+			Name: "false",
+		}, true
+	}
+
+	return nil, nil, false
+}
+
+// headerInit returns the statement s as the init statement of a header: an := declaration as it is, or a var declaration without a value as an := declaration of its zero value. It returns nil for any other statement.
+func headerInit(s ast.Stmt) *ast.AssignStmt {
+	if as, ok := s.(*ast.AssignStmt); ok {
+		if as.Tok != token.DEFINE {
+			return nil
+		}
+
+		return as
+	}
+
+	name, zero, ok := zeroDecl(s)
+	if !ok {
+		return nil
+	}
+
+	return &ast.AssignStmt{
+		Lhs: []ast.Expr{name},
+		TokPos: name.Pos(),
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{zero},
+	}
+}
+
+// strictHeaders moves a declaration into the header of the if, for or switch statement that directly follows it, as its init statement, when the names it declares are used only inside that statement (see onlyUsedIn). An := declaration with a value moves as it is, and a var declaration without a value moves as an := declaration of its zero value (see headerInit). The statement must have no init statement of its own, and no comment may lie between the two.
+//
+// outer holds the names of the parameters and results when list is the body of a function (see funcBody). A := that declares one of them assigns it rather than declaring a new variable, so it keeps its place.
+func (p *printer) strictHeaders(list []ast.Stmt, outer map[string]bool) []ast.Stmt {
+	out := make([]ast.Stmt, 0, len(list))
+
+	for i := 0; i < len(list); i++ {
+		as := headerInit(list[i])
+		if as == nil || i+1 >= len(list) || p.commentIn(list[i].Pos(), list[i+1].End()) || redeclares(as, outer) {
+			out = append(out, list[i])
+			continue
+		}
+
+		next := headerStmt(list, i, as)
+		if next == nil {
+			out = append(out, list[i])
+			continue
+		}
+
+		out = append(out, next)
+		i++
+	}
+
+	return out
 }
 
 // zeroNumber reports whether lit is a numeric literal with the value zero.

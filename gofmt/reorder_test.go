@@ -125,6 +125,33 @@ func reorderText(t *testing.T, src string) string {
 	return string(out)
 }
 
+// TestHoistOrder checks that the top of a file reads types, then constants, then vars, then functions, unless a dependency keeps a declaration elsewhere.
+func TestHoistOrder(t *testing.T) {
+	tests := []struct {
+		name, src string
+		want []string
+	}{
+		{
+			name: "types, consts, vars, then functions",
+			src: "package p\n\nfunc f() int { return a }\n\nvar a = b\n\nconst b = 2\n\ntype T int\n\nfunc g() {}\n",
+			want: []string{"T", "b", "a", "f", "g"},
+		},
+		{
+			name: "a var with effects keeps the vars after it below it, and a function above it stays there",
+			src: "package p\n\nfunc h() int { return 1 }\n\nvar a = h()\n\nconst b = 2\n\nvar c = 3\n",
+			want: []string{"b", "h", "a", "c"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := declOrder(t, reorderText(t, tt.src)); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("declaration order %v, want %v:\n%s", got, tt.want, reorderText(t, tt.src))
+			}
+		})
+	}
+}
+
 func TestHoistTypesAfterImports(t *testing.T) {
 	src := "package p\n\nimport \"fmt\"\n\nfunc f() { fmt.Println() }\n\ntype T struct{ s fmt.Stringer }\n"
 	got := reorderText(t, src)
@@ -240,7 +267,7 @@ func TestReorderFuncs(t *testing.T) {
 		{
 			name: "local const shadowing a package const is not a reference",
 			src: "package p\n\nfunc p1() {\n\tconst x = 1\n\t_ = x\n}\n\nconst x = 5\n",
-			want: []string{"p1", "x"},
+			want: []string{"x", "p1"},
 		},
 		{
 			name: "var declared before its use moves below it",

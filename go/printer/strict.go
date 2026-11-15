@@ -923,10 +923,10 @@ func headerInit(s ast.Stmt) *ast.AssignStmt {
 	}
 
 	return &ast.AssignStmt{
-		Lhs:    []ast.Expr{name},
+		Lhs: []ast.Expr{name},
 		TokPos: name.Pos(),
-		Tok:    token.DEFINE,
-		Rhs:    []ast.Expr{zero},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{zero},
 	}
 }
 
@@ -946,7 +946,7 @@ func headerStmt(list []ast.Stmt, i int, as *ast.AssignStmt) ast.Stmt {
 	case *ast.IfStmt:
 		if s.Init == nil && s.Cond != nil {
 			return &ast.IfStmt{
-				If:   s.If,
+				If: s.If,
 				Init: as,
 				Cond: s.Cond,
 				Body: s.Body,
@@ -957,7 +957,7 @@ func headerStmt(list []ast.Stmt, i int, as *ast.AssignStmt) ast.Stmt {
 		// each iteration of a for loop has its own copy of the variables of its init statement, so a name that a function literal captures, or whose address is taken, keeps the declaration: it would then not be the variable declared before the loop
 		if s.Init == nil && !capturedIn(s, declNames(as)) {
 			return &ast.ForStmt{
-				For:  s.For,
+				For: s.For,
 				Init: as,
 				Cond: s.Cond,
 				Post: s.Post,
@@ -968,9 +968,9 @@ func headerStmt(list []ast.Stmt, i int, as *ast.AssignStmt) ast.Stmt {
 		if s.Init == nil {
 			return &ast.SwitchStmt{
 				Switch: s.Switch,
-				Init:   as,
-				Tag:    s.Tag,
-				Body:   s.Body,
+				Init: as,
+				Tag: s.Tag,
+				Body: s.Body,
 			}
 		}
 	}
@@ -1039,7 +1039,7 @@ func zeroDecl(s ast.Stmt) (*ast.Ident, ast.Expr, bool) {
 		return name, &ast.BasicLit{ValuePos: typ.Pos(), Kind: token.INT, Value: "0"}, true
 	case numericTypes[typ.Name]:
 		return name, &ast.CallExpr{
-			Fun:  typ,
+			Fun: typ,
 			Args: []ast.Expr{&ast.BasicLit{ValuePos: typ.Pos(), Kind: token.INT, Value: "0"}},
 		}, true
 	case typ.Name == "string":

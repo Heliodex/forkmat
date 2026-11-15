@@ -80,6 +80,28 @@ var (
 // strictMaxSize is the width, in characters, of a composite literal that may stay on one line.
 const strictMaxSize = 100
 
+// bareReturn reports whether a statement of list holds a return with no values, outside function literals. Such a return gives the named results of the function, which an := moved into an if header would shadow.
+func bareReturn(list []ast.Stmt) bool {
+	var found bool
+
+	for _, s := range list {
+		ast.Inspect(s, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.FuncLit:
+				return false
+			case *ast.ReturnStmt:
+				if len(x.Results) == 0 {
+					found = true
+				}
+			}
+
+			return !found
+		})
+	}
+
+	return found
+}
+
 // compareMapKeys orders two map keys by rank, and within a rank by value: booleans false before true, numbers from the least, names and strings alphabetically.
 func compareMapKeys(a, b mapKey) int {
 	if a.rank != b.rank {
@@ -209,6 +231,44 @@ func hasKeyedElt(elts []ast.Expr) bool {
 	return false
 }
 
+// headAmbiguous reports whether e holds a composite literal of a named type outside any parentheses, brackets or call arguments. In an if header the parser reads the braces of such a literal as the body of the if, so the literal would not parse there. Inside those brackets it is fine.
+func headAmbiguous(e ast.Expr) bool {
+	switch x := e.(type) {
+	case *ast.BinaryExpr:
+		return headAmbiguous(x.X) || headAmbiguous(x.Y)
+	case *ast.CallExpr:
+		return headAmbiguous(x.Fun)
+	case *ast.CompositeLit:
+		switch x.Type.(type) {
+		case *ast.Ident, *ast.IndexExpr, *ast.IndexListExpr, *ast.SelectorExpr:
+			return true
+		}
+
+		return false
+	case *ast.IndexExpr:
+		return headAmbiguous(x.X)
+	case *ast.SelectorExpr:
+		return headAmbiguous(x.X)
+	case *ast.StarExpr:
+		return headAmbiguous(x.X)
+	case *ast.UnaryExpr:
+		return headAmbiguous(x.X)
+	}
+
+	return false
+}
+
+// headAmbiguousList reports whether one of the values holds a composite literal that cannot stand in an if header unparenthesized (see headAmbiguous).
+func headAmbiguousList(list []ast.Expr) bool {
+	for _, e := range list {
+		if headAmbiguous(e) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // importPath returns the path of an import spec, without its quotes.
 func importPath(s *ast.ImportSpec) string {
 	if p, err := strconv.Unquote(s.Path.Value); err == nil {
@@ -255,6 +315,15 @@ func kindOf(s ast.Stmt) stmtKind {
 func isCallStmt(s ast.Stmt) bool {
 	return kindOf(s) == kindCall
 }
+
+// The ranks that mapKeyOf gives a key: nil, booleans, numbers, strings, and then names, which are constants or variables.
+const (
+	rankNil = iota
+	rankBool
+	rankNumber
+	rankString
+	rankName
+)
 
 // mergeDoc returns the comment group of a followed by that of b.
 func mergeDoc(a, b *ast.CommentGroup) *ast.CommentGroup {
@@ -314,15 +383,6 @@ func numberLiteral(e ast.Expr) constant.Value {
 
 	return nil
 }
-
-// The ranks that mapKeyOf gives a key: nil, booleans, numbers, strings, and then names, which are constants or variables.
-const (
-	rankNil = iota
-	rankBool
-	rankNumber
-	rankString
-	rankName
-)
 
 // mapKeyOf returns the sort key of a map key, or false if the key is neither a literal of a basic type nor an identifier.
 func mapKeyOf(e ast.Expr) (mapKey, bool) {
@@ -779,7 +839,7 @@ func (p *printer) strictIfInits(list []ast.Stmt) []ast.Stmt {
 		}
 
 		is, ok := list[i+1].(*ast.IfStmt)
-		if !ok || is.Init != nil || is.Cond == nil || p.commentIn(as.Pos(), is.End()) || !onlyUsedIn(list, i, is) {
+		if !ok || is.Init != nil || is.Cond == nil || p.commentIn(as.Pos(), is.End()) || !onlyUsedIn(list, i, is) || headAmbiguousList(as.Rhs) || bareReturn(list[i+1:]) {
 			out = append(out, list[i])
 			continue
 		}

@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -964,6 +965,63 @@ func TestFiles(t *testing.T) {
 			check(t, source, golden, mode)
 			// TODO(gri) check that golden is idempotent
 			//check(t, golden, golden, e.mode)
+		})
+	}
+}
+
+// strictText formats src with StrictLayout, as gofmt -strict does.
+func strictText(t *testing.T, src string) string {
+	t.Helper()
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	var buf bytes.Buffer
+
+	cfg := Config{
+		Mode: UseSpaces | TabIndent | StrictLayout,
+		Tabwidth: 8,
+	}
+
+	if err := cfg.Fprint(&buf, fset, file); err != nil {
+		t.Fatalf("print: %v", err)
+	}
+
+	return buf.String()
+}
+
+// TestStrictIfInitKeepsHeaderValid checks that an := moved into an if header still parses there, and does not shadow a named result.
+func TestStrictIfInitKeepsHeaderValid(t *testing.T) {
+	tests := []struct {
+		name, src string
+		// want is text the output must contain
+		want string
+	}{
+		{
+			name: "a composite literal of a named type stays out of the header",
+			src: "package p\n\ntype T struct{ A int }\n\nfunc f() int {\n\tx := T{A: 1}\n\tif x.A > 0 {\n\t\treturn 1\n\t}\n\treturn 0\n}\n",
+			want: "x := T{\n\t\tA: 1,\n\t}\n\tif x.A > 0 {",
+		},
+		{
+			name: "a named result that a bare return gives stays unshadowed",
+			src: "package p\n\nfunc read(p string) ([]byte, error) { return nil, nil }\n\nfunc g(p string) (b []byte) {\n\tb, err := read(p)\n\tif err != nil {\n\t\tpanic(err)\n\t}\n\treturn\n}\n",
+			want: "b, err := read(p)\n\tif err != nil {",
+		},
+		{
+			name: "a value without those problems still moves into the header",
+			src: "package p\n\nfunc f() int { return 1 }\n\nfunc g() int {\n\tx := f()\n\tif x > 0 {\n\t\treturn x\n\t}\n\treturn 0\n}\n",
+			want: "if x := f(); x > 0 {",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := strictText(t, tt.src); !strings.Contains(got, tt.want) {
+				t.Errorf("output lacks %q:\n%s", tt.want, got)
+			}
 		})
 	}
 }

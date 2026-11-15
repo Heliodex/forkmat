@@ -1879,6 +1879,7 @@ func (p *printer) genDecl(d *ast.GenDecl) {
 		// group of parenthesized declarations
 		p.setPos(d.Lparen)
 		p.print(token.LPAREN)
+		p.declOpen = len(p.output) - 1
 		if n := len(d.Specs); n > 0 {
 			p.print(indent, formfeed)
 			if n > 1 && (d.Tok == token.CONST || d.Tok == token.VAR) {

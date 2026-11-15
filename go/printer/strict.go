@@ -529,6 +529,24 @@ func (p *printer) afterOpenBrace() bool {
 	return false
 }
 
+// afterDeclParen reports whether the parenthesis that opens the declaration group being printed is the last token written, with only white space after it. A comment there sits right after the parenthesis, as after a brace (see afterOpenBrace).
+func (p *printer) afterDeclParen() bool {
+	if p.declOpen <= 0 || p.declOpen >= len(p.output) {
+		return false
+	}
+
+	for _, c := range p.output[p.declOpen+1:] {
+		switch c {
+		case '\t', '\n', '\v', '\f', '\r', ' ':
+			continue
+		}
+
+		return false
+	}
+
+	return true
+}
+
 // commentIn reports whether a comment starts in the source range [from, to).
 func (p *printer) commentIn(from, to token.Pos) bool {
 	if !from.IsValid() || !to.IsValid() || to <= from {

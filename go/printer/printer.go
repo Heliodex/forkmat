@@ -71,6 +71,7 @@ type (
 		comments []*ast.CommentGroup // may be nil
 		goBuild []int // start index of all //go:build comments in output
 		output []byte // raw printer result
+		declOpen int // index in output of the parenthesis that opens the declaration group being printed, under StrictLayout
 		allComments []*ast.CommentGroup // comments of the file or node being printed; setComment never changes it
 		plusBuild []int // start index of all // +build comments in output
 		wsbuf []whiteSpace // delayed white space
@@ -671,7 +672,7 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 			n = 1
 		}
 
-		if p.strict() && (p.afterOpenBrace() || tok == token.RBRACE) {
+		if p.strict() && (p.afterOpenBrace() || p.afterDeclParen() || tok == token.RBRACE) {
 			// under StrictLayout a comment that opens or closes a block sits right after the brace, with no blank line
 			n = 1
 		}

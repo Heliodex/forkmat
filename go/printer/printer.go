@@ -267,7 +267,7 @@ func (p *printer) lineFor(pos token.Pos) int {
 		p.cachedPos = pos
 		p.cachedLine = p.fset.PositionFor(
 			pos,
-			false, /* absolute position */).Line
+			false /* absolute position */).Line
 	}
 
 	return p.cachedLine
@@ -303,7 +303,7 @@ func (p *printer) posFor(pos token.Pos) token.Position {
 	// not used frequently enough to cache entire token.Position
 	return p.fset.PositionFor(
 		pos,
-		false, /* absolute position */)
+		false /* absolute position */)
 }
 
 func (p *printer) nextComment() {
@@ -845,7 +845,7 @@ func (p *printer) intersperseComments(next token.Position, tok token.Token) (wro
 		list := p.comment.List
 
 		if tok != token.IDENT && p.lastTok != token.IMPORT && // do not rewrite cgo's import "C" comments
-		p.posFor(p.comment.Pos()).Column == 1 && p.posFor(p.comment.End()+1) == next {
+			p.posFor(p.comment.Pos()).Column == 1 && p.posFor(p.comment.End()+1) == next {
 			// Unindented comment abutting next token position: a top-level doc comment.
 			list = formatDocComment(list)
 			changed = true

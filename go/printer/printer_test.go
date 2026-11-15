@@ -1034,15 +1034,15 @@ func TestStrictCallClosingToken(t *testing.T) {
 		want, unwant string
 	}{
 		{
-			name:   "a block comment before the closing parenthesis",
-			src:    "package p\n\nfunc f() {\n\tg(a, b /* c */)\n}\n",
-			want:   "\t\tb, /* c */\n\t)",
+			name: "a block comment before the closing parenthesis",
+			src: "package p\n\nfunc f() {\n\tg(a, b /* c */)\n}\n",
+			want: "\t\tb, /* c */\n\t)",
 			unwant: "/* c */)",
 		},
 		{
-			name:   "a line comment before the closing parenthesis",
-			src:    "package p\n\nfunc f() {\n\tg(a, b, // c\n\t)\n}\n",
-			want:   "\t\tb, // c\n\t)",
+			name: "a line comment before the closing parenthesis",
+			src: "package p\n\nfunc f() {\n\tg(a, b, // c\n\t)\n}\n",
+			want: "\t\tb, // c\n\t)",
 			unwant: "// c\n\n",
 		},
 	}
@@ -1118,7 +1118,7 @@ func fibo(n int) {
 	pos := comment.Pos()
 	if fset.PositionFor(
 		pos,
-		false, /* absolute position */).Offset != 1 {
+		false /* absolute position */).Offset != 1 {
 		t.Error("expected offset 1") // error in test
 	}
 	testComment(t, f, len(src), &ast.Comment{

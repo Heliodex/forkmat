@@ -203,7 +203,7 @@ func foo() {
 
 The rules:
 
-- Lists (call arguments, right-hand sides, parameters, results) are one line. A list is broken only if it holds a comment, with one element per line.
+- Lists (call arguments, right-hand sides, parameters, results) are one line. A list is broken only if it holds a comment, with one element per line. A broken list ends with a trailing comma and its closing `)` or `}` on a line of its own, as a call or literal does when the source already breaks it, so a trailing comma is never left on a list that prints on one line.
 - Composite literals are one line if they fit in 100 characters and hold no comments; otherwise each element is on its own line with a trailing comma. A literal that sets fields by name (`T{X: 1}`) is always split over several lines, so that it reads as field initialisation. Map literals (`map[K]V{...}` written with an explicit map type) are exempt.
 - Binary expressions and selector chains are never broken.
 - Consecutive named struct fields and parameters of the same type share one type: `x int, y int` prints as `x, y int`, and `struct{ x int; y int }` as a struct over three lines holding `x, y int`. A field's type is omitted when the field after it has the same type, and a trailing comment on the first field stays on its line between the names: `start, // comment` followed by `end token.Pos`, and a trailing comment on the second field stays on its line. Fields with a tag, or a doc comment on the second field, are not merged. Interface methods are never merged. The same applies to `var` specs in a group.

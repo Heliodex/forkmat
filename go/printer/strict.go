@@ -850,12 +850,14 @@ func (p *printer) strictFitsOneLine(x *ast.CompositeLit) bool {
 }
 
 // strictHeaders moves a declaration into the header of the if, for or switch statement that directly follows it, as its init statement, when the names it declares are used only inside that statement (see onlyUsedIn). An := declaration with a value moves as it is, and a var declaration without a value moves as an := declaration of its zero value (see headerInit). The statement must have no init statement of its own, and no comment may lie between the two.
-func (p *printer) strictHeaders(list []ast.Stmt) []ast.Stmt {
+//
+// outer holds the names of the parameters and results when list is the body of a function (see funcBody). A := that declares one of them assigns it rather than declaring a new variable, so it keeps its place.
+func (p *printer) strictHeaders(list []ast.Stmt, outer map[string]bool) []ast.Stmt {
 	out := make([]ast.Stmt, 0, len(list))
 
 	for i := 0; i < len(list); i++ {
 		as := headerInit(list[i])
-		if as == nil || i+1 >= len(list) || p.commentIn(list[i].Pos(), list[i+1].End()) {
+		if as == nil || i+1 >= len(list) || p.commentIn(list[i].Pos(), list[i+1].End()) || redeclares(as, outer) {
 			out = append(out, list[i])
 			continue
 		}
@@ -871,6 +873,38 @@ func (p *printer) strictHeaders(list []ast.Stmt) []ast.Stmt {
 	}
 
 	return out
+}
+
+// fieldNames returns the names declared by the field lists, other than the blank identifier.
+func fieldNames(lists []*ast.FieldList) map[string]bool {
+	names := map[string]bool{}
+
+	for _, fl := range lists {
+		if fl == nil {
+			continue
+		}
+
+		for _, f := range fl.List {
+			for _, id := range f.Names {
+				if id.Name != "_" {
+					names[id.Name] = true
+				}
+			}
+		}
+	}
+
+	return names
+}
+
+// redeclares reports whether as is a := declaration that declares one of the names in outer, so that it assigns that variable.
+func redeclares(as *ast.AssignStmt, outer map[string]bool) bool {
+	for _, name := range declNames(as) {
+		if outer[name] {
+			return true
+		}
+	}
+
+	return false
 }
 
 // headerInit returns the statement s as the init statement of a header: an := declaration as it is, or a var declaration without a value as an := declaration of its zero value. It returns nil for any other statement.

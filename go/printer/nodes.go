@@ -1203,7 +1203,7 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 		startCol := p.out.Column - len("func")
 
 		p.signature(x.Type)
-		p.funcBody(p.distanceFrom(x.Type.Pos(), startCol), blank, x.Body)
+		p.funcBody(p.distanceFrom(x.Type.Pos(), startCol), blank, x.Body, x.Type.Params, x.Type.Results)
 	case *ast.ParenExpr:
 		if p.strict() {
 			p.strictParenExpr(x, prec1, depth)
@@ -1463,7 +1463,11 @@ func (p *printer) possibleSelectorExpr(expr ast.Expr, prec1, depth int) bool {
 // Print the statement list indented, where head is the position of the token that opens it (or NoPos), but without a newline after the last statement. Extra line breaks between statements in the source are respected but at most one empty line is printed between statements.
 func (p *printer) stmtList(list []ast.Stmt, head token.Pos, nindent int, nextIsRBrace bool) {
 	if p.strict() {
-		list = p.strictGroupStmts(p.strictZeroVars(p.strictHeaders(p.strictShortVars(list))), head)
+		// the names of the function's parameters and results belong to the first statement list printed, its body
+		outer := p.bodyNames
+		p.bodyNames = nil
+
+		list = p.strictGroupStmts(p.strictZeroVars(p.strictHeaders(p.strictShortVars(list), outer)), head)
 	}
 
 	if nindent > 0 {
@@ -1767,10 +1771,17 @@ func (p *printer) valueSpec(s *ast.ValueSpec) {
 // funcBody prints a function body following a function header of given headerSize. If the header's and block's size are "small enough" and the block is "simple enough", the block is printed on the current line, without line breaks, spaced from the header by sep. Otherwise the block's opening "{" is printed on the current line, followed by lines for the block's statements and its closing "}".
 //
 // In this tree the one-line form is reserved for empty bodies: as soon as the block holds a statement, it is spelled out over multiple lines.
-func (p *printer) funcBody(headerSize int, sep whiteSpace, b *ast.BlockStmt) {
+func (p *printer) funcBody(headerSize int, sep whiteSpace, b *ast.BlockStmt, scope ...*ast.FieldList) {
 	if b == nil {
 		return
 	}
+
+	// the parameters and results are declared in the block of the body, so a := that declares one of them assigns it instead (see strictHeaders)
+	defer func(names map[string]bool) {
+		p.bodyNames = names
+	}(p.bodyNames)
+
+	p.bodyNames = fieldNames(scope)
 
 	// save/restore composite literal nesting level
 	defer func(level int) {
@@ -1822,7 +1833,7 @@ func (p *printer) funcDecl(d *ast.FuncDecl) {
 	p.expr(d.Name)
 	p.signature(d.Type)
 	// A blank before the body keeps consecutive one-line functions from having their { padded into a column.
-	p.funcBody(p.distanceFrom(d.Pos(), startCol), blank, d.Body)
+	p.funcBody(p.distanceFrom(d.Pos(), startCol), blank, d.Body, d.Recv, d.Type.Params, d.Type.Results)
 }
 
 // The parameter n is the number of specs in the group. If doIndent is set, multi-line identifier lists in the spec are indented when the first linebreak is encountered.

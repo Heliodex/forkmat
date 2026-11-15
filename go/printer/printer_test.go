@@ -1139,6 +1139,21 @@ func TestStrictVarHeaders(t *testing.T) {
 			want: "x := g()\n\n\tfor {",
 		},
 		{
+			name: "a := that redeclares a parameter keeps its place",
+			src: "package p\n\nfunc g() (int, error) { return 1, nil }\n\nfunc f(err error) error {\n\tn, err := g()\n\tfor n < 3 {\n\t\tn++\n\t}\n\treturn err\n}\n",
+			want: "n, err := g()\n\n\tfor n < 3 {",
+		},
+		{
+			name: "a := that redeclares a named result keeps its place",
+			src: "package p\n\nfunc g() (int, error) { return 1, nil }\n\nfunc f() (err error) {\n\tn, err := g()\n\tif n > 0 {\n\t\tprintln(n)\n\t}\n\treturn\n}\n",
+			want: "n, err := g()\n\tif n > 0 {",
+		},
+		{
+			name: "a := in a nested block that shadows a parameter still moves",
+			src: "package p\n\nfunc g() (int, error) { return 1, nil }\n\nfunc f(err error) {\n\tif err != nil {\n\t\tn, err := g()\n\t\tif n > 0 {\n\t\t\tprintln(n)\n\t\t}\n\t}\n}\n",
+			want: "if n, err := g(); n > 0 {",
+		},
+		{
 			name: "a var before an if statement",
 			src: "package p\n\nfunc f() {\n\tvar s string\n\tif s == \"\" {\n\t\tprintln(\"empty\")\n\t}\n}\n",
 			want: "if s := \"\"; s == \"\" {",

@@ -71,6 +71,7 @@ type (
 		comments []*ast.CommentGroup // may be nil
 		goBuild []int // start index of all //go:build comments in output
 		output []byte // raw printer result
+		bodyNames map[string]bool // names of the parameters and results of the function body about to be printed under StrictLayout
 		declOpen int // index in output of the parenthesis that opens the declaration group being printed, under StrictLayout
 		allComments []*ast.CommentGroup // comments of the file or node being printed; setComment never changes it
 		plusBuild []int // start index of all // +build comments in output

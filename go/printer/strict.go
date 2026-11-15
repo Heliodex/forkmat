@@ -479,13 +479,26 @@ func SortCaseList(list []ast.Expr) []ast.Expr {
 	return out
 }
 
-// onlyUsedIn reports whether every name that the := declaration list[i] declares is used only inside the if statement is, among the statements of list other than list[i] itself. A name declared earlier in the block is a use outside the if statement, so it keeps the declaration where it is.
-func onlyUsedIn(list []ast.Stmt, i int, is *ast.IfStmt) bool {
+// onlyUsedIn reports whether every name that the declaration list[i] declares, with := or var, is used only inside scope, which is the if or for statement that follows it, among the statements of list other than list[i] itself. A name declared earlier in the block is a use outside scope, so it keeps the declaration where it is.
+func onlyUsedIn(list []ast.Stmt, i int, scope ast.Node) bool {
 	names := map[string]bool{}
 
-	for _, l := range list[i].(*ast.AssignStmt).Lhs {
-		if id, ok := l.(*ast.Ident); ok && id.Name != "_" {
-			names[id.Name] = true
+	switch s := list[i].(type) {
+	case *ast.AssignStmt:
+		for _, l := range s.Lhs {
+			if id, ok := l.(*ast.Ident); ok && id.Name != "_" {
+				names[id.Name] = true
+			}
+		}
+	case *ast.DeclStmt:
+		if d, ok := s.Decl.(*ast.GenDecl); ok {
+			for _, sp := range d.Specs {
+				for _, id := range sp.(*ast.ValueSpec).Names {
+					if id.Name != "_" {
+						names[id.Name] = true
+					}
+				}
+			}
 		}
 	}
 
@@ -501,7 +514,7 @@ func onlyUsedIn(list []ast.Stmt, i int, is *ast.IfStmt) bool {
 		var outside bool
 
 		ast.Inspect(s, func(n ast.Node) bool {
-			if id, ok := n.(*ast.Ident); ok && names[id.Name] && !(id.Pos() >= is.Pos() && id.Pos() < is.End()) {
+			if id, ok := n.(*ast.Ident); ok && names[id.Name] && !(id.Pos() >= scope.Pos() && id.Pos() < scope.End()) {
 				outside = true
 			}
 
@@ -880,6 +893,129 @@ func (p *printer) strictIfInits(list []ast.Stmt) []ast.Stmt {
 	}
 
 	return out
+}
+
+// strictVarHeaders moves a var declaration without a value into the header of the for or if statement that directly follows it, as an := init statement that gives the zero value of the type, when the name is used only inside that statement (see zeroDecl and onlyUsedIn). The statement must have no init statement of its own, and no comment may lie between the two.
+//
+// A for loop gives each iteration its own copy of the variables of its init statement, so a name that a function literal captures or whose address is taken in the loop keeps the declaration: it would then not be the variable declared before the loop.
+func (p *printer) strictVarHeaders(list []ast.Stmt) []ast.Stmt {
+	out := make([]ast.Stmt, 0, len(list))
+
+	for i := 0; i < len(list); i++ {
+		name, zero, ok := zeroDecl(list[i])
+		if !ok || i+1 >= len(list) || p.commentIn(list[i].Pos(), list[i+1].End()) {
+			out = append(out, list[i])
+			continue
+		}
+
+		as := &ast.AssignStmt{
+			Lhs:    []ast.Expr{name},
+			TokPos: name.Pos(),
+			Tok:    token.DEFINE,
+			Rhs:    []ast.Expr{zero},
+		}
+
+		switch s := list[i+1].(type) {
+		case *ast.IfStmt:
+			if s.Init != nil || s.Cond == nil || !onlyUsedIn(list, i, s) {
+				out = append(out, list[i])
+				continue
+			}
+
+			out = append(out, &ast.IfStmt{
+				If:   s.If,
+				Init: as,
+				Cond: s.Cond,
+				Body: s.Body,
+				Else: s.Else,
+			})
+		case *ast.ForStmt:
+			if s.Init != nil || !onlyUsedIn(list, i, s) || capturedIn(s, name.Name) {
+				out = append(out, list[i])
+				continue
+			}
+
+			out = append(out, &ast.ForStmt{
+				For:  s.For,
+				Init: as,
+				Cond: s.Cond,
+				Post: s.Post,
+				Body: s.Body,
+			})
+		default:
+			out = append(out, list[i])
+			continue
+		}
+
+		i++
+	}
+
+	return out
+}
+
+// zeroDecl reports whether s is a var declaration of one name, with no value, of a predeclared numeric, string or bool type. It returns the name and the zero value of the type as an expression: int64(0), "" or false.
+func zeroDecl(s ast.Stmt) (*ast.Ident, ast.Expr, bool) {
+	ds, ok := s.(*ast.DeclStmt)
+	if !ok {
+		return nil, nil, false
+	}
+
+	d, ok := ds.Decl.(*ast.GenDecl)
+	if !ok || d.Tok != token.VAR || len(d.Specs) != 1 {
+		return nil, nil, false
+	}
+
+	vs := d.Specs[0].(*ast.ValueSpec)
+	if len(vs.Names) != 1 || len(vs.Values) != 0 || vs.Names[0].Name == "_" {
+		return nil, nil, false
+	}
+
+	typ, ok := vs.Type.(*ast.Ident)
+	if !ok {
+		return nil, nil, false
+	}
+
+	name := vs.Names[0]
+
+	switch {
+	case numericTypes[typ.Name]:
+		return name, &ast.CallExpr{
+			Fun:  typ,
+			Args: []ast.Expr{&ast.BasicLit{ValuePos: typ.Pos(), Kind: token.INT, Value: "0"}},
+		}, true
+	case typ.Name == "string":
+		return name, &ast.BasicLit{ValuePos: typ.Pos(), Kind: token.STRING, Value: `""`}, true
+	case typ.Name == "bool":
+		return name, &ast.Ident{NamePos: typ.Pos(), Name: "false"}, true
+	}
+
+	return nil, nil, false
+}
+
+// capturedIn reports whether a function literal in n uses the name, or the name's address is taken in n.
+func capturedIn(n ast.Node, name string) bool {
+	var found bool
+
+	ast.Inspect(n, func(m ast.Node) bool {
+		switch x := m.(type) {
+		case *ast.FuncLit:
+			ast.Inspect(x.Body, func(k ast.Node) bool {
+				if id, ok := k.(*ast.Ident); ok && id.Name == name {
+					found = true
+				}
+
+				return !found
+			})
+		case *ast.UnaryExpr:
+			if id, ok := x.X.(*ast.Ident); ok && x.Op == token.AND && id.Name == name {
+				found = true
+			}
+		}
+
+		return !found
+	})
+
+	return found
 }
 
 // strictParenExpr prints a parenthesized expression under StrictLayout. The parentheses are dropped when the precedence of the context already groups the expression (see needsParens), and any chain of parentheses collapses to a single pair.

@@ -1463,7 +1463,7 @@ func (p *printer) possibleSelectorExpr(expr ast.Expr, prec1, depth int) bool {
 // Print the statement list indented, where head is the position of the token that opens it (or NoPos), but without a newline after the last statement. Extra line breaks between statements in the source are respected but at most one empty line is printed between statements.
 func (p *printer) stmtList(list []ast.Stmt, head token.Pos, nindent int, nextIsRBrace bool) {
 	if p.strict() {
-		list = p.strictGroupStmts(p.strictZeroVars(p.strictIfInits(p.strictShortVars(list))), head)
+		list = p.strictGroupStmts(p.strictZeroVars(p.strictIfInits(p.strictVarHeaders(p.strictShortVars(list)))), head)
 	}
 
 	if nindent > 0 {

@@ -231,7 +231,7 @@ The rules:
 	- no clause ends in `fallthrough`, since that would run the next clause in the source; the bodies need not return;
 	- no comment lies between clauses, or after a clause's last statement, and no comment inside a clause would be printed in another clause once the clauses are reordered.
 
-  Constants of the other files of the package are ordered after the file's own by file name, then by declaration, since declaration order across files is not defined. The values come from type-checking the package with its other files, so a constant whose value cannot be found keeps the switch.
+  Constants of the other files of the package are ordered after the file's own by file name, then by declaration, since declaration order across files is not defined. A constant's value comes from its package's own declarations: one that depends on another package has no value, and keeps the switch. An imported package is found by its name, which is its explicit name, or else the last element of its path (skipping a major version such as `v2`); a package named differently is not found this way, and keeps the switch.
 - The expressions of a `case a, b, c:` clause are sorted (`gofmt/caseorder.go`). In a type switch the types are sorted alphabetically, as the clauses of a type switch are, and need not be concrete: any one of them matches, so their order cannot change which clause runs. In another switch the expressions are sorted as the keys of a map literal are: `nil`, booleans, numbers (a character literal counts as its code point), strings, and then names, each kind by value. A clause with an expression that is not a literal of a basic type or a name, such as a call, keeps its order, since the expressions of a clause are evaluated in order, and so does a clause with a comment inside its list. This runs after `-mergecases`, so merged lists are sorted too.
 - Struct and interface bodies with members are always multi-line, even with a single simple field or method. An empty body stays `struct{}`.
 - Statements are one per line. A blank line goes before and after a block statement (`if`, `for`, `range`, `switch`, `select`, a bare block), a `return`, and a grouped `var` declaration, but not next to a call statement. The exception is an `if` whose condition uses a name that the statement before it declares with `:=` or `var`: the two stay together, as in `err := f()` followed by `if err != nil {`.
@@ -267,7 +267,7 @@ A conversion is kept when:
 
 Where the operand's operators would bind differently in the conversion's place, it is parenthesised; `-strict` drops parentheses that are not needed.
 
-It is off by default, and runs on complete files only. Type-checking a file loads its imports from source, so it is slower than the other passes.
+It is off by default, and runs on complete files only. Type-checking a file loads its imports from source, so it is slower than the other passes. A package with cgo files, such as `net`, is read from its pure Go files, since running the cgo tool for each one cost about a second.
 
 ### `-flatten`: move a final else or default out
 

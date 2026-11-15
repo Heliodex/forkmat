@@ -166,7 +166,7 @@ func sliceOrArray(t types.Type) bool {
 
 // rangeOf returns the range statement that replaces the index loop fs, if fs
 // qualifies (see rangeLoops).
-func rangeOf(fs *ast.ForStmt, info *types.Info, comments []*ast.CommentGroup) (*ast.RangeStmt, bool) {
+func rangeOf(fs *ast.ForStmt, typesOf func() *types.Info, comments []*ast.CommentGroup) (*ast.RangeStmt, bool) {
 	init, ok := fs.Init.(*ast.AssignStmt)
 	if !ok || init.Tok != token.DEFINE || len(init.Lhs) != 1 || len(init.Rhs) != 1 || !isZeroLit(init.Rhs[0]) {
 		return nil, false
@@ -196,6 +196,9 @@ func rangeOf(fs *ast.ForStmt, info *types.Info, comments []*ast.CommentGroup) (*
 	if commentIn(comments, fs.For, fs.Body.Lbrace) {
 		return nil, false
 	}
+
+	// the types are only needed for a loop that has passed the checks above
+	info := typesOf()
 
 	if tv, ok := info.Types[bound]; !ok || !integerType(tv.Type) {
 		return nil, false
@@ -233,13 +236,13 @@ func rangeOf(fs *ast.ForStmt, info *types.Info, comments []*ast.CommentGroup) (*
 // i becomes for range n. The types come from checkTypes, so a bound whose type
 // cannot be found keeps its loop.
 
-// rangeLoops rewrites the index loops of file. comments are the file's comments.
-func rangeLoops(file *ast.File, comments []*ast.CommentGroup, info *types.Info) {
+// rangeLoops rewrites the index loops of file. comments are the file's comments. typesOf gives the types of the file, which are only asked for once a loop has passed the syntactic checks, so a file without such a loop is not type-checked.
+func rangeLoops(file *ast.File, comments []*ast.CommentGroup, typesOf func() *types.Info) {
 	repl := map[*ast.ForStmt]ast.Stmt{}
 
 	ast.Inspect(file, func(n ast.Node) bool {
 		if fs, ok := n.(*ast.ForStmt); ok {
-			if rs, ok := rangeOf(fs, info, comments); ok {
+			if rs, ok := rangeOf(fs, typesOf, comments); ok {
 				repl[fs] = rs
 			}
 		}

@@ -16,10 +16,12 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type (
@@ -52,6 +54,30 @@ type (
 )
 
 var (
+	// moduleDepDirs remembers, for each module root, the directories of the packages its build depends on, by import path (see moduleDeps).
+	moduleDepDirs = struct {
+		sync.Mutex
+		dirs map[string]map[string]string
+	}{
+		dirs: map[string]map[string]string{},
+	}
+
+	// modules remembers the result of enclosingModule for each directory it has been asked about.
+	modules = struct {
+		sync.Mutex
+		found map[string][2]string
+	}{
+		found: map[string][2]string{},
+	}
+
+	// packageDirs remembers the directory of each package found by packageDir, by its import path and the directory it was imported from. The lookups are the slow part of the -strict passes: go/build runs go list for a package outside the standard library, and every file of a package imports the same packages again. The run's files are formatted concurrently, so the map is locked.
+	packageDirs = struct {
+		sync.Mutex
+		dirs map[[2]string]string
+	}{
+		dirs: map[[2]string]string{},
+	}
+
 	// predeclaredPure are the predeclared types, whose conversions have no side effects.
 	predeclaredPure = map[string]bool{
 		"bool": true,
@@ -315,8 +341,8 @@ func declStart(d ast.Decl) token.Pos {
 	return d.Pos()
 }
 
-// enclosingModule returns the root directory and the module path of the go.mod file that governs dir, or empty strings if there is none.
-func enclosingModule(dir string) (string, string) {
+// findEnclosingModule is enclosingModule without the memory.
+func findEnclosingModule(dir string) (string, string) {
 	for {
 		if data, err := os.ReadFile(filepath.Join(dir, "go.mod")); err == nil {
 			for _, line := range strings.Split(string(data), "\n") {
@@ -335,6 +361,31 @@ func enclosingModule(dir string) (string, string) {
 
 		dir = parent
 	}
+}
+
+// enclosingModule returns the root directory and the module path of the go.mod file that governs dir, or empty strings if there is none. The answer is remembered for each directory.
+func enclosingModule(dir string) (string, string) {
+	// the same directory must have one key, however it is written
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	modules.Lock()
+
+	m, ok := modules.found[dir]
+
+	modules.Unlock()
+	if !ok {
+		root, mod := findEnclosingModule(dir)
+		m = [2]string{root, mod}
+
+		modules.Lock()
+
+		modules.found[dir] = m
+
+		modules.Unlock()
+	}
+
+	return m[0], m[1]
 }
 
 func (l layout) line(p token.Pos) int {
@@ -457,6 +508,59 @@ func (l layout) commentIn(from, to int) bool {
 	}
 
 	return false
+}
+
+// moduleDeps returns the directory of each package that the packages of the module at root depend on, by import path. go/build finds such a package by running go list in the working directory of the process, so a lookup from elsewhere would find the wrong module, and each lookup costs a process. One go list in the module root lists them all. A package the list misses is left to go/build.
+func moduleDeps(root string) map[string]string {
+	moduleDepDirs.Lock()
+
+	defer moduleDepDirs.Unlock()
+
+	if dirs, ok := moduleDepDirs.dirs[root]; ok {
+		return dirs
+	}
+
+	dirs := map[string]string{}
+	cmd := exec.Command("go", "list", "-e", "-deps", "-f", "{{.ImportPath}}\t{{.Dir}}", "./...")
+	cmd.Dir = root
+
+	// a module that cannot be listed has no dependencies found this way; go/build still works
+	if out, err := cmd.Output(); err == nil || len(out) > 0 {
+		for _, line := range strings.Split(string(out), "\n") {
+			if path, dir, ok := strings.Cut(line, "\t"); ok && dir != "" {
+				dirs[path] = dir
+			}
+		}
+	}
+
+	moduleDepDirs.dirs[root] = dirs
+
+	return dirs
+}
+
+// findPackageDir is packageDir without the memory.
+func findPackageDir(path, srcDir string) string {
+	if root, mod := enclosingModule(srcDir); mod != "" {
+		if path == mod {
+			return root
+		}
+
+		if rest, ok := strings.CutPrefix(path, mod+"/"); ok {
+			return filepath.Join(root, filepath.FromSlash(rest))
+		}
+
+		// the other packages of the module's build are listed once, in a single go list
+		if dir, ok := moduleDeps(root)[path]; ok {
+			return dir
+		}
+	}
+
+	pkg, err := build.Default.Import(path, srcDir, build.FindOnly)
+	if err != nil {
+		return ""
+	}
+
+	return pkg.Dir
 }
 
 // movable reports whether decls[i] can be cut out of the source alone: a declaration moves with its own lines, so nothing may share them.
@@ -661,22 +765,27 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 
 // packageDir returns the directory of the package with import path path, as seen from srcDir: a package of the module that srcDir is in is found from the module's root; any other package is found with go/build. It returns "" if the package cannot be found.
 func packageDir(path, srcDir string) string {
-	if root, mod := enclosingModule(srcDir); mod != "" {
-		if path == mod {
-			return root
-		}
+	// a directory outside any module is searched the same way from any directory, so it shares one memory
+	root, _ := enclosingModule(srcDir)
+	key := [2]string{path, root}
 
-		if rest, ok := strings.CutPrefix(path, mod+"/"); ok {
-			return filepath.Join(root, filepath.FromSlash(rest))
-		}
+	packageDirs.Lock()
+
+	dir, ok := packageDirs.dirs[key]
+
+	packageDirs.Unlock()
+	if ok {
+		return dir
 	}
 
-	pkg, err := build.Default.Import(path, srcDir, build.FindOnly)
-	if err != nil {
-		return ""
-	}
+	dir = findPackageDir(path, srcDir)
 
-	return pkg.Dir
+	packageDirs.Lock()
+
+	packageDirs.dirs[key] = dir
+
+	packageDirs.Unlock()
+	return dir
 }
 
 // dotImportTypes returns the names of the exported types of the packages that file imports with a dot, which bring those names in without a qualifier. The packages are located with go/build; a package that cannot be found adds no names.

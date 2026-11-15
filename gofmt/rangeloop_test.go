@@ -5,6 +5,7 @@ import (
 	"forkmat/go/printer"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"strings"
 	"testing"
 )
@@ -19,7 +20,9 @@ func rangeText(t *testing.T, src string) string {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	rangeLoops(file, file.Comments, checkTypes(fset, file))
+	rangeLoops(file, file.Comments, func() *types.Info {
+		return checkTypes(fset, file)
+	})
 
 	var buf bytes.Buffer
 

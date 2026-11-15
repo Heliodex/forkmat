@@ -2,20 +2,38 @@ package main
 
 import (
 	"go/ast"
+	"go/build"
 	"go/importer"
+	"go/parser"
 	"go/token"
 	"go/types"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 )
 
-// lockedImporter serializes the calls of an importer, and remembers the packages it
-// has imported: a source importer otherwise looks every import up again, which
-// means reading the files of the package each time.
-type lockedImporter struct {
-	mu sync.Mutex
-	imp types.ImporterFrom
-	done map[string]*types.Package
+type (
+	// lockedImporter serializes the calls of an importer, and remembers the packages it
+	// has imported: a source importer otherwise looks every import up again, which
+	// means reading the files of the package each time.
+	lockedImporter struct {
+		mu sync.Mutex
+		imp types.ImporterFrom
+		done map[string]*types.Package
+		failed map[string]error
+	}
+
+	// reentrantImporter imports the packages that a package loaded by checkPackageDir imports, for code in ctx. The lock of lockedImporter is already held there, so this does not take it.
+	reentrantImporter struct {
+		l *lockedImporter
+		ctx string
+	}
+)
+
+// The source importer runs the cgo tool for a package with cgo files, such as net, which costs about a second for each. The pure Go files of those packages declare the same API, so the checks read those instead. Set before the importer reads build.Default.
+func init() {
+	build.Default.CgoEnabled = false
 }
 
 // checkTypes type-checks file on its own and returns the types of its expressions.
@@ -65,26 +83,110 @@ func isUntyped(t types.Type) bool {
 // callExprPtrType is the type of a *ast.CallExpr.
 var callExprPtrType = reflect.TypeFor[*ast.CallExpr]()
 
+// checkPackageDir type-checks the package with import path path, in pdir, from its source. Only its declarations are needed to import it, so the function bodies are skipped, which is much faster. Its own imports are loaded the same way, for code in ctx: the directory of the code that first imported it, since the packages of that module are the ones listed. The result is false, and nothing is checked, for a package with cgo files: those need the cgo tool, which the source importer runs.
+func (l *lockedImporter) checkPackageDir(path, pdir, ctx string) (*types.Package, bool, error) {
+	bp, err := build.Default.ImportDir(pdir, 0)
+	if err != nil {
+		return nil, true, err
+	}
+
+	if len(bp.CgoFiles) > 0 {
+		return nil, false, nil
+	}
+
+	fset := token.NewFileSet()
+
+	var files []*ast.File
+
+	for _, name := range bp.GoFiles {
+		f, err := parser.ParseFile(fset, filepath.Join(pdir, name), nil, parser.SkipObjectResolution)
+		if err != nil {
+			return nil, true, err
+		}
+
+		files = append(files, f)
+	}
+
+	// an error in the declarations means the package is not imported at all, as the source importer does
+	var firstErr error
+
+	conf := types.Config{
+		Importer: reentrantImporter{
+			l: l,
+			ctx: ctx,
+		},
+		IgnoreFuncBodies: true,
+		Error: func(err error) {
+			if firstErr == nil {
+				firstErr = err
+			}
+		},
+	}
+	pkg, _ := conf.Check(path, fset, files, nil)
+
+	if firstErr != nil {
+		return nil, true, firstErr
+	}
+
+	return pkg, true, nil
+}
+
 // ImportFrom implements types.ImporterFrom.
 func (l *lockedImporter) ImportFrom(path, dir string, mode types.ImportMode) (*types.Package, error) {
 	l.mu.Lock()
 
 	defer l.mu.Unlock()
 
-	if pkg, ok := l.done[path]; ok {
+	return l.importPkg(path, dir)
+}
+
+// importPkg imports the package with import path path, for code in the directory dir. It must be called with the lock held: a package's own imports are loaded through it too. Packages are remembered, failures as well, so a package that cannot be read is not looked up again for every file that imports it. The memory is kept per module: a path can name different packages in nested modules of one tree, so the first file to import a path must not decide for the others.
+func (l *lockedImporter) importPkg(path, dir string) (*types.Package, error) {
+	root, _ := enclosingModule(dir)
+	key := root + "\x00" + path
+
+	if pkg, ok := l.done[key]; ok {
 		return pkg, nil
 	}
 
-	pkg, err := l.imp.ImportFrom(path, dir, mode)
-	if err == nil {
-		if l.done == nil {
-			l.done = map[string]*types.Package{}
-		}
-
-		l.done[path] = pkg
+	if err, ok := l.failed[key]; ok {
+		return nil, err
 	}
 
-	return pkg, err
+	pkg, err := l.load(path, dir)
+	if err != nil {
+		if l.failed == nil {
+			l.failed = map[string]error{}
+		}
+
+		l.failed[key] = err
+
+		return nil, err
+	}
+
+	if l.done == nil {
+		l.done = map[string]*types.Package{}
+	}
+
+	l.done[key] = pkg
+
+	return pkg, nil
+}
+
+// load imports the package with import path path, for code in dir, from its source if it is outside the standard library (see checkPackageDir). The standard library, and any package with cgo files, go to the source importer.
+func (l *lockedImporter) load(path, dir string) (*types.Package, error) {
+	if pdir := packageDir(path, dir); pdir != "" && !strings.HasPrefix(pdir, filepath.Join(build.Default.GOROOT, "src")+string(filepath.Separator)) {
+		if pkg, handled, err := l.checkPackageDir(path, pdir, dir); handled {
+			return pkg, err
+		}
+	}
+
+	return l.imp.ImportFrom(path, dir, 0)
+}
+
+// ImportFrom implements types.ImporterFrom. The directory types passes is that of the package being checked, which is not where its module's packages are listed, so ctx is used instead.
+func (r reentrantImporter) ImportFrom(path, _ string, mode types.ImportMode) (*types.Package, error) {
+	return r.l.importPkg(path, r.ctx)
 }
 
 // Import implements types.Importer.
@@ -102,6 +204,11 @@ func operand(x ast.Expr) ast.Expr {
 	return &ast.ParenExpr{
 		X: x,
 	}
+}
+
+// Import implements types.Importer.
+func (r reentrantImporter) Import(path string) (*types.Package, error) {
+	return r.l.importPkg(path, r.ctx)
 }
 
 // This file implements -unconvert: a conversion T(x) is removed when x already has the type T. The types come from type-checking the file on its own. Names that cannot be resolved from this file (declared in another file, or in a package that cannot be imported) have no type, so a conversion of them is kept: the check only removes what it can prove redundant.

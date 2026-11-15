@@ -487,7 +487,7 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 
 	if *strict && sourceAdj == nil {
 		// -strict orders the cases of a switch over iota constants by declaration (see switchorder.go)
-		switchCaseOrder(fileSet, filename, file)
+		switchCaseOrder(filename, file)
 	}
 
 	if *strict && sourceAdj == nil {
@@ -497,7 +497,7 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 
 	if *strict && sourceAdj == nil {
 		// -strict writes index loops as range loops (see rangeloop.go)
-		rangeLoops(file, file.Comments, typesOf())
+		rangeLoops(file, file.Comments, typesOf)
 	}
 
 	if *strict && sourceAdj == nil {

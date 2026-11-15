@@ -39,7 +39,7 @@ func TestSwitchCaseOrderComments(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
-			switchCaseOrder(fset, "x.go", file)
+			switchCaseOrder("x.go", file)
 
 			var buf bytes.Buffer
 
@@ -76,7 +76,7 @@ func TestSwitchCaseOrderStdin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	switchCaseOrder(fset, "<standard input>", file)
+	switchCaseOrder("<standard input>", file)
 
 	var got []string
 
@@ -103,7 +103,7 @@ func caseOrder(t *testing.T, filename, src string) []string {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	switchCaseOrder(fset, filename, file)
+	switchCaseOrder(filename, file)
 
 	var out []string
 
@@ -267,6 +267,11 @@ func TestSwitchCaseOrderPackages(t *testing.T) {
 			want: "token.CONST token.FUNC token.TYPE token.VAR",
 		},
 		{
+			name: "a constant with a value from an imported package keeps the switch",
+			src: "package p\n\nimport \"go/token\"\n\ntype K int\n\nconst (\n\tKA K = iota\n\tKB = token.VAR\n)\n\nfunc f(k K) int {\n\tswitch k {\n\tcase KB:\n\t\treturn 9\n\tcase KA:\n\t\treturn 1\n\t}\n\treturn 0\n}\n",
+			want: "KB KA",
+		},
+		{
 			name: "an alias of another constant keeps the switch",
 			src: aliasSwitch,
 			want: "KZ KA KB",
@@ -298,7 +303,7 @@ func typeCases(t *testing.T, src string) []string {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	switchCaseOrder(fset, "x.go", file)
+	switchCaseOrder("x.go", file)
 
 	var out []string
 

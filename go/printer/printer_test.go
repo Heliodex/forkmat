@@ -1111,7 +1111,32 @@ func TestStrictVarHeaders(t *testing.T) {
 		{
 			name: "a var before a for loop with a condition",
 			src: "package p\n\nfunc f() {\n\tvar n int\n\tfor n < 4 {\n\t\tn++\n\t}\n}\n",
-			want: "for n := int(0); n < 4; {",
+			want: "for n := 0; n < 4; {",
+		},
+		{
+			name: "a var before a switch",
+			src: "package p\n\nfunc f() {\n\tvar n int64\n\tswitch n {\n\tcase 1:\n\t}\n}\n",
+			want: "switch n := int64(0); n {",
+		},
+		{
+			name: "a := with a value before a for loop",
+			src: "package p\n\nfunc f() int {\n\tx := g()\n\tfor x < 4 {\n\t\tx++\n\t}\n\treturn 0\n}\n\nfunc g() int { return 1 }\n",
+			want: "for x := g(); x < 4; {",
+		},
+		{
+			name: "a := with a value before a switch",
+			src: "package p\n\nfunc g() int { return 1 }\n\nfunc f() {\n\tx := g()\n\tswitch x {\n\tcase 1:\n\t}\n}\n",
+			want: "switch x := g(); x {",
+		},
+		{
+			name: "a := used after the loop keeps its declaration",
+			src: "package p\n\nfunc g() int { return 1 }\n\nfunc f() int {\n\tx := g()\n\tfor x < 4 {\n\t\tx++\n\t}\n\treturn x\n}\n",
+			want: "x := g()\n\n\tfor x < 4 {",
+		},
+		{
+			name: "a := captured by a closure in a for loop keeps its declaration",
+			src: "package p\n\nfunc g() int { return 1 }\n\nfunc f() {\n\tx := g()\n\tfor {\n\t\tgo func() { println(x) }()\n\t\tbreak\n\t}\n}\n",
+			want: "x := g()\n\n\tfor {",
 		},
 		{
 			name: "a var before an if statement",

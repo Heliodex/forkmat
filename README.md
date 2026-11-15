@@ -222,6 +222,7 @@ The rules:
   name) keeps the `:=`.
 - `interface{}` is written `any`, unless the file declares its own `any` at
   package level.
+- `new(T)` is written `&T{}` when `T` is a struct type, since a composite literal reads as the value it builds and can set fields by name. `new` stays for other types, such as `new(int)`, and in the header of an `if`, `for` or `switch`, where the literal would not parse. The type checker decides whether `new` is the builtin and whether `T` is a struct, so a shadowed `new` is left alone (`gofmt/newlit.go`).
 - `x = x + 1` and `x = x - 1` are written `x++` and `x--`, when `x` is an identifier and the other operand is the integer literal `1`. This includes the post statement of a `for` loop.
 - The `default` clause of every switch and type switch goes last, since it runs only when no other clause matches, wherever it is written. It stays where it is when it ends in `fallthrough`, or when the clause before it does, since that clause would then fall into a different clause (`defaultLast` in `gofmt/switchorder.go`). A comment between clauses also keeps it in place.
 - The clauses of a type switch are sorted alphabetically by their types, when every type is concrete: a pointer, slice, map, array, channel, function or struct type, a predeclared type other than an interface, or a named type whose declaration is not an interface. Interfaces may overlap, so a type switch with one is left alone. The clause bodies need not return: a type switch cannot fall through, and a `break` leaves the switch whichever clause it is in.

@@ -318,6 +318,11 @@ func formatSource(filename string, src []byte, fragmentOk, fromDisk bool, r *rep
 		anyTypes(file)
 	}
 
+	if *strict && rewritable {
+		// -strict writes new(T) of a struct type as &T{} (see newlit.go)
+		newLiterals(file, typesOf)
+	}
+
 	if *mergeCasesFlag && rewritable {
 		mergeCases(fileSet, file)
 	}

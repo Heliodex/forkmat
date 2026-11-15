@@ -1125,6 +1125,13 @@ func (p *printer) binaryExpr(x *ast.BinaryExpr, prec1, cutoff, depth int) {
 		}
 	}
 
+	// Under StrictLayout a binary expression is only broken by a comment between its operands, which ends the line. The right operand is then indented, as the layout without StrictLayout indents it.
+	if p.strict() && p.commentIn(x.X.End(), x.Y.Pos()) {
+		p.print(indent)
+
+		ws = ignore
+	}
+
 	if printBlank {
 		p.print(blank)
 	}

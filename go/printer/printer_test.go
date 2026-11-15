@@ -991,6 +991,34 @@ func strictText(t *testing.T, src string) string {
 	return buf.String()
 }
 
+// TestStrictBinaryExprIndent checks that a condition broken by a comment indents its right operand, as it does without StrictLayout.
+func TestStrictBinaryExprIndent(t *testing.T) {
+	tests := []struct {
+		name, src string
+		// want is text the output must contain
+		want string
+	}{
+		{
+			name: "a comment ends the line after the operator",
+			src: "package p\n\nfunc f(a, b bool) {\n\tif a && // first\n\tb {\n\t\tg()\n\t}\n}\n",
+			want: "if a && // first\n\t\tb {",
+		},
+		{
+			name: "the operand after a broken operator stays indented",
+			src: "package p\n\nfunc f(a, b, c bool) {\n\tif a && // first\n\tb &&\n\tc {\n\t\tg()\n\t}\n}\n",
+			want: "if a && // first\n\t\tb && c {",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := strictText(t, tt.src); !strings.Contains(got, tt.want) {
+				t.Errorf("output lacks %q:\n%s", tt.want, got)
+			}
+		})
+	}
+}
+
 // TestStrictCallClosingToken checks that a call broken by a comment ends with its closing parenthesis on a line of its own, after a trailing comma, with no blank line before it.
 func TestStrictCallClosingToken(t *testing.T) {
 	tests := []struct {

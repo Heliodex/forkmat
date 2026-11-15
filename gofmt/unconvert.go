@@ -2,39 +2,11 @@ package main
 
 import (
 	"go/ast"
-	"go/build"
-	"go/importer"
-	"go/parser"
 	"go/token"
 	"go/types"
 	"path/filepath"
 	"reflect"
-	"strings"
-	"sync"
 )
-
-type (
-	// lockedImporter serializes the calls of an importer, and remembers the packages it
-	// has imported: a source importer otherwise looks every import up again, which
-	// means reading the files of the package each time.
-	lockedImporter struct {
-		mu sync.Mutex
-		imp types.ImporterFrom
-		done map[string]*types.Package
-		failed map[string]error
-	}
-
-	// reentrantImporter imports the packages that a package loaded by checkPackageDir imports, for code in ctx. The lock of lockedImporter is already held there, so this does not take it.
-	reentrantImporter struct {
-		l *lockedImporter
-		ctx string
-	}
-)
-
-// The source importer runs the cgo tool for a package with cgo files, such as net, which costs about a second for each. The pure Go files of those packages declare the same API, so the checks read those instead. Set before the importer reads build.Default.
-func init() {
-	build.Default.CgoEnabled = false
-}
 
 // checkTypes type-checks file on its own and returns the types of its expressions.
 // Errors are expected for names declared elsewhere, and are ignored: an expression
@@ -50,13 +22,6 @@ func checkTypes(fset *token.FileSet, file *ast.File) *types.Info {
 
 	conf.Check(file.Name.Name, fset, []*ast.File{file}, info)
 	return info
-}
-
-// sharedImporter imports packages from source, once for the whole run: a source
-// importer keeps the packages it has read, so one instance serves every file. It is
-// not safe for concurrent use, so each import holds the lock.
-var sharedImporter types.ImporterFrom = &lockedImporter{
-	imp: importer.ForCompiler(token.NewFileSet(), "source", nil).(types.ImporterFrom),
 }
 
 // hasSelector reports whether an expression holds a selector, such as pkg.T.
@@ -80,120 +45,6 @@ func isUntyped(t types.Type) bool {
 	return ok && b.Info()&types.IsUntyped != 0
 }
 
-// callExprPtrType is the type of a *ast.CallExpr.
-var callExprPtrType = reflect.TypeFor[*ast.CallExpr]()
-
-// checkPackageDir type-checks the package with import path path, in pdir, from its source. Only its declarations are needed to import it, so the function bodies are skipped, which is much faster. Its own imports are loaded the same way, for code in ctx: the directory of the code that first imported it, since the packages of that module are the ones listed. The result is false, and nothing is checked, for a package with cgo files: those need the cgo tool, which the source importer runs.
-func (l *lockedImporter) checkPackageDir(path, pdir, ctx string) (*types.Package, bool, error) {
-	bp, err := build.Default.ImportDir(pdir, 0)
-	if err != nil {
-		return nil, true, err
-	}
-
-	if len(bp.CgoFiles) > 0 {
-		return nil, false, nil
-	}
-
-	fset := token.NewFileSet()
-
-	var files []*ast.File
-
-	for _, name := range bp.GoFiles {
-		f, err := parser.ParseFile(fset, filepath.Join(pdir, name), nil, parser.SkipObjectResolution)
-		if err != nil {
-			return nil, true, err
-		}
-
-		files = append(files, f)
-	}
-
-	// an error in the declarations means the package is not imported at all, as the source importer does
-	var firstErr error
-
-	conf := types.Config{
-		Importer: reentrantImporter{
-			l: l,
-			ctx: ctx,
-		},
-		IgnoreFuncBodies: true,
-		Error: func(err error) {
-			if firstErr == nil {
-				firstErr = err
-			}
-		},
-	}
-	pkg, _ := conf.Check(path, fset, files, nil)
-
-	if firstErr != nil {
-		return nil, true, firstErr
-	}
-
-	return pkg, true, nil
-}
-
-// ImportFrom implements types.ImporterFrom.
-func (l *lockedImporter) ImportFrom(path, dir string, mode types.ImportMode) (*types.Package, error) {
-	l.mu.Lock()
-
-	defer l.mu.Unlock()
-
-	return l.importPkg(path, dir)
-}
-
-// importPkg imports the package with import path path, for code in the directory dir. It must be called with the lock held: a package's own imports are loaded through it too. Packages are remembered, failures as well, so a package that cannot be read is not looked up again for every file that imports it. The memory is kept per module: a path can name different packages in nested modules of one tree, so the first file to import a path must not decide for the others.
-func (l *lockedImporter) importPkg(path, dir string) (*types.Package, error) {
-	root, _ := enclosingModule(dir)
-	key := root + "\x00" + path
-
-	if pkg, ok := l.done[key]; ok {
-		return pkg, nil
-	}
-
-	if err, ok := l.failed[key]; ok {
-		return nil, err
-	}
-
-	pkg, err := l.load(path, dir)
-	if err != nil {
-		if l.failed == nil {
-			l.failed = map[string]error{}
-		}
-
-		l.failed[key] = err
-
-		return nil, err
-	}
-
-	if l.done == nil {
-		l.done = map[string]*types.Package{}
-	}
-
-	l.done[key] = pkg
-
-	return pkg, nil
-}
-
-// load imports the package with import path path, for code in dir, from its source if it is outside the standard library (see checkPackageDir). The standard library, and any package with cgo files, go to the source importer.
-func (l *lockedImporter) load(path, dir string) (*types.Package, error) {
-	if pdir := packageDir(path, dir); pdir != "" && !strings.HasPrefix(pdir, filepath.Join(build.Default.GOROOT, "src")+string(filepath.Separator)) {
-		if pkg, handled, err := l.checkPackageDir(path, pdir, dir); handled {
-			return pkg, err
-		}
-	}
-
-	return l.imp.ImportFrom(path, dir, 0)
-}
-
-// ImportFrom implements types.ImporterFrom. The directory types passes is that of the package being checked, which is not where its module's packages are listed, so ctx is used instead.
-func (r reentrantImporter) ImportFrom(path, _ string, mode types.ImportMode) (*types.Package, error) {
-	return r.l.importPkg(path, r.ctx)
-}
-
-// Import implements types.Importer.
-func (l *lockedImporter) Import(path string) (*types.Package, error) {
-	return l.ImportFrom(path, "", 0)
-}
-
 // operand returns the expression that stands in for a conversion T(x) once it is removed: x itself, in parentheses when its operators would bind differently in the place of the conversion. The parentheses are dropped again by the printer under -strict when they are not needed.
 func operand(x ast.Expr) ast.Expr {
 	switch x.(type) {
@@ -209,9 +60,72 @@ func operand(x ast.Expr) ast.Expr {
 	}
 }
 
-// Import implements types.Importer.
-func (r reentrantImporter) Import(path string) (*types.Package, error) {
-	return r.l.importPkg(path, r.ctx)
+// packageTypeNames returns the names of the types declared in the package of the file, in the other files as well as in it, and the types declared inside functions of the file.
+func packageTypeNames(filename string, file *ast.File) map[string]bool {
+	dir := filepath.Dir(filename)
+
+	if !onDisk(filename) {
+		dir = ""
+	}
+
+	names := map[string]bool{}
+
+	for n := range packageTypes(dir, "", file.Name.Name) {
+		names[n] = true
+	}
+
+	// a type declared inside a function is a name too
+	ast.Inspect(file, func(n ast.Node) bool {
+		if ts, ok := n.(*ast.TypeSpec); ok {
+			names[ts.Name.Name] = true
+		}
+
+		return true
+	})
+	return names
+}
+
+// typeLikeFun reports whether the function of a call may be a type: a type literal, or a name in names or a predeclared type, under any parentheses, pointer, or type arguments.
+func typeLikeFun(e ast.Expr, names map[string]bool) bool {
+	switch x := e.(type) {
+	case *ast.ArrayType, *ast.ChanType, *ast.FuncType, *ast.InterfaceType, *ast.MapType, *ast.StructType:
+		return true
+	case *ast.Ident:
+		return universeTypes[x.Name] || names[x.Name]
+	case *ast.IndexExpr:
+		return typeLikeFun(x.X, names)
+	case *ast.IndexListExpr:
+		return typeLikeFun(x.X, names)
+	case *ast.ParenExpr:
+		return typeLikeFun(x.X, names)
+	case *ast.StarExpr:
+		return typeLikeFun(x.X, names)
+	}
+
+	return false
+}
+
+// callExprPtrType is the type of a *ast.CallExpr.
+var callExprPtrType = reflect.TypeFor[*ast.CallExpr]()
+
+// mayConvert reports whether file holds a call that unconvert could remove: one with a single argument, whose function is a type literal, or a name of a type in the package, the file, or a dot import, possibly generic or parenthesized. Only such a file is type-checked, since the check is the slow part of -unconvert and most files have no conversion.
+func mayConvert(filename string, file *ast.File) bool {
+	names := packageTypeNames(filename, file)
+
+	for n := range dotImportTypes(filename, file) {
+		names[n] = true
+	}
+
+	var found bool
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok && len(call.Args) == 1 && !call.Ellipsis.IsValid() && !hasSelector(call.Fun) && typeLikeFun(call.Fun, names) {
+			found = true
+		}
+
+		return !found
+	})
+	return found
 }
 
 // This file implements -unconvert: a conversion T(x) is removed when x already has the type T. The types come from type-checking the file on its own. Names that cannot be resolved from this file (declared in another file, or in a package that cannot be imported) have no type, so a conversion of them is kept: the check only removes what it can prove redundant.

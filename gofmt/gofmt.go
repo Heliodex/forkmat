@@ -457,8 +457,10 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 	rewritable := sourceAdj == nil && !generated
 	if *strict && rewritable {
 		// -strict also reorders declarations below the ones they depend on (see reorder.go). The reordered source is parsed again, for printing.
-		if _, reordered := reorderSource(fileSet, filename, src); reordered != nil {
-			file = reordered
+		if out := reorderedSource(fileSet, filename, src); !bytes.Equal(out, src) {
+			if reordered, err := parser.ParseFile(fileSet, filename, out, parser.ParseComments); err == nil {
+				file = reordered
+			}
 		}
 	}
 
@@ -474,7 +476,7 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 		return typeInfo
 	}
 
-	if *unconvertFlag && rewritable {
+	if *unconvertFlag && rewritable && mayConvert(filename, file) {
 		file = unconvert(fileSet, file, typesOf())
 	}
 

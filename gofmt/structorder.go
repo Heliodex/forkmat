@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"os"
@@ -9,6 +10,55 @@ import (
 	"strconv"
 	"strings"
 )
+
+// dirType is a named type declared in one file of a directory.
+type dirType struct {
+	file, // the base name of the file
+	name string
+	expr ast.Expr
+}
+
+// dirTypeList remembers dirTypes, by directory, package name and whether test files are included.
+var dirTypeList memo[string, []dirType]
+
+// dirTypes returns the named types declared in the .go files of dir, in file order: the files of package pkg, or of any package when pkg is "". Test files are included only when tests is set. A file that cannot be parsed contributes nothing. The list is read once per directory, since every file of a package looks at its siblings.
+func dirTypes(dir, pkg string, tests bool) []dirType {
+	return dirTypeList.get(fmt.Sprintf("%s\x00%s\x00%t", dir, pkg, tests), func() []dirType {
+		var out []dirType
+
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return nil
+		}
+
+		for _, e := range entries {
+			name := e.Name()
+			if e.IsDir() || filepath.Ext(name) != ".go" || !tests && strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+
+			f := parsedSibling(filepath.Join(dir, name))
+			if f == nil || pkg != "" && f.Name.Name != pkg {
+				continue
+			}
+
+			for _, d := range f.Decls {
+				if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
+					for _, sp := range g.Specs {
+						ts := sp.(*ast.TypeSpec)
+						out = append(out, dirType{
+							file: name,
+							name: ts.Name.Name,
+							expr: ts.Type,
+						})
+					}
+				}
+			}
+		}
+
+		return out
+	})
+}
 
 // embeddedName returns the name an embedded field of type t has, or "".
 func embeddedName(t ast.Expr) string {
@@ -55,29 +105,10 @@ func fieldNames(st *ast.StructType) ([]string, bool) {
 // packageTypes returns the named types declared in the .go files of dir, by name. The file named skip is left out, and so is any file whose package is not pkg, unless pkg is "". A file that cannot be parsed contributes nothing.
 func packageTypes(dir, skip, pkg string) map[string]ast.Expr {
 	types := map[string]ast.Expr{}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return types
-	}
 
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || filepath.Ext(name) != ".go" || name == skip || pkg == "" && strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-
-		f := parsedSibling(filepath.Join(dir, name))
-		if f == nil || pkg != "" && f.Name.Name != pkg {
-			continue
-		}
-
-		for _, d := range f.Decls {
-			if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
-				for _, sp := range g.Specs {
-					ts := sp.(*ast.TypeSpec)
-					types[ts.Name.Name] = ts.Type
-				}
-			}
+	for _, t := range dirTypes(dir, pkg, pkg != "") {
+		if t.file != skip {
+			types[t.name] = t.expr
 		}
 	}
 

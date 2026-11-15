@@ -14,7 +14,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 type (
@@ -36,44 +35,22 @@ type (
 var (
 
 	// checkedPackages remembers the packages that packageOf has checked, by directory and package name.
-	checkedPackages = struct {
-		sync.Mutex
-		pkgs map[string]*types.Package
-	}{
-		pkgs: map[string]*types.Package{},
-	}
+	checkedPackages memo[string, *types.Package]
 
 	// importedIndexes remembers importedConstIndex, by the directory of the package.
-	importedIndexes = struct {
-		sync.Mutex
-		m map[string]map[string]int
-	}{
-		m: map[string]map[string]int{},
-	}
+	importedIndexes memo[string, map[string]int]
 
 	// packageFileNames remembers packageNames, by directory and package name.
-	packageFileNames = struct {
-		sync.Mutex
-		names map[string][]string
-	}{
-		names: map[string][]string{},
-	}
+	packageFileNames memo[string, []string]
 
-	// placeholderPackages remembers placeholderPackage, by directory.
-	placeholderPackages = struct {
-		sync.Mutex
-		pkgs map[string]*types.Package
-	}{
-		pkgs: map[string]*types.Package{},
-	}
+	// placeholderPackages remembers placeholderPackage, by directory and import path.
+	placeholderPackages memo[string, *types.Package]
 
 	// orderedFiles remembers orderedSibling, by path.
-	orderedFiles = struct {
-		sync.Mutex
-		files map[string]*ast.File
-	}{
-		files: map[string]*ast.File{},
-	}
+	orderedFiles memo[string, *ast.File]
+
+	// localIndexes remembers the constant positions of each package directory, by directory and package name (see indexConsts).
+	localIndexes memo[string, map[string]int]
 )
 
 // commentsKeepOrder reports whether the comments inside the clauses of list stay in their clauses once the clauses are in that order. The printer writes a comment before the first token that follows it in the source, so a comment is misplaced when a clause printed before its clause comes later in the source.
@@ -217,6 +194,22 @@ func exprText(e ast.Expr) string {
 	return buf.String()
 }
 
+// hasTopLevelConst reports whether the file at path declares a constant at top level. Only such a file can change the numbering of the constants (see indexConsts), so the others are not reordered for it, which costs much more than parsing them.
+func hasTopLevelConst(path string) bool {
+	f := parsedSibling(path)
+	if f == nil {
+		return false
+	}
+
+	for _, d := range f.Decls {
+		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.CONST {
+			return true
+		}
+	}
+
+	return false
+}
+
 // indexConsts returns the position of each constant of files, by name: the constants are numbered in the order of the files, and of the declarations within each file. A name declared twice keeps its first position.
 func indexConsts(files []*ast.File) map[string]int {
 	index := map[string]int{}
@@ -261,63 +254,45 @@ func onDisk(filename string) bool {
 
 // orderedSibling returns the file at path as -strict leaves its declarations: with the reorder passes applied to it (see reorderSource). The constants of a package are numbered from these files, since the passes change their order, for instance by sorting a run of constants. Numbering them from the source on disk would number a sibling differently before and after it is formatted, and the switches that use its constants would change on every run. The result is nil if the file cannot be read or parsed.
 func orderedSibling(path string) *ast.File {
-	orderedFiles.Lock()
-
-	defer orderedFiles.Unlock()
-
-	if f, ok := orderedFiles.files[path]; ok {
-		return f
-	}
-
-	var f *ast.File
-
-	if src, err := os.ReadFile(path); err == nil {
-		fset := token.NewFileSet()
-
-		if out, changed := reorderSource(fset, path, src); changed != nil {
-			f = changed
-		} else if parsed, err := parser.ParseFile(fset, path, out, parser.ParseComments); err == nil {
-			f = parsed
+	return orderedFiles.get(path, func() *ast.File {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return nil
 		}
-	}
 
-	orderedFiles.files[path] = f
+		fset := token.NewFileSet()
+		out := reorderedSource(fset, path, src)
+		f, err := parser.ParseFile(fset, path, out, parser.ParseComments)
+		if err != nil {
+			return nil
+		}
 
-	return f
+		return f
+	})
 }
 
 // packageNames returns the names of the .go files of the package pkg in dir, by name, as a build of the directory would take them: a file that its build constraints exclude is left out. A directory whose files do not build as one package lists every file of pkg instead.
 func packageNames(dir, pkg string) []string {
-	key := dir + "\x00" + pkg
+	return packageFileNames.get(dir+"\x00"+pkg, func() []string {
+		var names []string
 
-	packageFileNames.Lock()
+		if bp, err := build.Default.ImportDir(dir, 0); err == nil && bp.Name == pkg {
+			names = bp.GoFiles
+		} else if entries, err := os.ReadDir(dir); err == nil {
+			for _, e := range entries {
+				name := e.Name()
+				if e.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
+					continue
+				}
 
-	defer packageFileNames.Unlock()
-
-	if names, ok := packageFileNames.names[key]; ok {
-		return names
-	}
-
-	var names []string
-
-	if bp, err := build.Default.ImportDir(dir, 0); err == nil && bp.Name == pkg {
-		names = bp.GoFiles
-	} else if entries, err := os.ReadDir(dir); err == nil {
-		for _, e := range entries {
-			name := e.Name()
-			if e.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
-				continue
-			}
-
-			if f := parsedSibling(filepath.Join(dir, name)); f != nil && f.Name.Name == pkg {
-				names = append(names, name)
+				if f := parsedSibling(filepath.Join(dir, name)); f != nil && f.Name.Name == pkg {
+					names = append(names, name)
+				}
 			}
 		}
-	}
 
-	packageFileNames.names[key] = names
-
-	return names
+		return names
+	})
 }
 
 // packagePaths returns the .go files of the package of the file named filename, in the order of the directory, by name: the file itself, if it takes part in the build, and the other files of its package (see packageNames). A file read from standard input has no paths.
@@ -341,46 +316,14 @@ func packagePaths(filename, pkg string) []string {
 	return paths
 }
 
-// packageConstFiles returns the files of the package of file, for the constant positions (see indexConsts): the file as it is now, and the siblings as they are on disk.
-func packageConstFiles(filename string, file *ast.File) []*ast.File {
-	if !onDisk(filename) {
-		return []*ast.File{file}
-	}
-
-	var files []*ast.File
-
-	for _, path := range packagePaths(filename, file.Name.Name) {
-		if path == filename {
-			files = append(files, file)
-		} else if f := orderedSibling(path); f != nil {
-			files = append(files, f)
-		}
-	}
-
-	return files
-}
-
-// packageOf returns the package of file, checked from its source with the function bodies skipped: the constants and the types are all a switch needs. Each directory is checked once, however many of its files have switches. A file read from standard input is checked alone.
-func packageOf(filename string, file *ast.File) *types.Package {
-	var key string
-
-	if onDisk(filename) {
-		key = filepath.Dir(filename) + "\x00" + file.Name.Name
-	}
-	checkedPackages.Lock()
-
-	defer checkedPackages.Unlock()
-
-	if pkg, ok := checkedPackages.pkgs[key]; ok && key != "" {
-		return pkg
-	}
-
+// checkPackage checks the package of file. A package on disk is checked from its files, which are read from disk, with the file itself among them; otherwise the file alone is checked, as it is now.
+func checkPackage(filename string, file *ast.File, onDisk bool) *types.Package {
 	// the files are parsed into one file set, which the checker needs
 	fset := token.NewFileSet()
 
 	var files []*ast.File
 
-	if key == "" {
+	if !onDisk {
 		// the file keeps its positions: it is registered with the base it was parsed with
 		fset.AddFile(filename, int(file.FileStart), int(file.FileEnd-file.FileStart))
 
@@ -400,11 +343,38 @@ func packageOf(filename string, file *ast.File) *types.Package {
 	}
 	pkg, _ := conf.Check(file.Name.Name, fset, files, nil)
 
-	if key != "" {
-		checkedPackages.pkgs[key] = pkg
+	return pkg
+}
+
+// packageConstFiles returns the files of the package of file, for the constant positions (see indexConsts): the file as it is now, and the siblings as they are on disk.
+func packageConstFiles(filename string, file *ast.File) []*ast.File {
+	if !onDisk(filename) {
+		return []*ast.File{file}
 	}
 
-	return pkg
+	// the file itself is taken as the passes leave it, like its siblings: the same as the file as it is in memory, since gofmt reorders it the same way
+	var files []*ast.File
+
+	for _, path := range packagePaths(filename, file.Name.Name) {
+		if hasTopLevelConst(path) {
+			if f := orderedSibling(path); f != nil {
+				files = append(files, f)
+			}
+		}
+	}
+
+	return files
+}
+
+// packageOf returns the package of file, checked from its source with the function bodies skipped: the constants and the types are all a switch needs. Each directory is checked once, however many of its files have switches. A file read from standard input is checked alone.
+func packageOf(filename string, file *ast.File) *types.Package {
+	if !onDisk(filename) {
+		return checkPackage(filename, file, false)
+	}
+
+	return checkedPackages.get(filepath.Dir(filename)+"\x00"+file.Name.Name, func() *types.Package {
+		return checkPackage(filename, file, true)
+	})
 }
 
 // packageTypeExprs returns the named types of the file and of the other files of its package, by name, as their type expressions.
@@ -442,17 +412,13 @@ func placeholderPackage(path, dir string) *types.Package {
 	if dir == "" {
 		return nil
 	}
-	placeholderPackages.Lock()
 
-	defer placeholderPackages.Unlock()
+	return placeholderPackages.get(dir+"\x00"+path, func() *types.Package {
+		bp, err := build.Default.ImportDir(dir, 0)
+		if err != nil {
+			return nil
+		}
 
-	if pkg, ok := placeholderPackages.pkgs[dir]; ok {
-		return pkg
-	}
-
-	var pkg *types.Package
-
-	if bp, err := build.Default.ImportDir(dir, 0); err == nil {
 		fset := token.NewFileSet()
 
 		var files []*ast.File
@@ -468,12 +434,10 @@ func placeholderPackage(path, dir string) *types.Package {
 			IgnoreFuncBodies: true,
 			Error: func(error) {},
 		}
-		pkg, _ = conf.Check(path, fset, files, nil)
-	}
+		pkg, _ := conf.Check(path, fset, files, nil)
 
-	placeholderPackages.pkgs[dir] = pkg
-
-	return pkg
+		return pkg
+	})
 }
 
 // readImportedConstIndex is importedConstIndex for the package in dir.
@@ -486,8 +450,10 @@ func readImportedConstIndex(dir string) map[string]int {
 	var files []*ast.File
 
 	for _, name := range pkg.GoFiles {
-		if f := orderedSibling(filepath.Join(dir, name)); f != nil {
-			files = append(files, f)
+		if path := filepath.Join(dir, name); hasTopLevelConst(path) {
+			if f := orderedSibling(path); f != nil {
+				files = append(files, f)
+			}
 		}
 	}
 
@@ -500,18 +466,10 @@ func importedConstIndex(path, filename string) map[string]int {
 	if dir == "" {
 		return nil
 	}
-	importedIndexes.Lock()
 
-	defer importedIndexes.Unlock()
-
-	if idx, ok := importedIndexes.m[dir]; ok {
-		return idx
-	}
-
-	idx := readImportedConstIndex(dir)
-	importedIndexes.m[dir] = idx
-
-	return idx
+	return importedIndexes.get(dir, func() map[string]int {
+		return readImportedConstIndex(dir)
+	})
 }
 
 // reorderTypeSwitchCases orders the non-default clauses of a type switch by their types, alphabetically, if every type is concrete (see concreteType). The clause bodies do not change. A type switch cannot fall through, and a break leaves the switch whichever clause it is in, so the bodies need not return. A clause with several types is ordered by its first type in alphabetical order. The default clause is last (see defaultLast).
@@ -617,6 +575,17 @@ func (env *switchEnv) importNamed(name string) *types.Package {
 	return found
 }
 
+// localIndex returns the constant positions of the package of the file: one index for the directory, which every file of the package shares.
+func (env *switchEnv) localIndex() map[string]int {
+	if !onDisk(env.filename) {
+		return indexConsts(packageConstFiles(env.filename, env.file))
+	}
+
+	return localIndexes.get(filepath.Dir(env.filename)+"\x00"+env.file.Name.Name, func() map[string]int {
+		return indexConsts(packageConstFiles(env.filename, env.file))
+	})
+}
+
 // index returns the constant positions of the package with import path path (see constOf).
 func (env *switchEnv) index(path string) map[string]int {
 	if idx, ok := env.indexes[path]; ok {
@@ -626,7 +595,7 @@ func (env *switchEnv) index(path string) map[string]int {
 	var idx map[string]int
 
 	if path == "" {
-		idx = indexConsts(packageConstFiles(env.filename, env.file))
+		idx = env.localIndex()
 	} else {
 		idx = importedConstIndex(path, env.filename)
 	}

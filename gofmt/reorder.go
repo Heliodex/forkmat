@@ -21,7 +21,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 type (
@@ -54,29 +53,15 @@ type (
 )
 
 var (
+
 	// moduleDepDirs remembers, for each module root, the directories of the packages its build depends on, by import path (see moduleDeps).
-	moduleDepDirs = struct {
-		sync.Mutex
-		dirs map[string]map[string]string
-	}{
-		dirs: map[string]map[string]string{},
-	}
+	moduleDepDirs memo[string, map[string]string]
 
 	// modules remembers the result of enclosingModule for each directory it has been asked about.
-	modules = struct {
-		sync.Mutex
-		found map[string][2]string
-	}{
-		found: map[string][2]string{},
-	}
+	modules memo[string, [2]string]
 
-	// packageDirs remembers the directory of each package found by packageDir, by its import path and the directory it was imported from. The lookups are the slow part of the -strict passes: go/build runs go list for a package outside the standard library, and every file of a package imports the same packages again. The run's files are formatted concurrently, so the map is locked.
-	packageDirs = struct {
-		sync.Mutex
-		dirs map[[2]string]string
-	}{
-		dirs: map[[2]string]string{},
-	}
+	// packageDirs remembers the directory of each package found by packageDir, by its import path and the module it was imported from. The lookups are the slow part of the -strict passes: go/build runs go list for a package outside the standard library, and every file of a package imports the same packages again.
+	packageDirs memo[[2]string, string]
 
 	// predeclaredPure are the predeclared types, whose conversions have no side effects.
 	predeclaredPure = map[string]bool{
@@ -126,6 +111,9 @@ var (
 		"uint8": true,
 		"uintptr": true,
 	}
+
+	// reordered remembers the source of each file on disk with the reorder passes applied (see reorderedSource).
+	reordered memo[string, []byte]
 )
 
 // alphabeticalOrder orders the components of a run of types. A component is ready when every component it depends on has been placed; among the ready ones, the one whose first name (in alphabetical order) is smallest goes next. So types are sorted wherever the dependencies allow it, and a type always comes after the types it refers to.
@@ -366,24 +354,17 @@ func findEnclosingModule(dir string) (string, string) {
 // enclosingModule returns the root directory and the module path of the go.mod file that governs dir, or empty strings if there is none. The answer is remembered for each directory.
 func enclosingModule(dir string) (string, string) {
 	// the same directory must have one key, however it is written
-	if abs, err := filepath.Abs(dir); err == nil {
-		dir = abs
+	if !filepath.IsAbs(dir) {
+		if abs, err := filepath.Abs(dir); err == nil {
+			dir = abs
+		}
 	}
-	modules.Lock()
 
-	m, ok := modules.found[dir]
-
-	modules.Unlock()
-	if !ok {
+	m := modules.get(dir, func() [2]string {
 		root, mod := findEnclosingModule(dir)
-		m = [2]string{root, mod}
 
-		modules.Lock()
-
-		modules.found[dir] = m
-
-		modules.Unlock()
-	}
+		return [2]string{root, mod}
+	})
 
 	return m[0], m[1]
 }
@@ -512,30 +493,22 @@ func (l layout) commentIn(from, to int) bool {
 
 // moduleDeps returns the directory of each package that the packages of the module at root depend on, by import path. go/build finds such a package by running go list in the working directory of the process, so a lookup from elsewhere would find the wrong module, and each lookup costs a process. One go list in the module root lists them all. A package the list misses is left to go/build.
 func moduleDeps(root string) map[string]string {
-	moduleDepDirs.Lock()
+	return moduleDepDirs.get(root, func() map[string]string {
+		dirs := map[string]string{}
+		cmd := exec.Command("go", "list", "-e", "-deps", "-f", "{{.ImportPath}}\t{{.Dir}}", "./...")
+		cmd.Dir = root
 
-	defer moduleDepDirs.Unlock()
-
-	if dirs, ok := moduleDepDirs.dirs[root]; ok {
-		return dirs
-	}
-
-	dirs := map[string]string{}
-	cmd := exec.Command("go", "list", "-e", "-deps", "-f", "{{.ImportPath}}\t{{.Dir}}", "./...")
-	cmd.Dir = root
-
-	// a module that cannot be listed has no dependencies found this way; go/build still works
-	if out, err := cmd.Output(); err == nil || len(out) > 0 {
-		for _, line := range strings.Split(string(out), "\n") {
-			if path, dir, ok := strings.Cut(line, "\t"); ok && dir != "" {
-				dirs[path] = dir
+		// a module that cannot be listed has no dependencies found this way; go/build still works
+		if out, err := cmd.Output(); err == nil || len(out) > 0 {
+			for _, line := range strings.Split(string(out), "\n") {
+				if path, dir, ok := strings.Cut(line, "\t"); ok && dir != "" {
+					dirs[path] = dir
+				}
 			}
 		}
-	}
 
-	moduleDepDirs.dirs[root] = dirs
-
-	return dirs
+		return dirs
+	})
 }
 
 // findPackageDir is packageDir without the memory.
@@ -767,25 +740,10 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 func packageDir(path, srcDir string) string {
 	// a directory outside any module is searched the same way from any directory, so it shares one memory
 	root, _ := enclosingModule(srcDir)
-	key := [2]string{path, root}
 
-	packageDirs.Lock()
-
-	dir, ok := packageDirs.dirs[key]
-
-	packageDirs.Unlock()
-	if ok {
-		return dir
-	}
-
-	dir = findPackageDir(path, srcDir)
-
-	packageDirs.Lock()
-
-	packageDirs.dirs[key] = dir
-
-	packageDirs.Unlock()
-	return dir
+	return packageDirs.get([2]string{path, root}, func() string {
+		return findPackageDir(path, srcDir)
+	})
 }
 
 // dotImportTypes returns the names of the exported types of the packages that file imports with a dot, which bring those names in without a qualifier. The packages are located with go/build; a package that cannot be found adds no names.
@@ -1118,37 +1076,11 @@ func siblingTypes(filename, pkg string) map[string]bool {
 		return types // read from standard input, there are no sibling files
 	}
 
-	dir := filepath.Dir(filename)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return types
-	}
+	self := filepath.Base(filename)
 
-	self, _ := filepath.Abs(filename)
-
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || filepath.Ext(name) != ".go" {
-			continue
-		}
-
-		path := filepath.Join(dir, name)
-
-		if abs, _ := filepath.Abs(path); abs == self {
-			continue
-		}
-
-		f := parsedSibling(path)
-		if f == nil || f.Name.Name != pkg {
-			continue
-		}
-
-		for _, d := range f.Decls {
-			if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
-				for _, sp := range g.Specs {
-					types[sp.(*ast.TypeSpec).Name.Name] = true
-				}
-			}
+	for _, t := range dirTypes(filepath.Dir(filename), pkg, true) {
+		if t.file != self {
+			types[t.name] = true
 		}
 	}
 
@@ -1627,4 +1559,19 @@ func reorderSource(fset *token.FileSet, filename string, src []byte) ([]byte, *a
 	}
 
 	return src, changed
+}
+
+// reorderedSource returns the source of the file named filename, whose source is src, with the reorder passes applied. A file on disk is reordered once per run: the file itself, and the siblings that the switch pass reads, need the same result.
+func reorderedSource(fset *token.FileSet, filename string, src []byte) []byte {
+	if !onDisk(filename) {
+		out, _ := reorderSource(fset, filename, src)
+
+		return out
+	}
+
+	return reordered.get(filename, func() []byte {
+		out, _ := reorderSource(token.NewFileSet(), filename, src)
+
+		return out
+	})
 }

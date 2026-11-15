@@ -22,6 +22,20 @@ type (
 	}
 )
 
+const (
+	commaTerm exprListMode = 1 << iota // list is optionally terminated by a comma
+	noIndent // no extra indentation in multi-line lists
+	strictBreak // under StrictLayout, put each element on its own line
+)
+
+const filteredMsg = "contains filtered or unexported fields"
+
+const (
+	funcParam paramMode = iota
+	funcTParam
+	typeTParam
+)
+
 // ---------------------------------------------------------------------------- Files
 
 func declToken(decl ast.Decl) (tok token.Token) {
@@ -45,12 +59,6 @@ func diffPrec(expr ast.Expr, prec int) int {
 	return 0
 }
 
-const (
-	commaTerm exprListMode = 1 << iota // list is optionally terminated by a comma
-	noIndent // no extra indentation in multi-line lists
-	strictBreak // under StrictLayout, put each element on its own line
-)
-
 func identListSize(list []*ast.Ident, maxSize int) (size int) {
 	for i, x := range list {
 		if i > 0 {
@@ -67,19 +75,11 @@ func identListSize(list []*ast.Ident, maxSize int) (size int) {
 	return
 }
 
-const filteredMsg = "contains filtered or unexported fields"
-
 func isBinary(expr ast.Expr) bool {
 	_, ok := expr.(*ast.BinaryExpr)
 
 	return ok
 }
-
-const (
-	funcParam paramMode = iota
-	funcTParam
-	typeTParam
-)
 
 // isLegacyOctal reports whether x is an integer literal in the old leading-zero octal notation, such as 0777 or 0_777. A lone 0 is not legacy octal, and neither are the decimal or floating-point literals that merely start with a zero (0.5, 0e3, 0123.5).
 func isLegacyOctal(x string) bool {
@@ -1890,7 +1890,9 @@ func (p *printer) genDecl(d *ast.GenDecl) {
 
 				specs := d.Specs
 
-				if p.strict() && d.Tok == token.IMPORT {
+				// an import declaration with a comment inside keeps its order (see strictImportSpecs), and so keeps the blank lines between its groups, which gofmt sorts within
+				keepOrder := d.Tok == token.IMPORT && p.commentIn(d.Pos(), d.End())
+				if p.strict() && d.Tok == token.IMPORT && !keepOrder {
 					specs = p.strictImportSpecs(d)
 				}
 
@@ -1899,7 +1901,7 @@ func (p *printer) genDecl(d *ast.GenDecl) {
 						// Import groups are separated by blank lines in the source, and gofmt sorts within each group, so keep the source's blank lines here when StrictLayout is off.
 						srcLine := p.lineFor(s.Pos())
 
-						if p.strict() {
+						if p.strict() && !keepOrder {
 							gap := 1
 
 							if d.Tok == token.IMPORT {

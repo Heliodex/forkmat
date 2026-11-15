@@ -1256,15 +1256,23 @@ func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode, 
 		p.expr0(x, depth)
 	}
 
+	// wroteNewline reports whether a comment before the closing token already ended its line
+	var wroteNewline bool
+
 	if len(list) > 0 && mode&commaTerm != 0 {
 		p.print(token.COMMA)
+
+		// a comment before the closing token is written now, so that the line break queued below comes after it; a /*-style comment on the last element's line would otherwise swallow the break, and the closing token would follow the comment. The token is RPAREN, so that no extra line break follows the comment: the break below is the only one.
+		if next0.IsValid() {
+			wroteNewline, _ = p.flush(p.posFor(next0), token.RPAREN)
+		}
 	}
 
 	if ws == ignore && mode&noIndent == 0 {
 		p.print(unindent)
 	}
 
-	if mode&commaTerm != 0 {
+	if mode&commaTerm != 0 && !wroteNewline {
 		// the closing token starts a new line
 		p.print(formfeed)
 	}

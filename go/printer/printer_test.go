@@ -1026,6 +1026,42 @@ func TestStrictIfInitKeepsHeaderValid(t *testing.T) {
 	}
 }
 
+// TestStrictCallClosingToken checks that a call broken by a comment ends with its closing parenthesis on a line of its own, after a trailing comma, with no blank line before it.
+func TestStrictCallClosingToken(t *testing.T) {
+	tests := []struct {
+		name, src string
+		// want is text the output must contain, and unwant text it must not
+		want, unwant string
+	}{
+		{
+			name:   "a block comment before the closing parenthesis",
+			src:    "package p\n\nfunc f() {\n\tg(a, b /* c */)\n}\n",
+			want:   "\t\tb, /* c */\n\t)",
+			unwant: "/* c */)",
+		},
+		{
+			name:   "a line comment before the closing parenthesis",
+			src:    "package p\n\nfunc f() {\n\tg(a, b, // c\n\t)\n}\n",
+			want:   "\t\tb, // c\n\t)",
+			unwant: "// c\n\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := strictText(t, tt.src)
+
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("output lacks %q:\n%s", tt.want, got)
+			}
+
+			if strings.Contains(got, tt.unwant) {
+				t.Errorf("output holds %q:\n%s", tt.unwant, got)
+			}
+		})
+	}
+}
+
 // testComment verifies that f can be parsed again after printing it
 // with its first comment set to comment at any possible source offset.
 func testComment(t *testing.T, f *ast.File, srclen int, comment *ast.Comment) {

@@ -1095,6 +1095,70 @@ func TestStrictDeclGroupLeadingBlank(t *testing.T) {
 	}
 }
 
+// TestStrictVarHeaders checks that a var declaration without a value moves into the header of the for or if statement after it when that statement is the only place its name is used, and stays where it is otherwise.
+func TestStrictVarHeaders(t *testing.T) {
+	tests := []struct {
+		name, src string
+		// want is text the output must contain, and unwant text it must not
+		want, unwant string
+	}{
+		{
+			name: "a var before a for loop with no header",
+			src: "package p\n\nfunc f() {\n\tvar total int64\n\n\tfor {\n\t\ttotal++\n\t\tif total > 3 {\n\t\t\tbreak\n\t\t}\n\t}\n}\n",
+			want: "for total := int64(0); ; {",
+			unwant: "var total int64",
+		},
+		{
+			name: "a var before a for loop with a condition",
+			src: "package p\n\nfunc f() {\n\tvar n int\n\tfor n < 4 {\n\t\tn++\n\t}\n}\n",
+			want: "for n := int(0); n < 4; {",
+		},
+		{
+			name: "a var before an if statement",
+			src: "package p\n\nfunc f() {\n\tvar s string\n\tif s == \"\" {\n\t\tprintln(\"empty\")\n\t}\n}\n",
+			want: "if s := \"\"; s == \"\" {",
+		},
+		{
+			name: "a var used after the loop keeps its declaration",
+			src: "package p\n\nfunc f() {\n\tvar n int\n\tfor n < 4 {\n\t\tn++\n\t}\n\tprintln(n)\n}\n",
+			want: "var n int",
+		},
+		{
+			name: "a var captured by a closure in a for loop keeps its declaration",
+			src: "package p\n\nfunc f() {\n\tvar n int\n\tfor {\n\t\tgo func() { println(n) }()\n\t\tbreak\n\t}\n}\n",
+			want: "var n int",
+		},
+		{
+			name: "a var whose address is taken in a for loop keeps its declaration",
+			src: "package p\n\nfunc f() {\n\tvar n int\n\tfor {\n\t\tp := &n\n\t\t*p++\n\t\tbreak\n\t}\n}\n",
+			want: "var n int",
+		},
+		{
+			name: "a var of a type that is not predeclared keeps its declaration",
+			src: "package p\n\ntype S struct{}\n\nfunc f() {\n\tvar s S\n\tfor {\n\t\t_ = s\n\t\tbreak\n\t}\n}\n",
+			want: "var s S",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := strictText(t, tt.src)
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("output lacks %q:\n%s", tt.want, got)
+			}
+
+			if tt.unwant != "" && strings.Contains(got, tt.unwant) {
+				t.Errorf("output holds %q:\n%s", tt.unwant, got)
+			}
+
+			// the header form is what the formatter writes, so formatting it again changes nothing
+			if again := strictText(t, got); again != got {
+				t.Errorf("second pass differs:\n%s", again)
+			}
+		})
+	}
+}
+
 // TestStrictIfInitKeepsHeaderValid checks that an := moved into an if header still parses there, and does not shadow a named result.
 func TestStrictIfInitKeepsHeaderValid(t *testing.T) {
 	tests := []struct {

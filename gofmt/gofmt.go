@@ -247,6 +247,119 @@ func (r *reporter) Warnf(format string, args ...any) {
 	fmt.Fprintf(r.getState().err, format, args...)
 }
 
+// formatSource returns src, the source of filename, formatted as the options ask. fromDisk says that src is the file as it is on disk, whose reordered form may be shared (see reorderedSource). fragmentOk accepts a program fragment, and r reports warnings.
+func formatSource(filename string, src []byte, fragmentOk, fromDisk bool, r *reporter) ([]byte, error) {
+	fileSet := token.NewFileSet()
+	file, sourceAdj, indentAdj, err := parse(fileSet, filename, src, fragmentOk)
+	if err != nil {
+		return nil, err
+	}
+
+	// a generated file keeps the layout its generator wrote, so the fork's passes and the strict layout leave it alone (see generated.go)
+	generated := sourceAdj == nil && isGenerated(file)
+	rewritable := sourceAdj == nil && !generated
+	if *strict && rewritable {
+		// -strict also reorders declarations below the ones they depend on (see reorder.go). The reordered source is parsed again, for printing.
+		if out := reorderSourceOf(fileSet, filename, src, fromDisk); !bytes.Equal(out, src) {
+			if reordered, err := parser.ParseFile(fileSet, filename, out, parser.ParseComments); err == nil {
+				file = reordered
+			}
+		}
+	}
+
+	// the types of the file, checked once and shared by the passes that need them;
+	// a pass that rebuilds the file from its source checks it again
+	var typeInfo *types.Info
+
+	typesOf := func() *types.Info {
+		if typeInfo == nil {
+			typeInfo = checkTypes(fileSet, file)
+		}
+
+		return typeInfo
+	}
+
+	if *unconvertFlag && rewritable && mayConvert(filename, file) {
+		file = unconvert(fileSet, file, typesOf())
+	}
+
+	if *omitCasesFlag && rewritable {
+		omitCases(fileSet, file, file.Comments)
+	}
+
+	if *strict && rewritable {
+		// -strict puts the keys of struct literals in declaration order (see structorder.go)
+		structLiteralOrder(filename, file)
+	}
+
+	if *strict && rewritable {
+		// -strict orders the cases of a switch over iota constants by declaration (see switchorder.go)
+		switchCaseOrder(filename, file)
+	}
+
+	if *strict && rewritable {
+		// -strict writes x = x + 1 and x = x - 1 as x++ and x-- (see incdec.go)
+		incDecStmts(file)
+	}
+
+	if *strict && rewritable {
+		// -strict writes index loops as range loops (see rangeloop.go)
+		rangeLoops(filename, file, file.Comments, typesOf)
+	}
+
+	if *strict && rewritable {
+		// -strict declares empty slices that nil can stand in for with var (see
+		// emptyslice.go)
+		emptySlices(file)
+	}
+
+	if *strict && rewritable {
+		// -strict writes interface{} as any (see anytype.go)
+		anyTypes(file)
+	}
+
+	if *mergeCasesFlag && rewritable {
+		mergeCases(fileSet, file)
+	}
+
+	if *strict && rewritable {
+		// -strict sorts the expressions of each case clause, after clauses have merged (see caseorder.go)
+		caseListOrder(file)
+	}
+
+	if *flattenFlag && rewritable {
+		flatten(file, file.Comments)
+	}
+
+	if rewrite != nil {
+		if sourceAdj == nil {
+			file = rewrite(fileSet, file)
+		} else {
+			r.Warnf("warning: rewrite ignored for incomplete programs\n")
+		}
+	}
+	ast.SortImports(fileSet, file)
+	if *simplifyAST {
+		simplify(file)
+	}
+
+	mode := printerMode
+
+	if generated {
+		mode &^= printer.StrictLayout
+	}
+
+	res, err := format(fileSet, file, sourceAdj, indentAdj, src, printer.Config{
+		Mode: mode,
+		Tabwidth: tabWidth,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
+
 // Write emits a slice to the reporter's output stream.
 //
 // Any error is returned to the caller, and does not otherwise affect the reporter's exit code.
@@ -444,114 +557,22 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 		return err
 	}
 
-	fileSet := token.NewFileSet()
 	// If we are formatting stdin, we accept a program fragment in lieu of a complete source file.
 	fragmentOk := info == nil
-	file, sourceAdj, indentAdj, err := parse(fileSet, filename, src, fragmentOk)
+	res, err := formatSource(filename, src, fragmentOk, info != nil, r)
 	if err != nil {
 		return err
 	}
 
-	// a generated file keeps the layout its generator wrote, so the fork's passes and the strict layout leave it alone (see generated.go)
-	generated := sourceAdj == nil && isGenerated(file)
-	rewritable := sourceAdj == nil && !generated
-	if *strict && rewritable {
-		// -strict also reorders declarations below the ones they depend on (see reorder.go). The reordered source is parsed again, for printing.
-		if out := reorderedSource(fileSet, filename, src); !bytes.Equal(out, src) {
-			if reordered, err := parser.ParseFile(fileSet, filename, out, parser.ParseComments); err == nil {
-				file = reordered
-			}
-		}
-	}
-
-	// the types of the file, checked once and shared by the passes that need them;
-	// a pass that rebuilds the file from its source checks it again
-	var typeInfo *types.Info
-
-	typesOf := func() *types.Info {
-		if typeInfo == nil {
-			typeInfo = checkTypes(fileSet, file)
+	// the reorder passes must leave the output as it is: a pass that the printed layout changes would change it again on the next run, so the output is formatted again
+	for range maxStrictRounds - 1 {
+		if !*strict || reorderStable(filename, res) {
+			break
 		}
 
-		return typeInfo
-	}
-
-	if *unconvertFlag && rewritable && mayConvert(filename, file) {
-		file = unconvert(fileSet, file, typesOf())
-	}
-
-	if *omitCasesFlag && rewritable {
-		omitCases(fileSet, file, file.Comments)
-	}
-
-	if *strict && rewritable {
-		// -strict puts the keys of struct literals in declaration order (see structorder.go)
-		structLiteralOrder(filename, file)
-	}
-
-	if *strict && rewritable {
-		// -strict orders the cases of a switch over iota constants by declaration (see switchorder.go)
-		switchCaseOrder(filename, file)
-	}
-
-	if *strict && rewritable {
-		// -strict writes x = x + 1 and x = x - 1 as x++ and x-- (see incdec.go)
-		incDecStmts(file)
-	}
-
-	if *strict && rewritable {
-		// -strict writes index loops as range loops (see rangeloop.go)
-		rangeLoops(file, file.Comments, typesOf)
-	}
-
-	if *strict && rewritable {
-		// -strict declares empty slices that nil can stand in for with var (see
-		// emptyslice.go)
-		emptySlices(file)
-	}
-
-	if *strict && rewritable {
-		// -strict writes interface{} as any (see anytype.go)
-		anyTypes(file)
-	}
-
-	if *mergeCasesFlag && rewritable {
-		mergeCases(fileSet, file)
-	}
-
-	if *strict && rewritable {
-		// -strict sorts the expressions of each case clause, after clauses have merged (see caseorder.go)
-		caseListOrder(file)
-	}
-
-	if *flattenFlag && rewritable {
-		flatten(file, file.Comments)
-	}
-
-	if rewrite != nil {
-		if sourceAdj == nil {
-			file = rewrite(fileSet, file)
-		} else {
-			r.Warnf("warning: rewrite ignored for incomplete programs\n")
+		if res, err = formatSource(filename, res, fragmentOk, false, r); err != nil {
+			return err
 		}
-	}
-	ast.SortImports(fileSet, file)
-	if *simplifyAST {
-		simplify(file)
-	}
-
-	mode := printerMode
-
-	if generated {
-		mode &^= printer.StrictLayout
-	}
-
-	res, err := format(fileSet, file, sourceAdj, indentAdj, src, printer.Config{
-		Mode: mode,
-		Tabwidth: tabWidth,
-	})
-	if err != nil {
-		return err
 	}
 
 	if !bytes.Equal(src, res) {

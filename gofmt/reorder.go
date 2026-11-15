@@ -52,6 +52,9 @@ type (
 	}
 )
 
+// maxStrictRounds bounds how often a file is formatted under -strict: the layout that the printer gives a file can change what the reorder passes would do, so a file whose output the passes still change is formatted again, and a file that does not settle after this many rounds keeps its last output.
+const maxStrictRounds = 3
+
 var (
 
 	// moduleDepDirs remembers, for each module root, the directories of the packages its build depends on, by import path (see moduleDeps).
@@ -1561,6 +1564,17 @@ func reorderSource(fset *token.FileSet, filename string, src []byte) ([]byte, *a
 	return src, changed
 }
 
+// reorderStable reports whether the reorder passes leave src as it is. A file that cannot be parsed, or that is generated, is taken to be stable: the passes do not touch it.
+func reorderStable(filename string, src []byte) bool {
+	if header, err := parser.ParseFile(token.NewFileSet(), filename, src, parser.ParseComments|parser.PackageClauseOnly); err != nil || isGenerated(header) {
+		return true
+	}
+
+	out, _ := reorderSource(token.NewFileSet(), filename, src)
+
+	return bytes.Equal(out, src)
+}
+
 // reorderedSource returns the source of the file named filename, whose source is src, with the reorder passes applied. A file on disk is reordered once per run: the file itself, and the siblings that the switch pass reads, need the same result.
 func reorderedSource(fset *token.FileSet, filename string, src []byte) []byte {
 	if !onDisk(filename) {
@@ -1574,4 +1588,15 @@ func reorderedSource(fset *token.FileSet, filename string, src []byte) []byte {
 
 		return out
 	})
+}
+
+// reorderSourceOf returns src with the reorder passes applied. src is the file on disk when fromDisk is set, and its reordered form is then shared (see reorderedSource).
+func reorderSourceOf(fset *token.FileSet, filename string, src []byte, fromDisk bool) []byte {
+	if fromDisk {
+		return reorderedSource(fset, filename, src)
+	}
+
+	out, _ := reorderSource(fset, filename, src)
+
+	return out
 }

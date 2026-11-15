@@ -6,9 +6,50 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// TestRangeLoopsNeedGo122 checks that a module older than go 1.22 keeps its index loops, since range over an integer does not compile there.
+func TestRangeLoopsNeedGo122(t *testing.T) {
+	const src = "package p\n\nfunc f(n int) {\n\tfor i := 0; i < n; i++ {\n\t\tuse(i)\n\t}\n}\n"
+
+	for _, tt := range []struct {
+		version string
+		rewrite bool
+	}{
+		{"1.19", false},
+		{"1.22", true},
+	} {
+		dir := t.TempDir()
+
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module m\n\ngo "+tt.version+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		name := filepath.Join(dir, "x.go")
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, name, src, parser.ParseComments)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rangeLoops(name, file, file.Comments, func() *types.Info {
+			return checkTypes(fset, file)
+		})
+
+		var buf bytes.Buffer
+
+		if err := printer.Fprint(&buf, fset, file); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := strings.Contains(buf.String(), "range n"); got != tt.rewrite {
+			t.Errorf("go %s: rewritten = %v, want %v:\n%s", tt.version, got, tt.rewrite, buf.String())
+		}
+	}
+}
 
 // rangeText returns src with its index loops rewritten, printed with white space
 // collapsed.
@@ -20,7 +61,7 @@ func rangeText(t *testing.T, src string) string {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	rangeLoops(file, file.Comments, func() *types.Info {
+	rangeLoops("x.go", file, file.Comments, func() *types.Info {
 		return checkTypes(fset, file)
 	})
 
@@ -61,6 +102,11 @@ func TestRangeLoops(t *testing.T) {
 			name: "an unused index is dropped",
 			loop: "for i := 0; i < n; i++ { use() }",
 			want: "for range n { use() }",
+		},
+		{
+			name: "a field named like the index is not a use of it",
+			loop: "for i := 0; i < n; i++ { use(f.i) }",
+			want: "for range n { use(f.i) }",
 		},
 		{
 			name: "an index changed in the body keeps the loop",

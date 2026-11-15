@@ -14,6 +14,8 @@ import (
 func checkTypes(fset *token.FileSet, file *ast.File) *types.Info {
 	info := &types.Info{
 		Types: map[ast.Expr]types.TypeAndValue{},
+		Defs: map[*ast.Ident]types.Object{},
+		Uses: map[*ast.Ident]types.Object{},
 	}
 	conf := types.Config{
 		Importer: sharedImporter,

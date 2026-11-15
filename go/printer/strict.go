@@ -22,6 +22,35 @@ type (
 	stmtKind int
 )
 
+// Rules for StrictLayout. The source's line breaks are never consulted, except for comments:
+//
+//   - Expression lists (call arguments, right-hand sides, parameters, results) are one line. A composite literal is one line if it fits in strictMaxSize characters and has no comments; otherwise each element is on its own line.
+//   - Binary expressions and selector chains are never broken.
+//   - Struct and interface bodies are one line only when empty; otherwise each member is on its own line.
+//   - Statements are one per line. A blank line goes between two statements when one of them is a block statement (if, for, range, switch, select, or a bare block), a return, or a grouped var declaration, unless the other is a call statement. Calls, assignments, const declarations and var declarations form runs: a blank line goes between two adjacent statements of different kinds, and none within a run.
+//   - Top-level declarations are separated by a blank line when the token changes, when the next declaration has a doc comment, or when either declaration spans several lines (a grouped declaration, or a function with statements in its body).
+//   - A function body with statements is always multi-line.
+
+// strictMaxSize is the width, in characters, of a composite literal that may stay on one line.
+const strictMaxSize = 100
+
+// The ranks that mapKeyOf gives a key: nil, booleans, numbers, strings, and then names, which are constants or variables.
+const (
+	rankNil = iota
+	rankBool
+	rankNumber
+	rankString
+	rankName
+)
+
+const (
+	kindNone stmtKind = iota // any other statement, which never sets off a neighbour
+	kindCall // an expression statement holding a call
+	kindAssign // an assignment, := or op=, or an increment or decrement
+	kindConst // a const declaration
+	kindVar // a var declaration
+)
+
 var (
 	// numericTypes are the predeclared numeric types, which a conversion of a zero value can name.
 	numericTypes = map[string]bool{
@@ -67,18 +96,6 @@ var (
 		"uintptr": true,
 	}
 )
-
-// Rules for StrictLayout. The source's line breaks are never consulted, except for comments:
-//
-//   - Expression lists (call arguments, right-hand sides, parameters, results) are one line. A composite literal is one line if it fits in strictMaxSize characters and has no comments; otherwise each element is on its own line.
-//   - Binary expressions and selector chains are never broken.
-//   - Struct and interface bodies are one line only when empty; otherwise each member is on its own line.
-//   - Statements are one per line. A blank line goes between two statements when one of them is a block statement (if, for, range, switch, select, or a bare block), a return, or a grouped var declaration, unless the other is a call statement. Calls, assignments, const declarations and var declarations form runs: a blank line goes between two adjacent statements of different kinds, and none within a run.
-//   - Top-level declarations are separated by a blank line when the token changes, when the next declaration has a doc comment, or when either declaration spans several lines (a grouped declaration, or a function with statements in its body).
-//   - A function body with statements is always multi-line.
-
-// strictMaxSize is the width, in characters, of a composite literal that may stay on one line.
-const strictMaxSize = 100
 
 // bareReturn reports whether a statement of list holds a return with no values, outside function literals. Such a return gives the named results of the function, which an := moved into an if header would shadow.
 func bareReturn(list []ast.Stmt) bool {
@@ -316,15 +333,6 @@ func isCallStmt(s ast.Stmt) bool {
 	return kindOf(s) == kindCall
 }
 
-// The ranks that mapKeyOf gives a key: nil, booleans, numbers, strings, and then names, which are constants or variables.
-const (
-	rankNil = iota
-	rankBool
-	rankNumber
-	rankString
-	rankName
-)
-
 // mergeDoc returns the comment group of a followed by that of b.
 func mergeDoc(a, b *ast.CommentGroup) *ast.CommentGroup {
 	if b == nil {
@@ -551,14 +559,6 @@ func (p *printer) commentInExcepts(from, to token.Pos, except []*ast.CommentGrou
 	return false
 }
 
-const (
-	kindNone stmtKind = iota // any other statement, which never sets off a neighbour
-	kindCall // an expression statement holding a call
-	kindAssign // an assignment, := or op=, or an increment or decrement
-	kindConst // a const declaration
-	kindVar // a var declaration
-)
-
 // commentInExcept reports whether a comment starts in the source range [from, to), other than the comment group except, which is printed where it stands.
 func (p *printer) commentInExcept(from, to token.Pos, except *ast.CommentGroup) bool {
 	return p.commentInExcepts(from, to, []*ast.CommentGroup{except})
@@ -619,6 +619,13 @@ func (p *printer) sizeConfig() Config {
 
 // printsLines reports whether n is printed over several lines under StrictLayout. Unlike nodeSize it is not limited to a width.
 func (p *printer) printsLines(n ast.Node) bool {
+	// the doc comment of a declaration is printed with it, but it is not part of the declaration's own lines: a declaration built from a := statement has none, and must measure the same
+	if d, ok := n.(*ast.GenDecl); ok && d.Doc != nil {
+		bare := *d
+		bare.Doc = nil
+		n = &bare
+	}
+
 	cfg := p.sizeConfig()
 
 	var counter sizeCounter
@@ -883,6 +890,18 @@ func (p *printer) strictParenExpr(x *ast.ParenExpr, prec1, depth int) {
 // strictSingleSpec reports whether a parenthesized declaration with one spec is printed without its parentheses under StrictLayout: a group of one spec, with no comment inside its parentheses, reads as the single declaration it holds.
 func (p *printer) strictSingleSpec(d *ast.GenDecl) bool {
 	return p.strict() && len(d.Specs) == 1 && !p.commentIn(d.Lparen, d.Rparen)
+}
+
+// trailingComment returns the comment group that follows pos on the same line, or nil. A var spec keeps its trailing comment as its line comment, so the spec built from a := statement is given the one the statement had.
+func (p *printer) trailingComment(pos token.Pos) *ast.CommentGroup {
+	line := p.lineFor(pos)
+	if i := sort.Search(len(p.allComments), func(i int) bool {
+		return p.allComments[i].Pos() >= pos
+	}); i < len(p.allComments) && p.lineFor(p.allComments[i].Pos()) == line {
+		return p.allComments[i]
+	}
+
+	return nil
 }
 
 // typeBlockPos returns the position of the keyword and the parenthesis of a type block that starts with the declaration first, after the position before. The printer writes a comment before the first token that comes after it in the source, and writes a comment on the line of the previous token as a trailing one. So the position is on the line just above the first comment that leads into first, or above first itself: the block then opens on the line before, and the comments come after it, on lines of their own.
@@ -1524,6 +1543,7 @@ func (p *printer) strictZeroVars(list []ast.Stmt) []ast.Stmt {
 					&ast.ValueSpec{
 						Names: []*ast.Ident{name},
 						Type: typ,
+						Comment: p.trailingComment(as.End()),
 					},
 				},
 			},

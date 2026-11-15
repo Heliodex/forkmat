@@ -264,6 +264,12 @@ The options of this fork (`-strict`, `-unconvert`, `-flatten`, `-mergecases`, `-
 
 Under `-strict` and `-all`, a whole tree is formatted in one run, and the passes share their work through caches that are computed once per run (`gofmt/memo.go`). A file's reordered source, its parsed siblings, the constants and types of each package directory, and the packages that files import are each computed by whichever file asks first; the others wait for that one result, not for every other file. Dependency packages are loaded from source in parallel, a file waiting only for the packages it imports (`gofmt/importer.go`). A `-unconvert` type check runs only for a file with a call that could be a conversion.
 
+### Idempotence
+
+A second run over the output of `-strict` or `-all` changes nothing. The printer's layout (a `var` written as `:=`, a zero value written as a `var`, a struct field merged with its neighbour) can change what the reorder passes would sort, so after the output is produced, its reorder passes are run on it; a file they still change is formatted again, up to three times (`maxStrictRounds`, `gofmt/reorder.go`). The printer measures a declaration without its doc comment, and gives a `var` spec made from a `:=` statement the trailing comment that statement had, so both forms of a declaration lay out the same.
+
+A range over an integer is written only in a module of go 1.22 or later, and only for an index that the body refers to by its object, so a field named like the index does not keep it.
+
 ### `-unconvert`: remove redundant conversions
 
 `gofmt -unconvert` removes a conversion `T(x)` when `x` already has the type `T`, so `string(string(s))` prints as `s` and `MyInt(m)` as `m` when `m` is a `MyInt`. This is the first check that uses type information: the file is type-checked on its own (`go/types`, with the source importer), and a name that cannot be resolved from the file has no type, so a conversion of it is kept.

@@ -4,8 +4,15 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strconv"
+	"strings"
 )
+
+// rangeOver22Dirs remembers rangeOver22, by directory.
+var rangeOver22Dirs memo[string, bool]
 
 // integerType reports whether t is an integer type, or an untyped integer.
 func integerType(t types.Type) bool {
@@ -136,18 +143,70 @@ func loopSimpleRef(e ast.Expr) bool {
 	return false
 }
 
-// loopUses reports whether the identifier name is referenced in the body.
-func loopUses(body ast.Node, name string) bool {
+// loopUses reports whether the body refers to the variable obj, the index of the loop, by the object the type checker resolved its identifiers to. A name alone would not do: the field f.i and a key i: of a struct literal spell the name without referring to the variable.
+func loopUses(body ast.Node, info *types.Info, obj types.Object) bool {
 	var found bool
 
 	ast.Inspect(body, func(n ast.Node) bool {
-		if id, ok := n.(*ast.Ident); ok && id.Name == name {
+		if id, ok := n.(*ast.Ident); ok && info.Uses[id] == obj {
 			found = true
 		}
 
 		return !found
 	})
 	return found
+}
+
+// moduleRangeOver22 is rangeOver22 for the directory dir, which is absolute.
+func moduleRangeOver22(dir string) bool {
+	for {
+		if data, err := os.ReadFile(filepath.Join(dir, "go.mod")); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				if v, ok := strings.CutPrefix(strings.TrimSpace(line), "go "); ok {
+					major, minor, ok := strings.Cut(strings.TrimSpace(v), ".")
+					if !ok {
+						return true
+					}
+
+					ma, err1 := strconv.Atoi(major)
+					mi, err2 := strconv.Atoi(strings.TrimRight(minor, "abcdefghijklmnopqrstuvwxyz"))
+					if err1 != nil || err2 != nil {
+						return true
+					}
+
+					return ma > 1 || ma == 1 && mi >= 22
+				}
+			}
+
+			return true
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return true
+		}
+
+		dir = parent
+	}
+}
+
+// This file implements the loop rewrite of -strict: a loop for i := 0; i < n; i++
+// becomes for i := range n, when the body does not change i or the bound. A bound
+// len(x), where x is a slice or an array, becomes range x. A loop that does not use
+// i becomes for range n. The types come from checkTypes, so a bound whose type
+// cannot be found keeps its loop.
+
+// rangeOver22 reports whether a range over an integer is allowed in the file named filename: the go version of its module, from its go.mod, is 1.22 or later. A file outside any module has no version to hold to, and is taken to allow it.
+func rangeOver22(filename string) bool {
+	dir := filepath.Dir(filename)
+
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+
+	return rangeOver22Dirs.get(dir, func() bool {
+		return moduleRangeOver22(dir)
+	})
 }
 
 // sliceOrArray reports whether t is a slice, an array, or a pointer to an array.
@@ -200,6 +259,12 @@ func rangeOf(fs *ast.ForStmt, typesOf func() *types.Info, comments []*ast.Commen
 	// the types are only needed for a loop that has passed the checks above
 	info := typesOf()
 
+	// the index must be resolved, or it cannot be told apart from the other names in the body
+	index := info.Defs[idx]
+	if index == nil {
+		return nil, false
+	}
+
 	if tv, ok := info.Types[bound]; !ok || !integerType(tv.Type) {
 		return nil, false
 	}
@@ -223,25 +288,22 @@ func rangeOf(fs *ast.ForStmt, typesOf func() *types.Info, comments []*ast.Commen
 		Body: fs.Body,
 	}
 
-	if loopUses(fs.Body, idx.Name) {
+	if loopUses(fs.Body, info, index) {
 		rs.Key = idx
 	}
 
 	return rs, true
 }
 
-// This file implements the loop rewrite of -strict: a loop for i := 0; i < n; i++
-// becomes for i := range n, when the body does not change i or the bound. A bound
-// len(x), where x is a slice or an array, becomes range x. A loop that does not use
-// i becomes for range n. The types come from checkTypes, so a bound whose type
-// cannot be found keeps its loop.
-
 // rangeLoops rewrites the index loops of file. comments are the file's comments. typesOf gives the types of the file, which are only asked for once a loop has passed the syntactic checks, so a file without such a loop is not type-checked.
-func rangeLoops(file *ast.File, comments []*ast.CommentGroup, typesOf func() *types.Info) {
+func rangeLoops(filename string, file *ast.File, comments []*ast.CommentGroup, typesOf func() *types.Info) {
 	repl := map[*ast.ForStmt]ast.Stmt{}
 
+	// a range over an integer needs go 1.22, so a module older than that keeps its loops
+	allowed := rangeOver22(filename)
+
 	ast.Inspect(file, func(n ast.Node) bool {
-		if fs, ok := n.(*ast.ForStmt); ok {
+		if fs, ok := n.(*ast.ForStmt); ok && allowed {
 			if rs, ok := rangeOf(fs, typesOf, comments); ok {
 				repl[fs] = rs
 			}

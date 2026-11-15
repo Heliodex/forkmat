@@ -55,6 +55,7 @@ func ExampleFprint() {
 	// funcAST, fset := parseFunc("example_test.go", "printSelf")
 	//
 	// var buf bytes.Buffer
+	//
 	// printer.Fprint(&buf, fset, funcAST.Body)
 	//
 	// s := buf.String()

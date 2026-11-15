@@ -49,7 +49,21 @@ type (
 	}
 )
 
+const (
+	// Keep these in sync with go/format/format.go.
+	tabWidth = 8
+
+	// printerNormalizeNumbers means to canonicalize number literal prefixes and exponents while printing. See https://golang.org/doc/go1.13#gofmt.
+	//
+	// This value is defined in go/printer specifically for go/format and cmd/gofmt.
+	printerNormalizeNumbers = 1 << 30
+
+	// exclusive is a weight that can be passed to a sequencer to cause a task to be executed without any other concurrent tasks.
+	exclusive = -1
+)
+
 var (
+
 	// main operation modes
 	list = flag.Bool("l", false, "list files whose formatting differs from gofmt's")
 	write = flag.Bool("w", false, "write result to (source) file instead of stdout")
@@ -69,22 +83,10 @@ var (
 
 	// errors
 	errFormattingDiffers = fmt.Errorf("formatting differs from gofmt's")
-)
 
-// Keep these in sync with go/format/format.go.
-const tabWidth = 8
+	// printerMode may gain printer.StrictLayout from the -strict flag.
+	printerMode = printer.UseSpaces | printer.TabIndent | printerNormalizeNumbers
 
-// printerMode may gain printer.StrictLayout from the -strict flag.
-var printerMode = printer.UseSpaces | printer.TabIndent | printerNormalizeNumbers
-
-const (
-	// printerNormalizeNumbers means to canonicalize number literal prefixes and exponents while printing. See https://golang.org/doc/go1.13#gofmt.
-	//
-	// This value is defined in go/printer specifically for go/format and cmd/gofmt.
-	printerNormalizeNumbers = 1 << 30
-)
-
-var (
 	// fdSem guards the number of concurrently-open file descriptors.
 	//
 	// For now, this is arbitrarily set to 200, based on the observation that many platforms default to a kernel limit of 256. Ideally, perhaps we should derive it from rlimit on platforms that support that system call.
@@ -149,9 +151,6 @@ func newSequencer(maxWeight int64, out, err io.Writer) *sequencer {
 		maxWeight: maxWeight,
 	}
 }
-
-// exclusive is a weight that can be passed to a sequencer to cause a task to be executed without any other concurrent tasks.
-const exclusive = -1
 
 // readFile reads the contents of filename, described by info. If in is non-nil, readFile reads directly from it. Otherwise, readFile opens and reads the file itself, with the number of concurrently-open files limited by fdSem.
 func readFile(filename string, info fs.FileInfo, in io.Reader) ([]byte, error) {
@@ -453,7 +452,10 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 		return err
 	}
 
-	if *strict && sourceAdj == nil {
+	// a generated file keeps the layout its generator wrote, so the fork's passes and the strict layout leave it alone (see generated.go)
+	generated := sourceAdj == nil && isGenerated(file)
+	rewritable := sourceAdj == nil && !generated
+	if *strict && rewritable {
 		// -strict also reorders declarations below the ones they depend on (see reorder.go). The reordered source is parsed again, for printing.
 		if _, reordered := reorderSource(fileSet, filename, src); reordered != nil {
 			file = reordered
@@ -472,55 +474,55 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 		return typeInfo
 	}
 
-	if *unconvertFlag && sourceAdj == nil {
+	if *unconvertFlag && rewritable {
 		file = unconvert(fileSet, file, typesOf())
 	}
 
-	if *omitCasesFlag && sourceAdj == nil {
+	if *omitCasesFlag && rewritable {
 		omitCases(fileSet, file, file.Comments)
 	}
 
-	if *strict && sourceAdj == nil {
+	if *strict && rewritable {
 		// -strict puts the keys of struct literals in declaration order (see structorder.go)
 		structLiteralOrder(filename, file)
 	}
 
-	if *strict && sourceAdj == nil {
+	if *strict && rewritable {
 		// -strict orders the cases of a switch over iota constants by declaration (see switchorder.go)
 		switchCaseOrder(filename, file)
 	}
 
-	if *strict && sourceAdj == nil {
+	if *strict && rewritable {
 		// -strict writes x = x + 1 and x = x - 1 as x++ and x-- (see incdec.go)
 		incDecStmts(file)
 	}
 
-	if *strict && sourceAdj == nil {
+	if *strict && rewritable {
 		// -strict writes index loops as range loops (see rangeloop.go)
 		rangeLoops(file, file.Comments, typesOf)
 	}
 
-	if *strict && sourceAdj == nil {
+	if *strict && rewritable {
 		// -strict declares empty slices that nil can stand in for with var (see
 		// emptyslice.go)
 		emptySlices(file)
 	}
 
-	if *strict && sourceAdj == nil {
+	if *strict && rewritable {
 		// -strict writes interface{} as any (see anytype.go)
 		anyTypes(file)
 	}
 
-	if *mergeCasesFlag && sourceAdj == nil {
+	if *mergeCasesFlag && rewritable {
 		mergeCases(fileSet, file)
 	}
 
-	if *strict && sourceAdj == nil {
+	if *strict && rewritable {
 		// -strict sorts the expressions of each case clause, after clauses have merged (see caseorder.go)
 		caseListOrder(file)
 	}
 
-	if *flattenFlag && sourceAdj == nil {
+	if *flattenFlag && rewritable {
 		flatten(file, file.Comments)
 	}
 
@@ -536,8 +538,14 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 		simplify(file)
 	}
 
+	mode := printerMode
+
+	if generated {
+		mode &^= printer.StrictLayout
+	}
+
 	res, err := format(fileSet, file, sourceAdj, indentAdj, src, printer.Config{
-		Mode: printerMode,
+		Mode: mode,
 		Tabwidth: tabWidth,
 	})
 	if err != nil {

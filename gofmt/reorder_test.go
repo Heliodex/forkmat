@@ -137,9 +137,9 @@ func TestHoistOrder(t *testing.T) {
 			want: []string{"T", "b", "a", "f", "g"},
 		},
 		{
-			name: "a var with effects keeps the vars after it below it, and a function above it stays there",
+			name: "vars with effects move above functions, and so do the pure vars after them",
 			src: "package p\n\nfunc h() int { return 1 }\n\nvar a = h()\n\nconst b = 2\n\nvar c = 3\n",
-			want: []string{"b", "h", "a", "c"},
+			want: []string{"b", "a", "c", "h"},
 		},
 	}
 
@@ -181,14 +181,19 @@ func TestHoistVars(t *testing.T) {
 			want: []string{"x", "y", "f"},
 		},
 		{
-			name: "a var with effects is not moved, nor is a var after it",
+			name: "vars with effects move above functions, and join the vars there",
 			src: "package p\n\nfunc f() int { return 0 }\n\nvar a = f()\n\nvar b = 2\n",
-			want: []string{"f", "a", "b"},
+			want: []string{"a", "b", "f"},
 		},
 		{
 			name: "a pure var before a var with effects moves above it",
 			src: "package p\n\nfunc g() {}\n\nvar p = 1\n\nvar q = f()\n\nvar r = 2\n\nfunc f() int { return 0 }\n",
-			want: []string{"p", "f", "q", "r", "g"},
+			want: []string{"p", "q", "r", "f", "g"},
+		},
+		{
+			name: "a var with effects moves above a method, and the pure var after it follows",
+			src: "package p\n\nvar (\n\tf int\n)\n\nfunc (m *M) ApplyZ(z int) {\n\tm.Z += z\n}\n\nvar (\n\tTexts = [3]*T{{V(1)}, {V(2)}, {V(3)}}\n\tterrain = &Terrain{}\n)\n",
+			want: []string{"f", "Texts,terrain", "ApplyZ"},
 		},
 	}
 

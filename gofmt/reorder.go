@@ -3,12 +3,12 @@ package main
 // The reordering of -strict. It runs before printing, on the source text, in passes that each reorder one kind of thing:
 //
 //   - types move up, after the imports, when the names they use are types, imports, or type parameters (see hoistTypes);
-//   - consts move up after them (see hoistConsts), and vars with pure values after those, as far as no var with effects is passed (see hoistVars);
+//   - consts move up after them (see hoistConsts), and vars after those, as far as they do not move above a var that stays (see hoistVars);
 //   - the const, var and type declarations of each run of consecutive ones are split into single declarations and sorted (see reorderSpecRuns);
 //   - each run of consecutive plain functions, and each run of methods, is sorted by name, methods by receiver type and then name (see reorderDecls);
 //   - each run of consecutive := statements with pure values is sorted by the names it declares (see reorderAssignRuns).
 //
-// In every run, a declaration comes after the declarations it refers to, and otherwise in alphabetical order. A cycle keeps its source order. Declarations and statements move with the comments that lead into them. A var whose value calls a function is never moved (see pureExpr).
+// In every run, a declaration comes after the declarations it refers to, and otherwise in alphabetical order. A cycle keeps its source order. Declarations and statements move with the comments that lead into them. A var whose value calls a function is not moved above another var, only above functions and the declarations that do not take part in initialisation (see pureExpr).
 import (
 	"bytes"
 	"go/ast"
@@ -1233,7 +1233,7 @@ func specRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bo
 	}, true
 }
 
-// topRunDecl reports whether d may stay in the run at the top of the file that hoistDecls moves kind into: an import, a type or a const, and for vars, a var with pure values.
+// topRunDecl reports whether d may stay in the run at the top of the file that hoistDecls moves kind into: an import, a type or a const, and for vars, a var.
 func topRunDecl(d ast.Decl, kind token.Token) bool {
 	g, ok := d.(*ast.GenDecl)
 	if !ok {
@@ -1244,13 +1244,13 @@ func topRunDecl(d ast.Decl, kind token.Token) bool {
 	case token.IMPORT, token.TYPE, token.CONST:
 		return true
 	case token.VAR:
-		return kind == token.VAR && pureVars(g)
+		return kind == token.VAR
 	}
 
 	return false
 }
 
-// hoistDecls moves the declarations of kind (token.CONST or token.VAR) up to the run at the top of the file: after the imports, the types, the consts, and (for vars) the pure vars already there. Moved declarations keep their order, and a var with effects blocks the vars after it (see hoistVars).
+// hoistDecls moves the declarations of kind (token.CONST or token.VAR) up to the run at the top of the file: after the imports, the types, the consts, and (for vars) the vars already there. Moved declarations keep their order. A var may only move when it does not pass a var that stays, since initialisation runs in declaration order; a pure var may also not pass a var with effects (see hoistVars).
 func hoistDecls(fset *token.FileSet, file *ast.File, src []byte, kind token.Token) []byte {
 	tf := fset.File(file.Pos())
 	if tf == nil {
@@ -1280,7 +1280,8 @@ func hoistDecls(fset *token.FileSet, file *ast.File, src []byte, kind token.Toke
 
 	var (
 		moved []int
-		blocked bool // an earlier var has effects, so no later var may move above it
+		stayed bool // an earlier var stays, so a var with effects may not move above it
+		stayedImpure bool // an earlier var with effects stays, so a pure var may not move above it
 	)
 
 	for i := top; i < len(decls); i++ {
@@ -1289,18 +1290,31 @@ func hoistDecls(fset *token.FileSet, file *ast.File, src []byte, kind token.Toke
 			continue
 		}
 
+		var impure, move bool
+
 		switch {
 		case g.Tok == token.VAR && kind == token.VAR:
-			if !pureVars(g) {
-				blocked = true
-				continue
+			impure = !pureVars(g)
+			// a var may not move above a var that stays: initialisation runs in declaration order, so a pure var could read state that the effects of one it passes change, and effects themselves must keep their order. A pure var may pass a pure one, since neither has effects and references still decide their order.
+			if impure {
+				move = movable(l, decls, i) && !stayed
+			} else {
+				move = movable(l, decls, i) && !stayedImpure
 			}
-		case g.Tok != kind:
+		case g.Tok == kind:
+			move = movable(l, decls, i)
+		default:
 			continue
 		}
 
-		if !blocked && movable(l, decls, i) {
+		if move {
 			moved = append(moved, i)
+			continue
+		}
+
+		if kind == token.VAR {
+			stayed = true
+			stayedImpure = stayedImpure || impure
 		}
 	}
 
@@ -1312,7 +1326,7 @@ func hoistConsts(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	return hoistDecls(fset, file, src, token.CONST)
 }
 
-// hoistVars is the pass that moves var declarations up to just after the imports, the types and the consts at the top of the file, so that the vars follow the consts. Only a var whose values are pure (see pureVars) moves. A var whose values have effects keeps its place, and so does every var after it: initialisation runs those effects in declaration order, and a pure value may read a variable that such an initialiser changes. A pure var may still move above a var it refers to, since initialisation follows references. The moved vars are then joined into a block by the printer, and reorderSpecRuns sorts them by dependency.
+// hoistVars is the pass that moves var declarations up to just after the imports, the types and the consts at the top of the file, so that the vars follow the consts. A var whose values have effects may move above functions and any other declaration that takes no part in initialisation, but not above a var that stays: initialisation runs those effects in declaration order, and a pure value may read a variable that such an initialiser changes. A pure var may not move above a var with effects that stays, whose effects it could read. The moved vars are then joined into a block by the printer, and reorderSpecRuns sorts them by dependency.
 func hoistVars(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	return hoistDecls(fset, file, src, token.VAR)
 }

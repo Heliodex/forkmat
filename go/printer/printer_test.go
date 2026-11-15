@@ -1054,6 +1054,47 @@ func TestStrictCallClosingToken(t *testing.T) {
 	}
 }
 
+// TestStrictDeclGroupLeadingBlank checks that a blank line after the parenthesis of a declaration group is removed when a comment comes first in the group, as it is after a brace.
+func TestStrictDeclGroupLeadingBlank(t *testing.T) {
+	tests := []struct {
+		name, src string
+		// want is text the output must contain, and unwant text it must not
+		want, unwant string
+	}{
+		{
+			name: "a doc comment first in a package-level var group",
+			src: "package p\n\nvar (\n\n\t// doc\n\ta = 1\n\tb = 2\n)\n",
+			want: "var (\n\t// doc\n\ta = 1",
+			unwant: "var (\n\n",
+		},
+		{
+			name: "a comment first in a var group in a function",
+			src: "package p\n\nfunc f() {\n\tvar (\n\n\t\t// w\n\t\tw = 1 // trailing\n\t)\n\t_ = w\n}\n",
+			want: "var (\n\t\t// w\n\t\tw = 1 // trailing",
+			unwant: "var (\n\n",
+		},
+		{
+			name: "a comment first in a const group",
+			src: "package p\n\nfunc f() {\n\tconst (\n\n\t\t// c\n\t\tk = 1\n\t)\n\t_ = k\n}\n",
+			want: "const (\n\t\t// c\n\t\tk = 1",
+			unwant: "const (\n\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := strictText(t, tt.src)
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("output lacks %q:\n%s", tt.want, got)
+			}
+
+			if strings.Contains(got, tt.unwant) {
+				t.Errorf("output holds %q:\n%s", tt.unwant, got)
+			}
+		})
+	}
+}
+
 // TestStrictIfInitKeepsHeaderValid checks that an := moved into an if header still parses there, and does not shadow a named result.
 func TestStrictIfInitKeepsHeaderValid(t *testing.T) {
 	tests := []struct {

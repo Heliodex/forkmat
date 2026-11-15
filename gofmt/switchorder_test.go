@@ -68,6 +68,66 @@ func TestSwitchCaseOrderComments(t *testing.T) {
 	}
 }
 
+// TestSwitchCaseOrderStableAcrossSiblings checks that a switch on constants of a sibling file is ordered as the sibling will be once formatted: the sibling's reorder passes sort its constants, and the order must not depend on whether it has been formatted yet.
+func TestSwitchCaseOrderStableAcrossSiblings(t *testing.T) {
+	dir := t.TempDir()
+	consts := "package p\n\nconst (\n\tstatusPass = \"pass\"\n\tstatusFail = \"fail\"\n\tstatusError = \"error\"\n)\n"
+	sw := "package p\n\nfunc f(s string) int {\n\tswitch s {\n\tcase statusFail:\n\t\treturn 1\n\tcase statusPass:\n\t\treturn 2\n\tcase statusError:\n\t\treturn 3\n\t}\n\treturn 0\n}\n"
+
+	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte(consts), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	name := filepath.Join(dir, "a.go")
+
+	if err := os.WriteFile(name, []byte(sw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// the file is processed as gofmt does it: its reorder passes first, then the switch order
+	order := func() string {
+		fset := token.NewFileSet()
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		file, err := parser.ParseFile(fset, name, src, parser.ParseComments|parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+
+		if _, reordered := reorderSource(fset, name, src); reordered != nil {
+			file = reordered
+		}
+		switchCaseOrder(name, file)
+
+		var names []string
+
+		ast.Inspect(file, func(n ast.Node) bool {
+			if s, ok := n.(*ast.SwitchStmt); ok {
+				for _, cl := range s.Body.List {
+					for _, e := range cl.(*ast.CaseClause).List {
+						names = append(names, exprText(e))
+					}
+				}
+			}
+
+			return true
+		})
+		return strings.Join(names, " ")
+	}
+	first := order()
+	if want := "statusError statusFail statusPass"; first != want {
+		t.Errorf("order = %q, want %q", first, want)
+	}
+
+	// the sibling is now as it would be formatted, and the next run must agree
+	if second := order(); second != first {
+		t.Errorf("second run = %q, first = %q", second, first)
+	}
+}
+
 // A file read from standard input has no file name on disk, but its own constants still count, and no other file of its directory does.
 func TestSwitchCaseOrderStdin(t *testing.T) {
 	src := "package p\n\nconst (\n\tia = iota\n\tib\n)\n\nfunc f(k int) int {\n\tswitch k {\n\tcase ib:\n\t\treturn 2\n\tcase ia:\n\t\treturn 1\n\t}\n\treturn 0\n}\n"

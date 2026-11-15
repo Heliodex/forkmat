@@ -1247,9 +1247,8 @@ func specRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bo
 			cut = l.lineEnd(l.off(g.End()))
 			continue
 		}
-		// a group: its own lines, and any comment on them, are not carried over
-
-		if lastEnd := l.off(g.Specs[len(g.Specs)-1].End()); l.commentIn(l.off(g.TokPos), l.lineEnd(l.off(g.Lparen))) || l.commentIn(lastEnd, l.off(g.Rparen)+1) {
+		// a group with a comment anywhere in it is left alone: its comments would not follow their specs once they are sorted, and the next pass would sort them differently
+		if l.commentIn(l.off(g.TokPos), l.off(g.Rparen)+1) {
 			return edit{}, false
 		}
 
@@ -1545,7 +1544,7 @@ func specRunToken(d ast.Decl) token.Token {
 	return token.ILLEGAL
 }
 
-// reorderSpecRuns is the pass over the runs of const, var and type declarations (see specRunToken). A run is rewritten as single declarations, one per spec, in dependency order, and the printer then joins them into blocks. Within a run, specs that do not depend on each other are sorted alphabetically (see alphabeticalOrder). A group is opened and closed by its own lines, and a comment on those lines is not carried over, so a run with such a comment is left alone.
+// reorderSpecRuns is the pass over the runs of const, var and type declarations (see specRunToken). A run is rewritten as single declarations, one per spec, in dependency order, and the printer then joins them into blocks. Within a run, specs that do not depend on each other are sorted alphabetically (see alphabeticalOrder). A group with a comment anywhere in it, and so a run that holds one, is left alone, since its comments would not follow their specs.
 func reorderSpecRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	tf := fset.File(file.Pos())
 	if tf == nil {

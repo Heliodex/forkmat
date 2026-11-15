@@ -34,6 +34,7 @@ type (
 )
 
 var (
+
 	// checkedPackages remembers the packages that packageOf has checked, by directory and package name.
 	checkedPackages = struct {
 		sync.Mutex
@@ -64,6 +65,14 @@ var (
 		pkgs map[string]*types.Package
 	}{
 		pkgs: map[string]*types.Package{},
+	}
+
+	// orderedFiles remembers orderedSibling, by path.
+	orderedFiles = struct {
+		sync.Mutex
+		files map[string]*ast.File
+	}{
+		files: map[string]*ast.File{},
 	}
 )
 
@@ -250,6 +259,33 @@ func onDisk(filename string) bool {
 	return err == nil
 }
 
+// orderedSibling returns the file at path as -strict leaves its declarations: with the reorder passes applied to it (see reorderSource). The constants of a package are numbered from these files, since the passes change their order, for instance by sorting a run of constants. Numbering them from the source on disk would number a sibling differently before and after it is formatted, and the switches that use its constants would change on every run. The result is nil if the file cannot be read or parsed.
+func orderedSibling(path string) *ast.File {
+	orderedFiles.Lock()
+
+	defer orderedFiles.Unlock()
+
+	if f, ok := orderedFiles.files[path]; ok {
+		return f
+	}
+
+	var f *ast.File
+
+	if src, err := os.ReadFile(path); err == nil {
+		fset := token.NewFileSet()
+
+		if out, changed := reorderSource(fset, path, src); changed != nil {
+			f = changed
+		} else if parsed, err := parser.ParseFile(fset, path, out, parser.ParseComments); err == nil {
+			f = parsed
+		}
+	}
+
+	orderedFiles.files[path] = f
+
+	return f
+}
+
 // packageNames returns the names of the .go files of the package pkg in dir, by name, as a build of the directory would take them: a file that its build constraints exclude is left out. A directory whose files do not build as one package lists every file of pkg instead.
 func packageNames(dir, pkg string) []string {
 	key := dir + "\x00" + pkg
@@ -316,7 +352,7 @@ func packageConstFiles(filename string, file *ast.File) []*ast.File {
 	for _, path := range packagePaths(filename, file.Name.Name) {
 		if path == filename {
 			files = append(files, file)
-		} else if f := parsedSibling(path); f != nil {
+		} else if f := orderedSibling(path); f != nil {
 			files = append(files, f)
 		}
 	}
@@ -450,7 +486,7 @@ func readImportedConstIndex(dir string) map[string]int {
 	var files []*ast.File
 
 	for _, name := range pkg.GoFiles {
-		if f := parsedSibling(filepath.Join(dir, name)); f != nil {
+		if f := orderedSibling(filepath.Join(dir, name)); f != nil {
 			files = append(files, f)
 		}
 	}

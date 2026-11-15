@@ -201,8 +201,11 @@ func operand(x ast.Expr) ast.Expr {
 		return x
 	}
 
+	// the parentheses take the operand's position: without one, the printer takes the call's arguments to be on another line, and lays them out so
 	return &ast.ParenExpr{
+		Lparen: x.Pos(),
 		X: x,
+		Rparen: x.End(),
 	}
 }
 

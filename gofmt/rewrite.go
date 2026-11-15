@@ -12,6 +12,19 @@ import (
 	"unicode/utf8"
 )
 
+// Values/types for special cases.
+var (
+	identType = reflect.TypeFor[*ast.Ident]()
+	positionType = reflect.TypeFor[token.Pos]()
+	callExprType = reflect.TypeFor[*ast.CallExpr]()
+
+	// The types of ast.Ident.Obj and ast.File.Scope, reached through their fields so that the deprecated ast.Object and ast.Scope names are not used. Parsing skips object resolution, so these fields are always nil.
+	objectPtrType = fieldType[ast.Ident]("Obj")
+	scopePtrType = fieldType[ast.File]("Scope")
+	objectPtrNil = reflect.Zero(objectPtrType)
+	scopePtrNil = reflect.Zero(scopePtrType)
+)
+
 // fieldType returns the type of the field called name in T.
 func fieldType[T any](name string) reflect.Type {
 	f, ok := reflect.TypeFor[T]().FieldByName(name)
@@ -120,19 +133,6 @@ func parseExpr(s, what string) ast.Expr {
 
 	return x
 }
-
-// Values/types for special cases.
-var (
-	identType = reflect.TypeFor[*ast.Ident]()
-	positionType = reflect.TypeFor[token.Pos]()
-	callExprType = reflect.TypeFor[*ast.CallExpr]()
-
-	// The types of ast.Ident.Obj and ast.File.Scope, reached through their fields so that the deprecated ast.Object and ast.Scope names are not used. Parsing skips object resolution, so these fields are always nil.
-	objectPtrType = fieldType[ast.Ident]("Obj")
-	scopePtrType = fieldType[ast.File]("Scope")
-	objectPtrNil = reflect.Zero(objectPtrType)
-	scopePtrNil = reflect.Zero(scopePtrType)
-)
 
 // set is a wrapper for x.Set(y); it protects the caller from panics if x cannot be changed to y.
 func set(x, y reflect.Value) {

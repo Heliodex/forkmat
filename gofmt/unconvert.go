@@ -8,6 +8,9 @@ import (
 	"reflect"
 )
 
+// callExprPtrType is the type of a *ast.CallExpr.
+var callExprPtrType = reflect.TypeFor[*ast.CallExpr]()
+
 // checkTypes type-checks file on its own and returns the types of its expressions.
 // Errors are expected for names declared elsewhere, and are ignored: an expression
 // whose type cannot be found has no entry.
@@ -106,9 +109,6 @@ func typeLikeFun(e ast.Expr, names map[string]bool) bool {
 
 	return false
 }
-
-// callExprPtrType is the type of a *ast.CallExpr.
-var callExprPtrType = reflect.TypeFor[*ast.CallExpr]()
 
 // mayConvert reports whether file holds a call that unconvert could remove: one with a single argument, whose function is a type literal, or a name of a type in the package, the file, or a dot import, possibly generic or parenthesized. Only such a file is type-checked, since the check is the slow part of -unconvert and most files have no conversion.
 func mayConvert(filename string, file *ast.File) bool {

@@ -297,6 +297,7 @@ func flattenList(list *[]ast.Stmt, comments []*ast.CommentGroup) bool {
 func flatten(file *ast.File, comments []*ast.CommentGroup) {
 	// the statement lists of the file, in source order: an inner list comes after the outer list that holds it, so the lists are handled last to first
 	var lists []*[]ast.Stmt
+
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.BlockStmt:

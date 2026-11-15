@@ -13,7 +13,7 @@ func isNL(b byte) bool {
 // appendLines is like append(x, y...) but it avoids creating doubled blank lines, which would not be gofmt-standard output. It assumes that only whole blocks of lines are being appended, not line fragments.
 func appendLines(x, y []byte) []byte {
 	if len(y) > 0 && isNL(y[0]) && // y starts in blank line
-		(len(x) == 0 || len(x) >= 2 && isNL(x[len(x)-1]) && isNL(x[len(x)-2])) { // x is empty or ends in blank line
+	(len(x) == 0 || len(x) >= 2 && isNL(x[len(x)-1]) && isNL(x[len(x)-2])) { // x is empty or ends in blank line
 		y = y[1:] // delete y's leading blank line
 	}
 

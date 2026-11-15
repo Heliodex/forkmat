@@ -115,6 +115,51 @@ const (
 	noExtraLinebreak // disables extra line break after /*-style comment
 )
 
+// trimmer is implemented as a state machine. It can be in one of the following states:
+const (
+	inSpace = iota // inside space
+	inEscape // inside text bracketed by tabwriter.Escapes
+	inText // inside text
+)
+
+const (
+	RawFormat Mode = 1 << iota // do not use a tabwriter; if set, UseSpaces is ignored
+	TabIndent // use tabs for indentation independent of UseSpaces
+	UseSpaces // use spaces instead of tabs for alignment
+	SourcePos // emit //line directives to preserve original source positions
+
+	// StrictLayout ignores the line structure of the source when deciding where to break lines, and lays code out from the AST alone. Comments and the number of blank lines around them still follow the source. See strict.go for the rules.
+	StrictLayout Mode = 1 << 29
+)
+
+// The mode below is not included in printer's public API because editing code text is deemed out of scope. Because this mode is unexported, it's also possible to modify or remove it based on the evolving needs of go/format and cmd/gofmt without breaking users. See discussion in CL 240683.
+const (
+	// normalizeNumbers means to canonicalize number literal prefixes and exponents while printing.
+	//
+	// This value is known in and used by go/format and cmd/gofmt. It is currently more convenient and performant for those packages to apply number normalization during printing, rather than by modifying the AST in advance.
+	normalizeNumbers Mode = 1 << 30
+)
+
+var (
+	// Design note: It is tempting to eliminate extra blanks occurring in
+	//              whitespace in this function as it could simplify some
+	//              of the blanks logic in the node printing functions.
+	//              However, this would mess up any formatting done by
+	//              the tabwriter.
+
+	aNewline = []byte("\n")
+	printerPool = sync.Pool{
+		New: func() any {
+			return &printer{
+				// Whitespace sequences are short.
+				wsbuf: make([]whiteSpace, 0, 16),
+				// We start the printer with a 16K output buffer, which is currently larger than about 80% of Go files in the standard library.
+				output: make([]byte, 0, 16<<10),
+			}
+		},
+	}
+)
+
 // commonPrefix returns the common prefix of a and b.
 func commonPrefix(a, b string) string {
 	var i int
@@ -267,7 +312,8 @@ func (p *printer) lineFor(pos token.Pos) int {
 		p.cachedPos = pos
 		p.cachedLine = p.fset.PositionFor(
 			pos,
-			false /* absolute position */).Line
+			false, /* absolute position */
+		).Line
 	}
 
 	return p.cachedLine
@@ -303,7 +349,8 @@ func (p *printer) posFor(pos token.Pos) token.Position {
 	// not used frequently enough to cache entire token.Position
 	return p.fset.PositionFor(
 		pos,
-		false /* absolute position */)
+		false, /* absolute position */
+	)
 }
 
 func (p *printer) nextComment() {
@@ -845,7 +892,7 @@ func (p *printer) intersperseComments(next token.Position, tok token.Token) (wro
 		list := p.comment.List
 
 		if tok != token.IDENT && p.lastTok != token.IMPORT && // do not rewrite cgo's import "C" comments
-			p.posFor(p.comment.Pos()).Column == 1 && p.posFor(p.comment.End()+1) == next {
+		p.posFor(p.comment.Pos()).Column == 1 && p.posFor(p.comment.End()+1) == next {
 			// Unindented comment abutting next token position: a top-level doc comment.
 			list = formatDocComment(list)
 			changed = true
@@ -913,13 +960,6 @@ func (p *printer) flush(next token.Position, tok token.Token) (wroteNewline, dro
 
 	return
 }
-
-// trimmer is implemented as a state machine. It can be in one of the following states:
-const (
-	inSpace = iota // inside space
-	inEscape // inside text bracketed by tabwriter.Escapes
-	inText // inside text
-)
 
 // print prints a list of "items" (roughly corresponding to syntactic tokens, but also including whitespace and formatting information). It is the only print function that should be called directly from any of the AST printing functions in nodes.go.
 //
@@ -1048,14 +1088,6 @@ func (p *printer) print(args ...any) {
 	}
 }
 
-// Design note: It is tempting to eliminate extra blanks occurring in
-//              whitespace in this function as it could simplify some
-//              of the blanks logic in the node printing functions.
-//              However, this would mess up any formatting done by
-//              the tabwriter.
-
-var aNewline = []byte("\n")
-
 func (p *printer) printNode(node any) error {
 	// unpack *CommentedNode, if any
 	var comments []*ast.CommentGroup
@@ -1149,35 +1181,6 @@ func (p *printer) printNode(node any) error {
 
 unsupported:
 	return fmt.Errorf("go/printer: unsupported node type %T", node)
-}
-
-const (
-	RawFormat Mode = 1 << iota // do not use a tabwriter; if set, UseSpaces is ignored
-	TabIndent // use tabs for indentation independent of UseSpaces
-	UseSpaces // use spaces instead of tabs for alignment
-	SourcePos // emit //line directives to preserve original source positions
-
-	// StrictLayout ignores the line structure of the source when deciding where to break lines, and lays code out from the AST alone. Comments and the number of blank lines around them still follow the source. See strict.go for the rules.
-	StrictLayout Mode = 1 << 29
-)
-
-// The mode below is not included in printer's public API because editing code text is deemed out of scope. Because this mode is unexported, it's also possible to modify or remove it based on the evolving needs of go/format and cmd/gofmt without breaking users. See discussion in CL 240683.
-const (
-	// normalizeNumbers means to canonicalize number literal prefixes and exponents while printing.
-	//
-	// This value is known in and used by go/format and cmd/gofmt. It is currently more convenient and performant for those packages to apply number normalization during printing, rather than by modifying the AST in advance.
-	normalizeNumbers Mode = 1 << 30
-)
-
-var printerPool = sync.Pool{
-	New: func() any {
-		return &printer{
-			// Whitespace sequences are short.
-			wsbuf: make([]whiteSpace, 0, 16),
-			// We start the printer with a 16K output buffer, which is currently larger than about 80% of Go files in the standard library.
-			output: make([]byte, 0, 16<<10),
-		}
-	},
 }
 
 func (p *trimmer) resetSpace() {

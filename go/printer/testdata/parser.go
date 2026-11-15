@@ -55,11 +55,6 @@ type (
 	parseSpecFunction func(p *parser, doc *ast.CommentGroup, iota int) ast.Spec
 )
 
-// The unresolved object is a sentinel to mark identifiers that have been added
-// to the list of unresolved identifiers. The sentinel is only used for verifying
-// internal consistency.
-var unresolved = new(ast.Object)
-
 // The mode parameter to the Parse* functions is a set of flags (or 0).
 // They control the amount of source code parsed and other optional
 // parser functionality.
@@ -70,6 +65,11 @@ const (
 	Trace // print a trace of parsed productions
 	DeclarationErrors // report declaration errors
 )
+
+// The unresolved object is a sentinel to mark identifiers that have been added
+// to the list of unresolved identifiers. The sentinel is only used for verifying
+// internal consistency.
+var unresolved = &ast.Object{}
 
 func assert(cond bool, msg string) {
 	if !cond {

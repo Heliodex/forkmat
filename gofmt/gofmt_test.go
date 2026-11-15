@@ -70,6 +70,7 @@ func gofmtFlags(filename string, maxLines int) string {
 
 	// initialize scanner
 	var s scanner.Scanner
+
 	s.Init(f)
 
 	s.Error = func(*scanner.Scanner, string) {} // ignore errors
@@ -78,14 +79,14 @@ func gofmtFlags(filename string, maxLines int) string {
 	// look for //gofmt comment
 	for s.Line <= maxLines {
 		switch s.Scan() {
+		case scanner.EOF:
+			return ""
 		case scanner.Comment:
 			const prefix = "//gofmt "
 
 			if t := s.TokenText(); strings.HasPrefix(t, prefix) {
 				return strings.TrimSpace(t[len(prefix):])
 			}
-		case scanner.EOF:
-			return ""
 		}
 	}
 

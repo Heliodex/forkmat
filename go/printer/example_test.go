@@ -36,6 +36,7 @@ func printSelf() {
 	// about the original source formatting and can add additional
 	// line breaks where they were present in the source.
 	var buf bytes.Buffer
+
 	printer.Fprint(&buf, fset, funcAST.Body)
 
 	// Remove braces {} enclosing the function body, unindent,

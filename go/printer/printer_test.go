@@ -37,11 +37,6 @@ const (
 	tabwidth = 8
 )
 
-var (
-	update = flag.Bool("update", false, "update golden files")
-	fset = token.NewFileSet()
-)
-
 const (
 	export checkMode = 1 << iota
 	rawFormat
@@ -49,6 +44,44 @@ const (
 	idempotent
 	allowTypeParams
 	strictLayout
+)
+
+var (
+	update = flag.Bool("update", false, "update golden files")
+	fset = token.NewFileSet()
+
+	// Use go test -update to create/update the respective golden files.
+	data = []entry{
+		{"empty.input", "empty.golden", idempotent},
+		{"comments.input", "comments.golden", 0},
+		{"comments.input", "comments.x", export},
+		{"comments2.input", "comments2.golden", idempotent},
+		{"alignment.input", "alignment.golden", idempotent},
+		{"linebreaks.input", "linebreaks.golden", idempotent},
+		{"expressions.input", "expressions.golden", idempotent},
+		{"expressions.input", "expressions.raw", rawFormat | idempotent},
+		{"declarations.input", "declarations.golden", 0},
+		{"statements.input", "statements.golden", 0},
+		{"strict.input", "strict.golden", strictLayout | normNumber | idempotent},
+		{"slow.input", "slow.golden", idempotent},
+		{"complit.input", "complit.x", export},
+		{"go2numbers.input", "go2numbers.golden", idempotent},
+		{"go2numbers.input", "go2numbers.norm", normNumber | idempotent},
+		{"generics.input", "generics.golden", idempotent | allowTypeParams},
+		{"gobuild1.input", "gobuild1.golden", idempotent},
+		{"gobuild2.input", "gobuild2.golden", idempotent},
+		{"gobuild3.input", "gobuild3.golden", idempotent},
+		{"gobuild4.input", "gobuild4.golden", idempotent},
+		{"gobuild5.input", "gobuild5.golden", idempotent},
+		{"gobuild6.input", "gobuild6.golden", idempotent},
+		{"gobuild7.input", "gobuild7.golden", idempotent},
+	}
+	decls = []string{
+		`import "fmt"`,
+		"const pi = 3.1415\nconst e = 2.71828\n\nvar x = pi",
+		"func sum(x, y int) int {\n\treturn x + y\n}",
+	}
+	stmts = []string{"i := 0", "select {}\nvar a, b = 1, 2\nreturn a + b", "go f()\ndefer func() {}()"}
 )
 
 // Verify that the printer doesn't crash if the AST contains BadXXX nodes.
@@ -210,33 +243,6 @@ type bar int // comment2
 	if buf.String() != bar {
 		t.Errorf("got %q, want %q", buf.String(), bar)
 	}
-}
-
-// Use go test -update to create/update the respective golden files.
-var data = []entry{
-	{"empty.input", "empty.golden", idempotent},
-	{"comments.input", "comments.golden", 0},
-	{"comments.input", "comments.x", export},
-	{"comments2.input", "comments2.golden", idempotent},
-	{"alignment.input", "alignment.golden", idempotent},
-	{"linebreaks.input", "linebreaks.golden", idempotent},
-	{"expressions.input", "expressions.golden", idempotent},
-	{"expressions.input", "expressions.raw", rawFormat | idempotent},
-	{"declarations.input", "declarations.golden", 0},
-	{"statements.input", "statements.golden", 0},
-	{"strict.input", "strict.golden", strictLayout | normNumber | idempotent},
-	{"slow.input", "slow.golden", idempotent},
-	{"complit.input", "complit.x", export},
-	{"go2numbers.input", "go2numbers.golden", idempotent},
-	{"go2numbers.input", "go2numbers.norm", normNumber | idempotent},
-	{"generics.input", "generics.golden", idempotent | allowTypeParams},
-	{"gobuild1.input", "gobuild1.golden", idempotent},
-	{"gobuild2.input", "gobuild2.golden", idempotent},
-	{"gobuild3.input", "gobuild3.golden", idempotent},
-	{"gobuild4.input", "gobuild4.golden", idempotent},
-	{"gobuild5.input", "gobuild5.golden", idempotent},
-	{"gobuild6.input", "gobuild6.golden", idempotent},
-	{"gobuild7.input", "gobuild7.golden", idempotent},
 }
 
 func TestDeclLists(t *testing.T) {
@@ -615,12 +621,6 @@ func TestStmtLists(t *testing.T) {
 	}
 }
 
-var decls = []string{
-	`import "fmt"`,
-	"const pi = 3.1415\nconst e = 2.71828\n\nvar x = pi",
-	"func sum(x, y int) int {\n\treturn x + y\n}",
-}
-
 // Test whether the printer stops writing after the first error
 func TestWriteErrors(t *testing.T) {
 	t.Parallel()
@@ -654,8 +654,6 @@ func TestWriteErrors(t *testing.T) {
 		}
 	}
 }
-
-var stmts = []string{"i := 0", "select {}\nvar a, b = 1, 2\nreturn a + b", "go f()\ndefer func() {}()"}
 
 // checkEqual compares a and b.
 func checkEqual(aname, bname string, a, b []byte) error {
@@ -993,6 +991,41 @@ func strictText(t *testing.T, src string) string {
 	return buf.String()
 }
 
+// TestStrictCallClosingToken checks that a call broken by a comment ends with its closing parenthesis on a line of its own, after a trailing comma, with no blank line before it.
+func TestStrictCallClosingToken(t *testing.T) {
+	tests := []struct {
+		name, src string
+		// want is text the output must contain, and unwant text it must not
+		want, unwant string
+	}{
+		{
+			name: "a block comment before the closing parenthesis",
+			src: "package p\n\nfunc f() {\n\tg(a, b /* c */)\n}\n",
+			want: "\t\tb, /* c */\n\t)",
+			unwant: "/* c */)",
+		},
+		{
+			name: "a line comment before the closing parenthesis",
+			src: "package p\n\nfunc f() {\n\tg(a, b, // c\n\t)\n}\n",
+			want: "\t\tb, // c\n\t)",
+			unwant: "// c\n\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := strictText(t, tt.src)
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("output lacks %q:\n%s", tt.want, got)
+			}
+
+			if strings.Contains(got, tt.unwant) {
+				t.Errorf("output holds %q:\n%s", tt.unwant, got)
+			}
+		})
+	}
+}
+
 // TestStrictIfInitKeepsHeaderValid checks that an := moved into an if header still parses there, and does not shadow a named result.
 func TestStrictIfInitKeepsHeaderValid(t *testing.T) {
 	tests := []struct {
@@ -1021,42 +1054,6 @@ func TestStrictIfInitKeepsHeaderValid(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := strictText(t, tt.src); !strings.Contains(got, tt.want) {
 				t.Errorf("output lacks %q:\n%s", tt.want, got)
-			}
-		})
-	}
-}
-
-// TestStrictCallClosingToken checks that a call broken by a comment ends with its closing parenthesis on a line of its own, after a trailing comma, with no blank line before it.
-func TestStrictCallClosingToken(t *testing.T) {
-	tests := []struct {
-		name, src string
-		// want is text the output must contain, and unwant text it must not
-		want, unwant string
-	}{
-		{
-			name: "a block comment before the closing parenthesis",
-			src: "package p\n\nfunc f() {\n\tg(a, b /* c */)\n}\n",
-			want: "\t\tb, /* c */\n\t)",
-			unwant: "/* c */)",
-		},
-		{
-			name: "a line comment before the closing parenthesis",
-			src: "package p\n\nfunc f() {\n\tg(a, b, // c\n\t)\n}\n",
-			want: "\t\tb, // c\n\t)",
-			unwant: "// c\n\n",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := strictText(t, tt.src)
-
-			if !strings.Contains(got, tt.want) {
-				t.Errorf("output lacks %q:\n%s", tt.want, got)
-			}
-
-			if strings.Contains(got, tt.unwant) {
-				t.Errorf("output holds %q:\n%s", tt.unwant, got)
 			}
 		})
 	}
@@ -1118,7 +1115,8 @@ func fibo(n int) {
 	pos := comment.Pos()
 	if fset.PositionFor(
 		pos,
-		false /* absolute position */).Offset != 1 {
+		false, /* absolute position */
+	).Offset != 1 {
 		t.Error("expected offset 1") // error in test
 	}
 	testComment(t, f, len(src), &ast.Comment{

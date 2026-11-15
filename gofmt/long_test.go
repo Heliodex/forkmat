@@ -135,8 +135,8 @@ func testFile(t *testing.T, b1, b2 *bytes.Buffer, filename string) {
 }
 
 func testFiles(t *testing.T, filenames <-chan string, done chan<- int) {
-	b1 := new(bytes.Buffer)
-	b2 := new(bytes.Buffer)
+	b1 := &bytes.Buffer{}
+	b2 := &bytes.Buffer{}
 
 	for filename := range filenames {
 		testFile(t, b1, b2, filename)

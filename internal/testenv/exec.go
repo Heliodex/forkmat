@@ -14,6 +14,41 @@ import (
 	"time"
 )
 
+var (
+	tryExec = sync.OnceValue(func() error {
+		switch runtime.GOOS {
+		case "ios", "js", "wasip1":
+		default:
+			// Assume that exec always works on non-mobile platforms and Android.
+			return nil
+		}
+
+		// ios has an exec syscall but on real iOS devices it might return a permission error. In an emulated environment (such as a Corellium host) it might succeed, so if we need to exec we'll just have to try it and find out.
+		//
+		// As of 2023-04-19 wasip1 and js don't have exec syscalls at all, but we may as well use the same path so that this branch can be tested without an ios environment.
+
+		if !testing.Testing() {
+			// This isn't a standard 'go test' binary, so we don't know how to self-exec in a way that should succeed without side effects. Just forget it.
+			return errors.New("can't probe for exec support with a non-test executable")
+		}
+
+		// We know that this is a test executable. We should be able to run it with a no-op flag to check for overall exec support.
+		exe, err := exePath()
+		if err != nil {
+			return fmt.Errorf("can't probe for exec support: %w", err)
+		}
+
+		cmd := exec.Command(exe, "-test.list=^$")
+		cmd.Env = origEnv
+
+		return cmd.Run()
+	})
+	exePath = sync.OnceValues(func() (string, error) {
+		return os.Executable()
+	})
+	execPaths sync.Map // path -> error
+)
+
 // CleanCmdEnv will fill cmd.Env with the environment, excluding certain variables that could modify the behavior of the Go tools such as GODEBUG and GOTRACEBACK.
 //
 // If the caller wants to set cmd.Dir, set it before calling this function, so PWD will be set correctly in the environment.
@@ -38,35 +73,6 @@ func CleanCmdEnv(cmd *exec.Cmd) *exec.Cmd {
 	return cmd
 }
 
-var tryExec = sync.OnceValue(func() error {
-	switch runtime.GOOS {
-	case "ios", "js", "wasip1":
-	default:
-		// Assume that exec always works on non-mobile platforms and Android.
-		return nil
-	}
-
-	// ios has an exec syscall but on real iOS devices it might return a permission error. In an emulated environment (such as a Corellium host) it might succeed, so if we need to exec we'll just have to try it and find out.
-	//
-	// As of 2023-04-19 wasip1 and js don't have exec syscalls at all, but we may as well use the same path so that this branch can be tested without an ios environment.
-
-	if !testing.Testing() {
-		// This isn't a standard 'go test' binary, so we don't know how to self-exec in a way that should succeed without side effects. Just forget it.
-		return errors.New("can't probe for exec support with a non-test executable")
-	}
-
-	// We know that this is a test executable. We should be able to run it with a no-op flag to check for overall exec support.
-	exe, err := exePath()
-	if err != nil {
-		return fmt.Errorf("can't probe for exec support: %w", err)
-	}
-
-	cmd := exec.Command(exe, "-test.list=^$")
-	cmd.Env = origEnv
-
-	return cmd.Run()
-})
-
 // MustHaveExec checks that the current system can start new processes using os.StartProcess or (more commonly) exec.Command. If not, MustHaveExec calls t.Skip with an explanation.
 //
 // On some platforms MustHaveExec checks for exec support by re-executing the current executable, which must be a binary built by 'go test'. We intentionally do not provide a HasExec function because of the risk of inappropriate recursion in TestMain functions.
@@ -83,13 +89,6 @@ func MustHaveExec(t testing.TB) {
 		t.Skip("skipping test:", msg)
 	}
 }
-
-var (
-	exePath = sync.OnceValues(func() (string, error) {
-		return os.Executable()
-	})
-	execPaths sync.Map // path -> error
-)
 
 // CommandContext is like exec.CommandContext, but:
 //   - skips t if the platform does not support os/exec,

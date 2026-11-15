@@ -42,13 +42,6 @@ type (
 	}
 )
 
-// This file is the importer of the type checks: -unconvert checks each file against the types of the packages it imports, and -strict checks the package of a switch. A package outside the standard library is read from its source, with the function bodies skipped, which is much faster than a full check, and every package is loaded once per run. Packages load in parallel: a file waits only for the packages it imports, and not for every other file's loads. A package that imports itself, through a cycle that is invalid Go, is reported as a cycle rather than waited for. The standard library, and a package with cgo files, go to the source importer, which is not safe for concurrent use, so it runs one import at a time.
-
-// The source importer runs the cgo tool for a package with cgo files, such as net, which costs about a second for each. The pure Go files of those packages declare the same API, so the checks read those instead. Set before the importer reads build.Default.
-func init() {
-	build.Default.CgoEnabled = false
-}
-
 var (
 	// errImportCycle is what an import reports when it would wait for a package that is waiting for it.
 	errImportCycle = errors.New("import cycle")
@@ -60,6 +53,13 @@ var (
 		src: importer.ForCompiler(token.NewFileSet(), "source", nil).(types.ImporterFrom),
 	}
 )
+
+// This file is the importer of the type checks: -unconvert checks each file against the types of the packages it imports, and -strict checks the package of a switch. A package outside the standard library is read from its source, with the function bodies skipped, which is much faster than a full check, and every package is loaded once per run. Packages load in parallel: a file waits only for the packages it imports, and not for every other file's loads. A package that imports itself, through a cycle that is invalid Go, is reported as a cycle rather than waited for. The standard library, and a package with cgo files, go to the source importer, which is not safe for concurrent use, so it runs one import at a time.
+
+// The source importer runs the cgo tool for a package with cgo files, such as net, which costs about a second for each. The pure Go files of those packages declare the same API, so the checks read those instead. Set before the importer reads build.Default.
+func init() {
+	build.Default.CgoEnabled = false
+}
 
 // checkPackageDir type-checks the package with import path path, in pdir, from its source. Only its declarations are needed to import it, so the function bodies are skipped, which is much faster. Its own imports are loaded the same way, for code in ctx: the directory of the code that first imported it, since the packages of that module are the ones listed. The result is false, and nothing is checked, for a package with cgo files: those need the cgo tool, which the source importer runs.
 func (l *depImporter) checkPackageDir(path, pdir, ctx string, chain int) (*types.Package, bool, error) {

@@ -40,7 +40,7 @@ go test ./gofmt            # upstream tests + golden files
 
 Checked against the installed `gofmt` (go1.27.2): identical output on the same input. `cmd/gofmt` is byte-identical between go1.27.2 and go1.27.4.
 
-`gofmt -all` enables `-strict`, `-modernise`, `-vetfix`, `-inline`, `-composite`, `-unused`, `-unconvert`, `-flatten`, `-mergecases` and `-omitcases` together. Each of them is described below.
+`gofmt -all` enables `-strict`, `-modernise`, `-vetfix`, `-inline`, `-composite`, `-constants`, `-unused`, `-unconvert`, `-flatten`, `-mergecases` and `-omitcases` together. Each of them is described below.
 
 ## Local changes
 
@@ -380,6 +380,16 @@ Both run through the same fix runner as `-modernise`, and `-all` enables both. E
 An import without a name needs its package's name, which the package supplies, so it is only removed when the package can be imported. An import that cannot be resolved, such as one from a module that is not present, is kept. An import that shares its line with other code is kept too, so that no code is lost with it.
 
 The pass runs after the other fixes, since a fix such as `-modernise` can leave an import unused. `-imports=false` keeps unused imports.
+
+### `-constants`: declare unchanging variables with const
+
+`gofmt -constants` declares a local variable with `const` when nothing assigns to it, takes its address, or ranges into it with `=`, and it holds a constant of a boolean, string or integer type: `x := 5` becomes `const x int = 5`, and `var s = "hi"` becomes `const s string = "hi"`. The type is written out, so the constant keeps the variable's type rather than an untyped one. A variable whose type was written keeps that type, which can be named.
+
+An initialiser of an `if`, `for` or `switch` statement moves out in front of the statement, so `if n := 3; n > 2 {` becomes `const n int = 3` followed by `if n > 2 {`. It only moves when no other identifier of that name in the block would clash with it. Floats are left as variables, since constant arithmetic on them is exact where the variable's is rounded, and so are package-level variables, since other files can assign them.
+
+The rewritten package is type-checked with its siblings, and the rewrite is not made when it adds a type error. That catches a use that would overflow or divide by zero once the value is a constant, which the variable hid until run time. A file read from standard input has no package to check, so it is left alone.
+
+It is enabled by `-all`. The rewrite can make more variables constant, so it repeats until none change, up to a limit.
 
 ## What differs from upstream
 

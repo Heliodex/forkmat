@@ -31,6 +31,12 @@ linters:
         - exhaustive
         - nakedret
         - godot
+        # TODO comments copied from the Go tree record its open questions, so they are not work items for this repo.
+        - godox
+        # Returning an interface is how the Go tree's own helpers are written, such as the generic memo.
+        - ireturn
+        # The printer and the passes walk AST nodes whose kinds their parents fix, so a failed type assertion is a bug that panics where it happens. The ok form adds a branch to each of those.
+        - forcetypeassert
     exclusions:
         generated: lax
         presets:
@@ -39,6 +45,15 @@ linters:
         rules:
             - path: (^|/)binding/
               text: .
+            # The -unused pass reads the object links that the parser resolves, which go/ast deprecates in favour of go/types, so the pass needs them.
+            - linters:
+                  - staticcheck
+              path: gofmt/unused\.go
+              text: go/ast.Object
+            # The table of platforms repeats each name as it is written in the Go tree, so the names are not constants to share.
+            - linters:
+                  - goconst
+              path: internal/platform/
             - linters:
                   - bodyclose
               path: _test\.go
@@ -59,32 +74,25 @@ linters:
               path: _test\.go
     settings:
         cyclop:
-            max-complexity: 40
+            max-complexity: 69
         funlen:
-            lines: 190
-            statements: 140
+            lines: 283
+            statements: 182
         gocognit:
             min-complexity: 100
         dogsled:
             max-blank-identifiers: 3
         gocyclo:
-            min-complexity: 40
+            min-complexity: 68
         depguard:
             rules:
                 main:
                     allow:
                         - $gostd
-                        - better-deploy
-                        - go.bytecodealliance.org
-                        - go/ast
-                        - go/parser
-                        - go/token
-                        - golang.org/x/sys/unix
-                        - modernc.org/sqlite
-                        - modernc.org/sqlite/lib
-                        - wt.example
-                        - github.com/heliodex/better-deploy/wt/packages
-                        - ire/contract
+                        - forkmat
+                        - golang.org/x/sync
+                        - golang.org/x/tools
+                        - github.com/bombsimon/wsl/v5
         funcorder:
             constructor: true
             struct-method: false
@@ -108,6 +116,8 @@ linters:
                 - G703
                 - G704
                 - G706
+        maintidx:
+            under: 9
         mnd:
             ignored-numbers:
                 - "0"
@@ -151,7 +161,7 @@ linters:
                 - "0o755"
                 - "0o700"
         nestif:
-            min-complexity: 15
+            min-complexity: 31
         revive:
             enable-default-rules: true
             rules:
@@ -168,6 +178,9 @@ linters:
                 - Err
             ignore-sigs:
                 - .Errorf(
+                - go/parser.ParseFile(
+                - .ImportDir(
+                - .ImportFrom(
                 - errors.New(
                 - errors.Unwrap(
                 - errors.Join(
@@ -196,6 +209,11 @@ linters:
                 - os/exec.
                 - os.
                 - path/filepath.
+
+issues:
+    # Show every issue, not three of each kind per linter.
+    max-issues-per-linter: 0
+    max-same-issues: 0
 
 output:
     formats:

@@ -98,9 +98,7 @@ var (
 )
 
 // bareReturn reports whether a statement of list holds a return with no values, outside function literals. Such a return gives the named results of the function, which an := moved into an if header would shadow.
-func bareReturn(list []ast.Stmt) bool {
-	var found bool
-
+func bareReturn(list []ast.Stmt) (found bool) {
 	for _, s := range list {
 		ast.Inspect(s, func(n ast.Node) bool {
 			switch x := n.(type) {
@@ -116,19 +114,16 @@ func bareReturn(list []ast.Stmt) bool {
 		})
 	}
 
-	return found
+	return
 }
 
 // capturedIn reports whether a function literal in n uses one of the names, or the address of one of them is taken in n.
-func capturedIn(n ast.Node, names []string) bool {
+func capturedIn(n ast.Node, names []string) (found bool) {
 	set := map[string]bool{}
 
 	for _, name := range names {
 		set[name] = true
 	}
-
-	var found bool
-
 	ast.Inspect(n, func(m ast.Node) bool {
 		switch x := m.(type) {
 		case *ast.FuncLit:
@@ -147,7 +142,7 @@ func capturedIn(n ast.Node, names []string) bool {
 
 		return !found
 	})
-	return found
+	return
 }
 
 // compareMapKeys orders two map keys by rank, and within a rank by value: booleans false before true, numbers from the least, names and strings alphabetically.
@@ -194,9 +189,7 @@ func declEnd(d *ast.GenDecl) token.Pos {
 }
 
 // declNames returns the names that the declaration s declares with := or var, other than the blank identifier.
-func declNames(s ast.Stmt) []string {
-	var names []string
-
+func declNames(s ast.Stmt) (names []string) {
 	add := func(id *ast.Ident) {
 		if id.Name != "_" {
 			names = append(names, id.Name)
@@ -222,7 +215,7 @@ func declNames(s ast.Stmt) []string {
 		}
 	}
 
-	return names
+	return
 }
 
 // declaresUsedBy reports whether next is an if statement whose condition uses a name that prev declares, with := or a var declaration. Names are compared by spelling, so a shadowing name counts as a use: the blank line is only a layout choice.
@@ -305,9 +298,7 @@ func fieldNames(lists []*ast.FieldList) map[string]bool {
 }
 
 // hasCompositeLit reports whether x holds a composite literal that is not enclosed in parentheses of its own.
-func hasCompositeLit(x ast.Expr) bool {
-	var found bool
-
+func hasCompositeLit(x ast.Expr) (found bool) {
 	ast.Inspect(x, func(n ast.Node) bool {
 		switch n.(type) {
 		case *ast.CompositeLit:
@@ -318,7 +309,7 @@ func hasCompositeLit(x ast.Expr) bool {
 
 		return !found
 	})
-	return found
+	return
 }
 
 // hasKeyedElt reports whether any element of a composite literal is a key: value pair.
@@ -797,6 +788,7 @@ func (p *printer) blankLineBetween(prev, next ast.Stmt) bool {
 	if isGoOrDefer(prev) || isGoOrDefer(next) {
 		return !(isGoOrDefer(prev) && isGoOrDefer(next))
 	}
+
 	// An if statement whose condition uses a name that the statement before it declares stays with that declaration.
 	if declaresUsedBy(prev, next) {
 		return false
@@ -805,6 +797,7 @@ func (p *printer) blankLineBetween(prev, next ast.Stmt) bool {
 	if p.blankStmt(prev) || p.blankStmt(next) {
 		return !isCallStmt(prev) && !isCallStmt(next)
 	}
+
 	// Calls, assignments, and const and var declarations are each set off from the others. A statement of kindNone is never set off by this rule.
 	kp, kn := kindOf(prev), kindOf(next)
 
@@ -1059,16 +1052,18 @@ func pureValue(e ast.Expr) bool {
 
 // strictSortedMapElts returns the elements of a map literal ordered by key. The literal is a map when every key is a literal of a basic type (nil, true or false, a number, or a string), since a struct names its fields with identifiers and an other key is not known to be a literal. Keys are grouped by kind, in the order nil, booleans, numbers, strings, and within a kind are sorted: booleans false before true, numbers from the least, strings alphabetically. A map with keys of one kind is sorted the same way. The elements are reordered only when the literal has no comment, and every value is free of calls and receives, which Go evaluates in order. Otherwise the elements are returned as they are.
 func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
-	if len(x.Elts) < 2 || p.commentIn(x.Lbrace, x.Rbrace) {
-		return x.Elts
-	}
-
 	type keyed struct {
 		rank int
 		key any // nil, a bool, a constant.Value, or a string
 		elt ast.Expr
 	}
+
+	if len(x.Elts) < 2 || p.commentIn(x.Lbrace, x.Rbrace) {
+		return x.Elts
+	}
+
 	elts := make([]keyed, 0, len(x.Elts))
+
 	// a literal with only identifier keys may be a struct, whose fields are put in declaration order by gofmt (see structorder.go): it is a map only if some key is a literal
 	var literal bool
 
@@ -1137,9 +1132,7 @@ func shortVarOK(vs *ast.ValueSpec) bool {
 }
 
 // strictShortVars rewrites the var declarations of a block that qualify (see shortVarOK) as := assignments. A group keeps its other specs as a declaration.
-func (p *printer) strictShortVars(list []ast.Stmt) []ast.Stmt {
-	var out []ast.Stmt
-
+func (p *printer) strictShortVars(list []ast.Stmt) (out []ast.Stmt) {
 	for _, s := range list {
 		ds, ok := s.(*ast.DeclStmt)
 		if !ok {
@@ -1212,7 +1205,7 @@ func (p *printer) strictShortVars(list []ast.Stmt) []ast.Stmt {
 		flush()
 	}
 
-	return out
+	return
 }
 
 // stdImport reports whether an import spec names a standard library package: the first element of its path has no dot.
@@ -1368,6 +1361,7 @@ func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode, 
 		if i > 0 {
 			p.print(token.COMMA)
 		}
+
 		// Without an opening token there is no line break before the first element: after "return" a newline would end the statement.
 		if i > 0 || prev0.IsValid() {
 			p.linebreak(p.pos.Line+1, 1, ws, i == 0)
@@ -1400,9 +1394,7 @@ func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode, 
 }
 
 // usesIota reports whether a declaration mentions iota.
-func usesIota(d *ast.GenDecl) bool {
-	var found bool
-
+func usesIota(d *ast.GenDecl) (found bool) {
 	ast.Inspect(d, func(n ast.Node) bool {
 		if id, ok := n.(*ast.Ident); ok && id.Name == "iota" {
 			found = true
@@ -1410,7 +1402,7 @@ func usesIota(d *ast.GenDecl) bool {
 
 		return !found
 	})
-	return found
+	return
 }
 
 // constJoinable reports whether a const declaration can join a group. Its specs must all have values, since a spec without one repeats the value before it, and no value may use iota, which counts the specs of a group.
@@ -1472,9 +1464,7 @@ func joinTypeDecls(run []*ast.GenDecl, pos token.Pos) *ast.GenDecl {
 }
 
 // groupTypes joins each run of adjacent type declarations into one type (...) declaration. A declaration may be a single one or a group already, and may carry doc comments. Comments between two declarations stay where they are, inside the block.
-func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, tok token.Token, joinable func(*ast.GenDecl) bool, decl func(T) *ast.GenDecl, wrap func(*ast.GenDecl) T) []T {
-	var out []T
-
+func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, tok token.Token, joinable func(*ast.GenDecl) bool, decl func(T) *ast.GenDecl, wrap func(*ast.GenDecl) T) (out []T) {
 	for i := 0; i < len(list); {
 		j := i + 1
 
@@ -1493,6 +1483,7 @@ func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, tok token.Toke
 				j++
 			}
 		}
+
 		// the block needs a position before the run (see joinTypeDecls); where there is none, a run that starts with a doc comment is left alone
 		var before token.Pos
 
@@ -1517,7 +1508,7 @@ func groupTypes[T ast.Node](p *printer, list []T, head token.Pos, tok token.Toke
 		i = j
 	}
 
-	return out
+	return
 }
 
 // strictGroupDecls groups each run of adjacent type, const and var declarations at package level into one declaration of their keyword (see groupTypes). Singles and groups join alike, and doc comments move onto their specs inside the block. A const declaration whose values use iota stays apart.

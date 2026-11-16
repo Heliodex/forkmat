@@ -60,6 +60,11 @@ func constType(obj *types.Var) (string, bool) {
 	return basic.Name(), true
 }
 
+// defType returns the type of the variable that name declares.
+func defType(info *types.Info, name *ast.Ident) types.Type {
+	return info.Defs[name].Type()
+}
+
 // initOf returns the := statement that initialises the if, for or switch statement st.
 func initOf(st ast.Stmt) *ast.AssignStmt {
 	switch s := st.(type) {
@@ -93,9 +98,7 @@ func objOf(info *types.Info, id *ast.Ident) types.Object {
 }
 
 // conflictsIn reports whether an identifier of name other than name itself, and not obj, appears in scope: such a name would clash with a constant declared in scope.
-func conflictsIn(info *types.Info, scope ast.Node, name *ast.Ident, obj types.Object) bool {
-	var found bool
-
+func conflictsIn(info *types.Info, scope ast.Node, name *ast.Ident, obj types.Object) (found bool) {
 	ast.Inspect(scope, func(n ast.Node) bool {
 		if id, ok := n.(*ast.Ident); ok && id != name && id.Name == name.Name && objOf(info, id) != obj {
 			found = true
@@ -103,7 +106,7 @@ func conflictsIn(info *types.Info, scope ast.Node, name *ast.Ident, obj types.Ob
 
 		return !found
 	})
-	return found
+	return
 }
 
 // packageErrors returns the messages of the type errors of the package of filename, with src as the file, counted by message. It reports false when the package cannot be taken as a whole.
@@ -150,6 +153,22 @@ func printFile(fset *token.FileSet, file *ast.File) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// redundantConversion reports whether value is a conversion to the type named typ, of an operand that already has the type t: the declaration of a constant of type t makes the conversion redundant, as in const r uint32 = uint32(0), which means the same as const r uint32 = 0. A conversion that changes the type is not redundant.
+func redundantConversion(value ast.Expr, typ string, t types.Type, info *types.Info) bool {
+	call, ok := value.(*ast.CallExpr)
+	if !ok || typ == "" || len(call.Args) != 1 || call.Ellipsis.IsValid() {
+		return false
+	}
+
+	if fun, ok := call.Fun.(*ast.Ident); !ok || fun.Name != typ {
+		return false
+	}
+
+	tv, ok := info.Types[call.Args[0]]
+
+	return ok && tv.Type != nil && types.Identical(tv.Type, t)
+}
+
 // setInit sets the initialiser of the if, for or switch statement st to init.
 func setInit(st, init ast.Stmt) {
 	switch s := st.(type) {
@@ -181,92 +200,6 @@ func identOf(e ast.Expr) *ast.Ident {
 	return id
 }
 
-// constDecl returns the const declaration of the := statement a, with the type typ when it is inferred.
-func constDecl(a *ast.AssignStmt, typ string, unwrap bool) ast.Stmt {
-	spec := &ast.ValueSpec{
-		Names: []*ast.Ident{identOf(a.Lhs[0])},
-		Values: a.Rhs,
-	}
-
-	if typ != "" {
-		spec.Type = &ast.Ident{
-			NamePos: a.Pos(),
-			Name: typ,
-		}
-	}
-
-	if unwrap {
-		unwrapConversion(spec)
-	}
-
-	return &ast.DeclStmt{
-		Decl: &ast.GenDecl{
-			TokPos: a.Pos(),
-			Tok: token.CONST,
-			Specs: []ast.Spec{spec},
-		},
-	}
-}
-
-// redundantConversion reports whether value is a conversion to the type named typ, of an operand that already has the type t: the declaration of a constant of type t makes the conversion redundant, as in const r uint32 = uint32(0), which means the same as const r uint32 = 0. A conversion that changes the type is not redundant.
-func redundantConversion(value ast.Expr, typ string, t types.Type, info *types.Info) bool {
-	call, ok := value.(*ast.CallExpr)
-	if !ok || typ == "" || len(call.Args) != 1 || call.Ellipsis.IsValid() {
-		return false
-	}
-
-	if fun, ok := call.Fun.(*ast.Ident); !ok || fun.Name != typ {
-		return false
-	}
-
-	tv, ok := info.Types[call.Args[0]]
-
-	return ok && tv.Type != nil && types.Identical(tv.Type, t)
-}
-
-// defType returns the type of the variable that name declares.
-func defType(info *types.Info, name *ast.Ident) types.Type {
-	return info.Defs[name].Type()
-}
-
-// unwrapConversion replaces the value of vs, a conversion of an untyped constant (see untypedConversionTo), by the constant.
-func unwrapConversion(vs *ast.ValueSpec) {
-	vs.Values[0] = vs.Values[0].(*ast.CallExpr).Args[0]
-}
-
-// declareConstants rewrites the candidates of file, which they were found in. The candidates are done from the last in the file, so that the index of each one in its list is still right when it is reached.
-func declareConstants(file *ast.File, cands []constCandidate) {
-	slices.SortFunc(cands, func(a, b constCandidate) int {
-		return b.offset - a.offset
-	})
-	for _, c := range cands {
-		switch c.kind {
-		case constInPlace:
-			gd := c.stmt.(*ast.DeclStmt).Decl.(*ast.GenDecl)
-			gd.Tok = token.CONST
-
-			vs := gd.Specs[0].(*ast.ValueSpec)
-
-			if c.typ != "" {
-				vs.Type = &ast.Ident{
-					NamePos: vs.Pos(),
-					Name: c.typ,
-				}
-			}
-
-			if c.unwrap {
-				unwrapConversion(vs)
-			}
-		case constDefine:
-			(*c.list)[c.index] = constDecl(c.stmt.(*ast.AssignStmt), c.typ, c.unwrap)
-		case constHoist:
-			*c.list = slices.Insert(*c.list, c.index, constDecl(initOf(c.stmt), c.typ, c.unwrap))
-
-			setInit(c.stmt, nil)
-		}
-	}
-}
-
 // defineOf returns the := statement that init is, when it declares one name.
 func defineOf(init ast.Stmt) (*ast.AssignStmt, bool) {
 	a, ok := init.(*ast.AssignStmt)
@@ -278,14 +211,12 @@ func defineOf(init ast.Stmt) (*ast.AssignStmt, bool) {
 }
 
 // modifiedIn reports whether obj is assigned, incremented, has its address taken, or is a range target with =, anywhere in scope.
-func modifiedIn(info *types.Info, scope ast.Node, obj types.Object) bool {
+func modifiedIn(info *types.Info, scope ast.Node, obj types.Object) (found bool) {
 	isObj := func(e ast.Expr) bool {
 		id := identOf(e)
 
 		return id != nil && objOf(info, id) == obj
 	}
-
-	var found bool
 
 	ast.Inspect(scope, func(n ast.Node) bool {
 		switch s := n.(type) {
@@ -308,7 +239,7 @@ func modifiedIn(info *types.Info, scope ast.Node, obj types.Object) bool {
 
 		return !found
 	})
-	return found
+	return
 }
 
 // constVar reports whether the variable declared by name, with value, can be declared with const within scope, and the name of its type when it is inferred. explicit says whether the declaration writes its type.
@@ -427,6 +358,7 @@ func constCandidateOf(fset *token.FileSet, info *types.Info, scope ast.Node, lis
 
 		// the type is the one written, or else the one that := gives
 		declared := typ
+
 		if id, ok := vs.Type.(*ast.Ident); ok {
 			declared = id.Name
 		}
@@ -441,9 +373,7 @@ func constCandidateOf(fset *token.FileSet, info *types.Info, scope ast.Node, lis
 }
 
 // constCandidates returns the candidates of file, which info types. The blocks are walked in the order of the file.
-func constCandidates(fset *token.FileSet, file *ast.File, info *types.Info) []constCandidate {
-	var cands []constCandidate
-
+func constCandidates(fset *token.FileSet, file *ast.File, info *types.Info) (cands []constCandidate) {
 	ast.Inspect(file, func(n ast.Node) bool {
 		var list *[]ast.Stmt
 
@@ -466,7 +396,7 @@ func constCandidates(fset *token.FileSet, file *ast.File, info *types.Info) []co
 
 		return true
 	})
-	return cands
+	return
 }
 
 // analyseConstants parses src as filename, and returns its file and candidates, checked with its package. It reports false when the package cannot be taken as a whole.
@@ -485,6 +415,70 @@ func analyseConstants(filename string, src []byte) (*token.FileSet, *ast.File, [
 	_, info := checkModerniseFiles(fset, files, moduleGoVersion(filename))
 
 	return fset, file, constCandidates(fset, file, info), true
+}
+
+// unwrapConversion replaces the value of vs, a conversion of an untyped constant (see untypedConversionTo), by the constant.
+func unwrapConversion(vs *ast.ValueSpec) {
+	vs.Values[0] = vs.Values[0].(*ast.CallExpr).Args[0]
+}
+
+// constDecl returns the const declaration of the := statement a, with the type typ when it is inferred.
+func constDecl(a *ast.AssignStmt, typ string, unwrap bool) ast.Stmt {
+	spec := &ast.ValueSpec{
+		Names: []*ast.Ident{identOf(a.Lhs[0])},
+		Values: a.Rhs,
+	}
+
+	if typ != "" {
+		spec.Type = &ast.Ident{
+			NamePos: a.Pos(),
+			Name: typ,
+		}
+	}
+
+	if unwrap {
+		unwrapConversion(spec)
+	}
+
+	return &ast.DeclStmt{
+		Decl: &ast.GenDecl{
+			TokPos: a.Pos(),
+			Tok: token.CONST,
+			Specs: []ast.Spec{spec},
+		},
+	}
+}
+
+// declareConstants rewrites the candidates of file, which they were found in. The candidates are done from the last in the file, so that the index of each one in its list is still right when it is reached.
+func declareConstants(file *ast.File, cands []constCandidate) {
+	slices.SortFunc(cands, func(a, b constCandidate) int {
+		return b.offset - a.offset
+	})
+	for _, c := range cands {
+		switch c.kind {
+		case constInPlace:
+			gd := c.stmt.(*ast.DeclStmt).Decl.(*ast.GenDecl)
+			gd.Tok = token.CONST
+			vs := gd.Specs[0].(*ast.ValueSpec)
+
+			if c.typ != "" {
+				vs.Type = &ast.Ident{
+					NamePos: vs.Pos(),
+					Name: c.typ,
+				}
+			}
+
+			if c.unwrap {
+				unwrapConversion(vs)
+			}
+		case constDefine:
+			(*c.list)[c.index] = constDecl(c.stmt.(*ast.AssignStmt), c.typ, c.unwrap)
+		case constHoist:
+			*c.list = slices.Insert(*c.list, c.index, constDecl(initOf(c.stmt), c.typ, c.unwrap))
+
+			setInit(c.stmt, nil)
+		}
+	}
 }
 
 // constantsWith returns src with the candidates at the offsets declared with const, or false when that is not possible, or adds a type error to the package, whose errors before are base.

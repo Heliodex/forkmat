@@ -49,7 +49,6 @@ var (
 
 	// orderedFiles remembers orderedSibling, by path.
 	orderedFiles memo[string, *ast.File]
-
 )
 
 // commentsKeepOrder reports whether the comments inside the clauses of list stay in their clauses once the clauses are in that order. The printer writes a comment before the first token that follows it in the source, so a comment is misplaced when a clause printed before its clause comes later in the source.
@@ -193,13 +192,6 @@ func exprText(e ast.Expr) string {
 	return buf.String()
 }
 
-// hasTopLevelConst reports whether the file at path declares a constant at top level. Only such a file can change the numbering of the constants (see indexConsts), so the others are not reordered for it, which costs much more than parsing them.
-func hasTopLevelConst(path string) bool {
-	f := parsedSibling(path)
-
-	return f != nil && hasTopLevelConstDecl(f)
-}
-
 // hasTopLevelConstDecl reports whether file declares a constant at top level.
 func hasTopLevelConstDecl(file *ast.File) bool {
 	for _, d := range file.Decls {
@@ -209,6 +201,13 @@ func hasTopLevelConstDecl(file *ast.File) bool {
 	}
 
 	return false
+}
+
+// hasTopLevelConst reports whether the file at path declares a constant at top level. Only such a file can change the numbering of the constants (see indexConsts), so the others are not reordered for it, which costs much more than parsing them.
+func hasTopLevelConst(path string) bool {
+	f := parsedSibling(path)
+
+	return f != nil && hasTopLevelConstDecl(f)
 }
 
 // indexConsts returns the position of each constant of files, by name: the constants are numbered in the order of the files, and of the declarations within each file. A name declared twice keeps its first position.
@@ -272,11 +271,30 @@ func orderedSibling(path string) *ast.File {
 	})
 }
 
+// orderedTarget returns the file being formatted, from src, or from disk when src is nil, as the reorder passes leave it (see orderedSibling). The file's own constants are numbered from it, so that an unsaved constant is numbered too.
+func orderedTarget(filename string, src []byte) *ast.File {
+	if src == nil {
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			return nil
+		}
+
+		src = data
+	}
+
+	fset := token.NewFileSet()
+	out := reorderedSource(fset, filename, src)
+	f, err := parser.ParseFile(fset, filename, out, parser.ParseComments)
+	if err != nil {
+		return nil
+	}
+
+	return f
+}
+
 // packageNames returns the names of the .go files of the package pkg in dir, by name, as a build of the directory would take them: a file that its build constraints exclude is left out. A directory whose files do not build as one package lists every file of pkg instead.
 func packageNames(dir, pkg string) []string {
-	return packageFileNames.get(dir+"\x00"+pkg, func() []string {
-		var names []string
-
+	return packageFileNames.get(dir+"\x00"+pkg, func() (names []string) {
 		if bp, err := build.Default.ImportDir(dir, 0); err == nil && bp.Name == pkg {
 			names = bp.GoFiles
 		} else if entries, err := os.ReadDir(dir); err == nil {
@@ -292,7 +310,7 @@ func packageNames(dir, pkg string) []string {
 			}
 		}
 
-		return names
+		return
 	})
 }
 
@@ -333,6 +351,7 @@ func checkPackage(filename string, file *ast.File, onDisk bool, target []byte) *
 		for _, path := range packagePaths(filename, file.Name.Name) {
 			// a nil source of type []byte would parse as an empty file, so the file is read from disk unless its source is given
 			var src any
+
 			if path == filename && target != nil {
 				src = target
 			}
@@ -351,28 +370,6 @@ func checkPackage(filename string, file *ast.File, onDisk bool, target []byte) *
 	pkg, _ := conf.Check(file.Name.Name, fset, files, nil)
 
 	return pkg
-}
-
-// orderedTarget returns the file being formatted, from src, or from disk when src is nil, as the reorder passes leave it (see orderedSibling). The file's own constants are numbered from it, so that an unsaved constant is numbered too.
-func orderedTarget(filename string, src []byte) *ast.File {
-	if src == nil {
-		data, err := os.ReadFile(filename)
-		if err != nil {
-			return nil
-		}
-
-		src = data
-	}
-
-	fset := token.NewFileSet()
-	out := reorderedSource(fset, filename, src)
-
-	f, err := parser.ParseFile(fset, filename, out, parser.ParseComments)
-	if err != nil {
-		return nil
-	}
-
-	return f
 }
 
 // packageConstFiles returns the files of the package of file, for the constant positions (see indexConsts): the file as its source src gives it, and the siblings as they are on disk. The siblings are read from disk, so that the numbering of their constants does not change while the file is being edited; the file's own constants are numbered from its source, so that an unsaved constant is numbered too.
@@ -409,6 +406,7 @@ func packageOf(filename string, src []byte, file *ast.File) *types.Package {
 	}
 
 	key := filepath.Dir(filename) + "\x00" + file.Name.Name
+
 	if src != nil {
 		sum := sha256.Sum256(src)
 		key += "\x00" + string(sum[:])
@@ -780,14 +778,6 @@ func reorderSwitchCases(body *ast.BlockStmt, env *switchEnv, scope ast.Node, com
 	body.List = list
 }
 
-// This file implements the case order of -strict: the clauses of a switch whose cases are constants are put in the order the constants are declared in, typically the order of an iota block. The constants may be those of the package of the file, or of another package, such as token.CONST from go/token. A clause moves only among the slots of the other clauses of its kind; the default clause goes last (see defaultLast). The switch is changed only if its behaviour cannot change: no clause falls through, every case is a package-level constant with a value of its own, and all cases name constants of one package. Constants are not evaluated, so moving clauses changes nothing else.
-
-// switchCaseOrder reorders the clauses of the switch statements of file, whose name is filename. The constants of a package count: those of the file and of the other files of its directory with the same package name, and those of the packages the file imports.
-// switchCaseOrder reorders the cases of the switch statements of file, which is taken as it is on disk. See switchCaseOrderSource.
-func switchCaseOrder(filename string, file *ast.File) {
-	switchCaseOrderSource(filename, nil, file)
-}
-
 // switchCaseOrderSource reorders the cases of the switch statements of file, whose source is src. The constants of the file are read from src, so that a constant that only the unsaved source declares orders its cases; a nil src takes the file as it is on disk.
 func switchCaseOrderSource(filename string, src []byte, file *ast.File) {
 	env := &switchEnv{
@@ -815,4 +805,12 @@ func switchCaseOrderSource(filename string, src []byte, file *ast.File) {
 			return true
 		})
 	}
+}
+
+// This file implements the case order of -strict: the clauses of a switch whose cases are constants are put in the order the constants are declared in, typically the order of an iota block. The constants may be those of the package of the file, or of another package, such as token.CONST from go/token. A clause moves only among the slots of the other clauses of its kind; the default clause goes last (see defaultLast). The switch is changed only if its behaviour cannot change: no clause falls through, every case is a package-level constant with a value of its own, and all cases name constants of one package. Constants are not evaluated, so moving clauses changes nothing else.
+
+// switchCaseOrder reorders the clauses of the switch statements of file, whose name is filename. The constants of a package count: those of the file and of the other files of its directory with the same package name, and those of the packages the file imports.
+// switchCaseOrder reorders the cases of the switch statements of file, which is taken as it is on disk. See switchCaseOrderSource.
+func switchCaseOrder(filename string, file *ast.File) {
+	switchCaseOrderSource(filename, nil, file)
 }

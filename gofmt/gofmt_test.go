@@ -121,6 +121,8 @@ func TestDiff(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		const maxWeight = 2 << 20
+
 		resetFlags()
 
 		*doDiff = true
@@ -133,8 +135,6 @@ func TestDiff(t *testing.T) {
 			t.Error(err)
 			return
 		}
-
-		const maxWeight = 2 << 20
 
 		var buf, errBuf bytes.Buffer
 
@@ -154,6 +154,8 @@ func TestDiff(t *testing.T) {
 }
 
 func runTest(t *testing.T, in, out string) {
+	const maxWeight = 2 << 20
+
 	resetFlags()
 
 	info, err := os.Lstat(in)
@@ -188,8 +190,6 @@ func runTest(t *testing.T, in, out string) {
 	}
 	initParserMode()
 	initRewrite()
-
-	const maxWeight = 2 << 20
 
 	var buf, errBuf bytes.Buffer
 

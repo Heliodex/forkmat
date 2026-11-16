@@ -13,12 +13,12 @@ import (
 var goarches []string
 
 func main() {
+	const goarchPrefix = `var KnownArch = map[string]bool{`
+
 	data, err := os.ReadFile("../../internal/syslist/syslist.go")
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	const goarchPrefix = `var KnownArch = map[string]bool{`
 
 	var inGOARCH bool
 

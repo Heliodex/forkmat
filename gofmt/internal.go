@@ -102,6 +102,7 @@ func format(fset *token.FileSet, file *ast.File, sourceAdj func(src []byte, inde
 func parse(fset *token.FileSet, filename string, src []byte, fragmentOk bool) (file *ast.File, sourceAdj func(src []byte, indent int) []byte, indentAdj int, err error) {
 	// Try as whole source file.
 	file, err = parser.ParseFile(fset, filename, src, parserMode)
+
 	// If there's no error, return. If the error is that the source file didn't begin with a package line and source fragments are ok, fall through to try as a source fragment. Stop and return on any other error.
 	if err == nil || !fragmentOk || !strings.Contains(err.Error(), "expected 'package'") {
 		return
@@ -121,6 +122,7 @@ func parse(fset *token.FileSet, filename string, src []byte, fragmentOk bool) (f
 
 		return
 	}
+
 	// If the error is that the source file didn't begin with a declaration, fall through to try as a statement list. Stop and return on any other error.
 	if !strings.Contains(err.Error(), "expected declaration") {
 		return
@@ -136,6 +138,7 @@ func parse(fset *token.FileSet, filename string, src []byte, fragmentOk bool) (f
 			if indent < 0 {
 				indent = 0
 			}
+
 			// Remove the wrapping. Gofmt has turned the "; " into a "\n\n". There will be two non-blank lines with indent, hence 2*indent.
 			src = src[2*indent+len("package p\n\nfunc _() {"):]
 			// Remove only the "}\n" suffix: remaining whitespaces will be trimmed anyway

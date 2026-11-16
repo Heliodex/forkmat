@@ -62,6 +62,7 @@ func CleanCmdEnv(cmd *exec.Cmd) *exec.Cmd {
 		if strings.HasPrefix(env, "GODEBUG=") {
 			continue
 		}
+
 		// Exclude GOTRACEBACK for the same reason.
 		if strings.HasPrefix(env, "GOTRACEBACK=") {
 			continue

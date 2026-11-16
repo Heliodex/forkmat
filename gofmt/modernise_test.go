@@ -106,6 +106,10 @@ func TestCrossFileTypes(t *testing.T) {
 		// Component is an alias for Owner, and Source is a struct, both declared in b.go. Their types are different, so the comparison must stay a loop: slices.Contains over []Component with a Source does not compile.
 		a = "package p\n\ntype Component = Owner\n\nfunc Add(comps []Component, src Source) bool {\n\tfor _, c := range comps {\n\t\tif c == src {\n\t\t\treturn true\n\t\t}\n\t}\n\n\treturn false\n}\n"
 		b = "package p\n\ntype Owner interface {\n\tOwns() bool\n}\n\ntype Source struct {\n\tId uint32\n}\n\nfunc (Source) Owns() bool { return true }\n"
+
+		// Here both types are declared in b.go, so the same types are compared, and the loop becomes slices.Contains.
+		same = "package p\n\nfunc Has(xs []Source, s Source) bool {\n\tfor _, x := range xs {\n\t\tif x == s {\n\t\t\treturn true\n\t\t}\n\t}\n\n\treturn false\n}\n"
+		sameWant = "package p\n\nimport \"slices\"\n\nfunc Has(xs []Source, s Source) bool {\n\treturn slices.Contains(xs, s)\n}\n"
 	)
 
 	t.Run("types from another file keep the loop", func(t *testing.T) {
@@ -113,13 +117,6 @@ func TestCrossFileTypes(t *testing.T) {
 			t.Errorf("got:\n%s\nwant:\n%s", got, a)
 		}
 	})
-
-	const (
-		// Here both types are declared in b.go, so the same types are compared, and the loop becomes slices.Contains.
-		same = "package p\n\nfunc Has(xs []Source, s Source) bool {\n\tfor _, x := range xs {\n\t\tif x == s {\n\t\t\treturn true\n\t\t}\n\t}\n\n\treturn false\n}\n"
-		sameWant = "package p\n\nimport \"slices\"\n\nfunc Has(xs []Source, s Source) bool {\n\treturn slices.Contains(xs, s)\n}\n"
-	)
-
 	t.Run("types from another file still allow the rewrite", func(t *testing.T) {
 		if got := fixInPackage(t, modernize.Suite, "1.27", map[string]string{"b.go": b, "x.go": same}); got != sameWant {
 			t.Errorf("got:\n%s\nwant:\n%s", got, sameWant)

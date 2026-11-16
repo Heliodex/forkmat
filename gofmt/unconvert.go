@@ -30,9 +30,7 @@ func checkTypes(fset *token.FileSet, file *ast.File) *types.Info {
 }
 
 // hasSelector reports whether an expression holds a selector, such as pkg.T.
-func hasSelector(e ast.Expr) bool {
-	var found bool
-
+func hasSelector(e ast.Expr) (found bool) {
 	ast.Inspect(e, func(n ast.Node) bool {
 		if _, ok := n.(*ast.SelectorExpr); ok {
 			found = true
@@ -40,7 +38,7 @@ func hasSelector(e ast.Expr) bool {
 
 		return !found
 	})
-	return found
+	return
 }
 
 // isUntyped reports whether t is an untyped basic type, such as an untyped boolean from a comparison.
@@ -111,15 +109,12 @@ func typeLikeFun(e ast.Expr, names map[string]bool) bool {
 }
 
 // mayConvert reports whether file holds a call that unconvert could remove: one with a single argument, whose function is a type literal, or a name of a type in the package, the file, or a dot import, possibly generic or parenthesized. Only such a file is type-checked, since the check is the slow part of -unconvert and most files have no conversion.
-func mayConvert(filename string, file *ast.File) bool {
+func mayConvert(filename string, file *ast.File) (found bool) {
 	names := packageTypeNames(filename, file)
 
 	for n := range dotImportTypes(filename, file) {
 		names[n] = true
 	}
-
-	var found bool
-
 	ast.Inspect(file, func(n ast.Node) bool {
 		if call, ok := n.(*ast.CallExpr); ok && len(call.Args) == 1 && !call.Ellipsis.IsValid() && !hasSelector(call.Fun) && typeLikeFun(call.Fun, names) {
 			found = true
@@ -127,7 +122,7 @@ func mayConvert(filename string, file *ast.File) bool {
 
 		return !found
 	})
-	return found
+	return
 }
 
 // This file implements -unconvert: a conversion T(x) is removed when x already has the type T. The types come from type-checking the file on its own. Names that cannot be resolved from this file (declared in another file, or in a package that cannot be imported) have no type, so a conversion of them is kept: the check only removes what it can prove redundant.

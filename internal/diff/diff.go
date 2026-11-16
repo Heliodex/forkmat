@@ -138,6 +138,8 @@ func Diff(oldName string, old []byte, newName string, new []byte) []byte {
 	)
 
 	for _, m := range tgs(x, y) {
+		// If we're not at EOF and have too few common lines, the chunk includes all the common lines and continues.
+		const C = 3 // number of context lines
 		if m.x < done.x {
 			// Already handled scanning forward from earlier match.
 			continue
@@ -169,8 +171,6 @@ func Diff(oldName string, old []byte, newName string, new []byte) []byte {
 			count.y++
 		}
 
-		// If we're not at EOF and have too few common lines, the chunk includes all the common lines and continues.
-		const C = 3 // number of context lines
 		if (end.x < len(x) || end.y < len(y)) && (end.x-start.x < C || len(ctext) > 0 && end.x-start.x < 2*C) {
 			for _, s := range x[start.x:end.x] {
 				ctext = append(ctext, " "+s)

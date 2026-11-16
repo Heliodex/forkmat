@@ -95,7 +95,7 @@ type (
 		cachedLine int // line corresponding to cachedPos
 		endAlignment, // if set, terminate alignment immediately
 		useNodeComments, // if not set, ignore lead and line comments of nodes
-		impliedSemi bool // if set, a linebreak implies a semicolon
+		impliedSemi, // if set, a linebreak implies a semicolon
 		blankBeforeComment bool // under StrictLayout, the next statement is set off by a blank line, which goes before its first own-line comment
 	}
 )
@@ -370,6 +370,7 @@ func (p *printer) nextComment() {
 		}
 		// we should not reach here (correct ASTs don't have empty ast.CommentGroup nodes), but be conservative and try again
 	}
+
 	// no more comments
 	p.commentOffset = infinity
 }
@@ -504,6 +505,7 @@ func (p *printer) writeString(pos token.Position, s string, isLit bool) {
 	p.output = append(p.output, s...)
 
 	var (
+
 		// update positions
 		nlines int
 		li int // index of last newline; valid if nlines > 0
@@ -618,6 +620,7 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 			}
 			p.writeWhitespace(j)
 		}
+
 		// make sure there is at least one separator; use a blank rather than a tab so trailing comments are not pushed into an aligned column
 		if !hasSep {
 			p.writeByte(' ', 1)
@@ -643,6 +646,7 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 				if i+1 < len(p.wsbuf) && p.wsbuf[i+1] == unindent {
 					continue
 				}
+
 				// if the next token is not a closing }, apply the unindent if it appears that the comment is aligned with the token; otherwise assume the unindent is part of a closing block and stop (this scenario appears with comments before a case label where the comments apply to the next case instead of the current one)
 				if tok != token.RBRACE && pos.Column == next.Column {
 					continue
@@ -732,6 +736,7 @@ func stripCommonPrefix(lines []string) {
 	if len(lines) <= 1 {
 		return // at most one line - nothing to do
 	}
+
 	// len(lines) > 1
 
 	// The heuristic in this function tries to handle a few common patterns of /*-style comments: Comments where the opening /* and closing */ are aligned and the rest of the comment text is aligned and indented with blanks or tabs, cases with a vertical "line of stars" on the left, and cases where the closing */ is on the same line as the last comment text.
@@ -758,6 +763,7 @@ func stripCommonPrefix(lines []string) {
 			}
 		}
 	}
+
 	// If we don't have a prefix yet, consider the last line.
 	if !prefixSet {
 		line := lines[len(lines)-1]
@@ -806,6 +812,7 @@ func stripCommonPrefix(lines []string) {
 				suffix[0], suffix[1] = ' ', ' '
 				suffix = suffix[0:n]
 			}
+
 			// Shorten the computed common prefix by the length of suffix, if it is found as suffix of the prefix.
 			prefix = strings.TrimSuffix(prefix, string(suffix))
 		}
@@ -841,11 +848,10 @@ func trimRight(s string) string {
 }
 
 func (p *printer) writeComment(comment *ast.Comment) {
-	text := comment.Text
-	pos := p.posFor(comment.Pos())
-
 	const linePrefix = "//line "
 
+	text := comment.Text
+	pos := p.posFor(comment.Pos())
 	if strings.HasPrefix(text, linePrefix) && (!pos.IsValid() || pos.Column == 1) {
 		// Possibly a //-style line directive. Suspend indentation temporarily to keep line directive valid.
 		defer func(indent int) {
@@ -909,9 +915,11 @@ func (p *printer) intersperseComments(next token.Position, tok token.Token) (wro
 			if len(p.comment.List) > 0 && len(list) == 0 {
 				// The doc comment was removed entirely. Keep preceding whitespace.
 				p.writeCommentPrefix(p.posFor(p.comment.Pos()), next, last, tok)
+
 				// Change print state to continue at next.
 				p.pos = next
 				p.last = next
+
 				// There can't be any more comments.
 				p.nextComment()
 				return p.writeCommentSuffix(false)
@@ -924,6 +932,7 @@ func (p *printer) intersperseComments(next token.Position, tok token.Token) (wro
 
 			last = c
 		}
+
 		// In case list was rewritten, change print state to where the original list would have ended.
 		if len(p.comment.List) > 0 && changed {
 			last = p.comment.List[len(p.comment.List)-1]
@@ -944,6 +953,7 @@ func (p *printer) intersperseComments(next token.Position, tok token.Token) (wro
 				p.writeByte(' ', 1)
 			}
 		}
+
 		// Ensure that there is a line break after a //-style comment, before EOF, and before a closing '}' unless explicitly disabled.
 		if last.Text[1] == '/' || tok == token.EOF || tok == token.RBRACE && p.mode&noExtraLinebreak == 0 {
 			needsLinebreak = true
@@ -1044,6 +1054,7 @@ func (p *printer) print(args ...any) {
 			}
 
 			data = s
+
 			// some keywords followed by a newline imply a semicolon
 			switch x {
 			case token.BREAK, token.CONTINUE, token.FALLTHROUGH, token.RETURN, token.INC, token.DEC, token.RPAREN, token.RBRACK, token.RBRACE:
@@ -1061,6 +1072,7 @@ func (p *printer) print(args ...any) {
 			fmt.Fprintf(os.Stderr, "print: unsupported argument %v (%T)\n", arg, arg)
 			panic("go/printer type")
 		}
+
 		// data != ""
 
 		next := p.pos // estimated/accurate position of next item
@@ -1115,6 +1127,7 @@ func (p *printer) printNode(node any) error {
 
 		beg := n.Pos()
 		end := n.End()
+
 		// if the node has associated documentation, include that commentgroup in the range (the comment list is sorted in the order of the comment appearance in the source code)
 		if doc := getDoc(n); doc != nil {
 			beg = doc.Pos()
@@ -1125,6 +1138,7 @@ func (p *printer) printNode(node any) error {
 				end = e
 			}
 		}
+
 		// token.Pos values are global offsets, we can compare them directly
 		var i int
 
@@ -1286,6 +1300,7 @@ func (cfg *Config) fprint(output io.Writer, fset *token.FileSet, node any, nodeS
 	if err = p.printNode(node); err != nil {
 		return
 	}
+
 	// print outstanding comments
 	p.impliedSemi = false // EOF acts like a newline
 	p.flush(token.Position{

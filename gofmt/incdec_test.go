@@ -9,7 +9,7 @@ import (
 )
 
 // incDecOps returns the statements of the body of f in src after incDecStmts, each written as its operator: "++", "--", or "=" for any other assignment.
-func incDecOps(t *testing.T, src string) []string {
+func incDecOps(t *testing.T, src string) (out []string) {
 	t.Helper()
 
 	file, err := parser.ParseFile(token.NewFileSet(), "x.go", src, parser.SkipObjectResolution)
@@ -17,9 +17,6 @@ func incDecOps(t *testing.T, src string) []string {
 		t.Fatalf("parse: %v", err)
 	}
 	incDecStmts(file)
-
-	var out []string
-
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch s := n.(type) {
 		case *ast.AssignStmt:
@@ -30,7 +27,7 @@ func incDecOps(t *testing.T, src string) []string {
 
 		return true
 	})
-	return out
+	return
 }
 
 func TestIncDecStmts(t *testing.T) {

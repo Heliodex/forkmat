@@ -333,6 +333,7 @@ func GoToolPath(t testing.TB) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	// Add all environment variables that affect the Go command to test metadata. Cached test results will be invalidate when these variables change. See golang.org/issue/32285.
 	for envVar := range strings.FieldsSeq(cfg.KnownEnv) {
 		os.Getenv(envVar)
@@ -379,6 +380,7 @@ func MustHaveSource(t testing.TB) {
 		// The builders have the source tree available, and if they don't the tests should error out.
 		return
 	}
+
 	// If not running on the builders, the test binary might have been copied to a target machine where the source tree isn't available.
 	goroot, err := findGOROOT()
 	if err != nil {

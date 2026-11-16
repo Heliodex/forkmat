@@ -107,9 +107,7 @@ func loopRoot(e ast.Expr) string {
 
 // loopAssigns reports whether the body assigns to, increments, or takes the
 // address of any of the identifiers in set.
-func loopAssigns(body ast.Node, set map[string]bool) bool {
-	var found bool
-
+func loopAssigns(body ast.Node, set map[string]bool) (found bool) {
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.AssignStmt:
@@ -128,7 +126,7 @@ func loopAssigns(body ast.Node, set map[string]bool) bool {
 
 		return !found
 	})
-	return found
+	return
 }
 
 // loopSimpleRef reports whether e is an identifier or a selector chain of them.
@@ -144,9 +142,7 @@ func loopSimpleRef(e ast.Expr) bool {
 }
 
 // loopUses reports whether the body refers to the variable obj, the index of the loop, by the object the type checker resolved its identifiers to. A name alone would not do: the field f.i and a key i: of a struct literal spell the name without referring to the variable.
-func loopUses(body ast.Node, info *types.Info, obj types.Object) bool {
-	var found bool
-
+func loopUses(body ast.Node, info *types.Info, obj types.Object) (found bool) {
 	ast.Inspect(body, func(n ast.Node) bool {
 		if id, ok := n.(*ast.Ident); ok && info.Uses[id] == obj {
 			found = true
@@ -154,7 +150,7 @@ func loopUses(body ast.Node, info *types.Info, obj types.Object) bool {
 
 		return !found
 	})
-	return found
+	return
 }
 
 // moduleRangeOver22 is rangeOver22 for the directory dir, which is absolute.

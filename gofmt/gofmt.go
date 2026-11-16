@@ -134,6 +134,7 @@ func initParserMode() {
 	if *allErrors {
 		parserMode |= parser.AllErrors
 	}
+
 	// -r and -unused make use of go/ast's object resolution, so avoid the unnecessary work if neither flag is used.
 	if *rewriteRule == "" && !*unusedFlag {
 		parserMode |= parser.SkipObjectResolution

@@ -19,6 +19,7 @@ func TestGeneratedFileIsNotRewritten(t *testing.T) {
 
 	tests := []struct {
 		name, src string
+
 		// wantVarFirst is whether the var is moved above the function
 		wantVarFirst bool
 	}{

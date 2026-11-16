@@ -105,11 +105,12 @@ func TestBadNodes(t *testing.T) {
 }
 
 func TestBaseIndent(t *testing.T) {
-	t.Parallel()
 	// The testfile must not contain multi-line raw strings since those
 	// are not indented (because their values must not change) and make
 	// this test fail.
 	const filename = "printer.go"
+
+	t.Parallel()
 
 	src, err := os.ReadFile(filename)
 	if err != nil {
@@ -131,6 +132,7 @@ func TestBaseIndent(t *testing.T) {
 				Tabwidth: tabwidth,
 				Indent: indent,
 			}).Fprint(&buf, fset, file)
+
 			// all code must be indented by at least 'indent' tabs
 			lines := bytes.Split(buf.Bytes(), []byte{'\n'})
 
@@ -294,6 +296,7 @@ func init() {
 	}); err != nil {
 		panic(err) // error in test
 	}
+
 	// in debug mode, the result contains additional information;
 	// ignore it
 	if s := buf.String(); !debug && s != name {
@@ -304,6 +307,11 @@ func init() {
 // TestFuncType tests that an ast.FuncType with a nil Params field
 // can be printed (per go/ast specification). Test case for issue 3870.
 func TestFuncType(t *testing.T) {
+	const want = `package p
+
+func f()
+`
+
 	src := &ast.File{
 		Name: &ast.Ident{
 			Name: "p",
@@ -324,20 +332,16 @@ func TestFuncType(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := buf.String()
-
-	const want = `package p
-
-func f()
-`
-
-	if got != want {
+	if got := buf.String(); got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s\n", got, want)
 	}
 }
 
 func TestIssue11151(t *testing.T) {
-	const src = "package p\t/*\r/1\r*\r/2*\r\r\r\r/3*\r\r+\r\r/4*/\n"
+	const (
+		src = "package p\t/*\r/1\r*\r/2*\r\r\r\r/3*\r\r+\r\r/4*/\n"
+		want = "package p /*/1*\r/2*\r/3*+/4*/\n" // \r following opening /* should be stripped
+	)
 
 	lfset := token.NewFileSet()
 	f, err := parser.ParseFile(lfset, "", src, parser.ParseComments|parser.SkipObjectResolution)
@@ -350,8 +354,6 @@ func TestIssue11151(t *testing.T) {
 	Fprint(&buf, lfset, f)
 
 	got := buf.String()
-
-	const want = "package p /*/1*\r/2*\r/3*+/4*/\n" // \r following opening /* should be stripped
 	if got != want {
 		t.Errorf("\ngot : %q\nwant: %q", got, want)
 	}
@@ -367,13 +369,16 @@ func TestIssue11151(t *testing.T) {
 // Verify that we don't print a newline between "return" and its results, as
 // that would incorrectly cause a naked return.
 func TestIssue32854(t *testing.T) {
-	const src string = `package foo
+	const (
+		src string = `package foo
 
 func f() {
         return Composite{
                 call(),
         }
 }`
+		want string = "return call()"
+	)
 
 	lfset := token.NewFileSet()
 	file, err := parser.ParseFile(lfset, "", src, parser.SkipObjectResolution)
@@ -391,8 +396,6 @@ func f() {
 	if err := Fprint(&buf, lfset, ret); err != nil {
 		t.Fatal(err)
 	}
-
-	const want string = "return call()"
 
 	if got := buf.String(); got != want {
 		t.Fatalf("got %q, want %q", got, want)
@@ -499,11 +502,14 @@ func g() {
 // comments are properly terminated with a newline even if the AST position
 // information is incorrect.
 func TestLineComments(t *testing.T) {
-	const src = `// comment 1
+	const (
+		src = `// comment 1
 	// comment 2
 	// comment 3
 	package main
 	`
+		expected = 3
+	)
 
 	lfset := token.NewFileSet()
 	f, err := parser.ParseFile(lfset, "", src, parser.ParseComments|parser.SkipObjectResolution)
@@ -523,8 +529,6 @@ func TestLineComments(t *testing.T) {
 			nlines++
 		}
 	}
-
-	const expected = 3
 
 	if nlines < expected {
 		t.Errorf("got %d, expected %d\n", nlines, expected)
@@ -628,9 +632,9 @@ func TestStmtLists(t *testing.T) {
 
 // Test whether the printer stops writing after the first error
 func TestWriteErrors(t *testing.T) {
-	t.Parallel()
-
 	const filename = "printer.go"
+
+	t.Parallel()
 
 	src, err := os.ReadFile(filename)
 	if err != nil {
@@ -653,6 +657,7 @@ func TestWriteErrors(t *testing.T) {
 		if lw.errCount > 1 {
 			t.Fatal("Writes continued after first error returned")
 		}
+
 		// We expect errCount be 1 iff err is set
 		if lw.errCount != 0 != (err != nil) {
 			t.Fatal("Expected err when errCount != 0")
@@ -783,14 +788,12 @@ func idents(f *ast.File) <-chan *ast.Ident {
 }
 
 // identCount returns the number of identifiers found in f.
-func identCount(f *ast.File) int {
-	var n int
-
+func identCount(f *ast.File) (n int) {
 	for range idents(f) {
 		n++
 	}
 
-	return n
+	return
 }
 
 // Verify that the SourcePos mode emits correct //line directives
@@ -1255,6 +1258,7 @@ func testComment(t *testing.T, f *ast.File, srclen int, comment *ast.Comment) {
 		if _, err := parser.ParseFile(fset, "", buf.Bytes(), parser.SkipObjectResolution); err != nil {
 			t.Fatalf("incorrect program for pos = %d:\n%s", comment.Slash, buf.String())
 		}
+
 		// Position information is just an offset.
 		// Move comment one byte down in the source.
 		comment.Slash++
@@ -1265,8 +1269,6 @@ func testComment(t *testing.T, f *ast.File, srclen int, comment *ast.Comment) {
 // even if the position information of comments introducing newlines
 // is incorrect.
 func TestBadComments(t *testing.T) {
-	t.Parallel()
-
 	const src = `
 // first comment - text and position changed by test
 package p
@@ -1283,6 +1285,8 @@ func fibo(n int) {
 	return fibo(n-1) + fibo(n-2)
 }
 `
+
+	t.Parallel()
 
 	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {

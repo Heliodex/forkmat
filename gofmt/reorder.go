@@ -126,7 +126,10 @@ var (
 )
 
 // alphabeticalOrder orders the components of a run of types. A component is ready when every component it depends on has been placed; among the ready ones, the one whose first name (in alphabetical order) is smallest goes next. So types are sorted wherever the dependencies allow it, and a type always comes after the types it refers to.
-func alphabeticalOrder(run []unit, deps, comps [][]int) []int {
+func alphabeticalOrder(run []unit, deps, comps [][]int) (order []int) {
+	type edge struct {
+		from, to int
+	}
 	compOf := make([]int, len(run))
 
 	for c, members := range comps {
@@ -137,9 +140,6 @@ func alphabeticalOrder(run []unit, deps, comps [][]int) []int {
 
 	need := make([]int, len(comps)) // dependencies not yet placed
 	dependents := make([][]int, len(comps))
-	type edge struct {
-		from, to int
-	}
 	seen := map[edge]bool{}
 
 	for t := range run {
@@ -166,8 +166,6 @@ func alphabeticalOrder(run []unit, deps, comps [][]int) []int {
 
 	placed := make([]bool, len(comps))
 
-	var order []int
-
 	for range comps {
 		best := -1
 
@@ -185,7 +183,7 @@ func alphabeticalOrder(run []unit, deps, comps [][]int) []int {
 		}
 	}
 
-	return order
+	return
 }
 
 // applyEdits returns src with the edits applied. They must be in source order and must not overlap.
@@ -630,6 +628,7 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 			}
 		}
 	}
+
 	// P is where moved types go: the line after the imports, or after the package clause if there are none
 	P := l.lineEnd(l.off(file.Name.End()))
 
@@ -708,6 +707,7 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 
 		ast.Inspect(decls[i], walk)
 	}
+
 	// a declaration with a bad dependency is bad too, and so is one that depends on a bad declaration
 	for changed := true; changed; {
 		changed = false
@@ -839,9 +839,7 @@ func assignable(s ast.Stmt) bool {
 }
 
 // assignRunEdits returns the edits that reorder each run of := statements in list. head is the position of the token that opens the list, a brace or a colon.
-func (l layout) assignRunEdits(list []ast.Stmt, head token.Pos) []edit {
-	var edits []edit
-
+func (l layout) assignRunEdits(list []ast.Stmt, head token.Pos) (edits []edit) {
 	for i := 0; i < len(list); {
 		if !assignable(list[i]) {
 			i++
@@ -861,7 +859,7 @@ func (l layout) assignRunEdits(list []ast.Stmt, head token.Pos) []edit {
 		i = j
 	}
 
-	return edits
+	return
 }
 
 // pureVars reports whether the values of a var declaration can be evaluated without side effects, so that moving it does not change the order of any effect. Go initialises package variables in declaration order, except where a dependency forces another order, so a move is visible only through a side effect. A call can have one, and a receive can block; a conversion to a predeclared type, make and new cannot. Calls are checked syntactically, so a call to a function named like a predeclared type is taken to be impure.
@@ -959,6 +957,7 @@ func dependencyOrder(run []unit) []int {
 			byObj[o] = t
 		}
 	}
+
 	// a method may call another method by name; that is a dependency too
 	byMethod := map[string][]int{}
 
@@ -1062,9 +1061,7 @@ func reorderAssignRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 }
 
 // selectorNames returns the names that n selects, as in x.name.
-func selectorNames(n ast.Node) []string {
-	var out []string
-
+func selectorNames(n ast.Node) (out []string) {
 	ast.Inspect(n, func(n ast.Node) bool {
 		if sel, ok := n.(*ast.SelectorExpr); ok {
 			out = append(out, sel.Sel.Name)
@@ -1072,7 +1069,7 @@ func selectorNames(n ast.Node) []string {
 
 		return true
 	})
-	return out
+	return
 }
 
 // siblingTypes returns the names of the types that other files of the package of filename declare. A file's package is the files of its directory with the same package name. A name that a sibling declares as a type is a type, so a type may use it and still move; a constant, variable or function of a sibling is not.
@@ -1143,6 +1140,7 @@ func specUnit(tok token.Token, sp ast.Spec) unit {
 // specRunEdit returns the edit that rewrites the declarations decls[i:j] as single declarations in their new order, or reports false if the run is left alone.
 func specRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bool) {
 	src := l.src
+
 	// the run's extent: the lines after the declaration before it (or the package clause) to the end of its last declaration
 	var lo int
 
@@ -1168,6 +1166,7 @@ func specRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bo
 	}
 
 	var (
+
 		// one unit per spec. text is what the unit prints as: the lines that lead into it, then a single declaration of the spec.
 		run []unit
 		texts [][]byte
@@ -1186,6 +1185,7 @@ func specRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bo
 			cut = l.lineEnd(l.off(g.End()))
 			continue
 		}
+
 		// a group with a comment anywhere in it is left alone: its comments would not follow their specs once they are sorted, and the next pass would sort them differently
 		if l.commentIn(l.off(g.TokPos), l.off(g.Rparen)+1) {
 			return edit{}, false
@@ -1299,6 +1299,7 @@ func hoistDecls(fset *token.FileSet, file *ast.File, src []byte, kind token.Toke
 		switch {
 		case g.Tok == token.VAR && kind == token.VAR:
 			impure = !pureVars(g)
+
 			// a var may not move above a var that stays: initialisation runs in declaration order, so a pure var could read state that the effects of one it passes change, and effects themselves must keep their order. A pure var may pass a pure one, since neither has effects and references still decide their order.
 			if impure {
 				move = movable(l, decls, i) && !stayed
@@ -1372,6 +1373,7 @@ func unitOf(d ast.Decl) (unit, bool) {
 			sels: selectorNames(d.Body),
 		}, true
 	}
+
 	// const, var and type declarations are reordered by reorderSpecRuns
 	return unit{}, false
 }
@@ -1438,6 +1440,7 @@ func reorderFuncSlots(fset *token.FileSet, file *ast.File, src []byte) []byte {
 		if from == k {
 			continue
 		}
+
 		// the unit that moves into the slot keeps its own lines
 		unitDecl := slots[from]
 		edits = append(edits, edit{
@@ -1451,9 +1454,7 @@ func reorderFuncSlots(fset *token.FileSet, file *ast.File, src []byte) []byte {
 }
 
 // usesIota reports whether a declaration mentions iota.
-func usesIota(d ast.Node) bool {
-	var found bool
-
+func usesIota(d ast.Node) (found bool) {
 	ast.Inspect(d, func(n ast.Node) bool {
 		if id, ok := n.(*ast.Ident); ok && id.Name == "iota" {
 			found = true
@@ -1461,7 +1462,7 @@ func usesIota(d ast.Node) bool {
 
 		return !found
 	})
-	return found
+	return
 }
 
 // specRunToken returns the token of the declarations that reorderSpecRuns may split into specs and sort, or ILLEGAL if d is not one of them. Types always are. A var declaration is one if its values are pure (see pureVars). A const declaration is one unless it is a group whose specs take their values from their position: a spec without values repeats the one before it, and iota counts the specs, so such a group keeps its order. Single const declarations are always splittable: each is a group of its own.

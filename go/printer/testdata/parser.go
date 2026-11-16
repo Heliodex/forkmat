@@ -153,6 +153,7 @@ func (p *parser) closeLabelScope() {
 			p.error(ident.Pos(), fmt.Sprintf("label %s undefined", ident.Name))
 		}
 	}
+
 	// pop label scope
 	p.targetStack = p.targetStack[0:n]
 	p.labelScope = p.labelScope.Outer
@@ -514,6 +515,7 @@ func (p *parser) resolve(x ast.Expr) {
 	if ident.Name == "_" {
 		return
 	}
+
 	// try to resolve the identifier
 	for s := p.topScope; s != nil; s = s.Outer {
 		if obj := s.Lookup(ident.Name); obj != nil {
@@ -522,6 +524,7 @@ func (p *parser) resolve(x ast.Expr) {
 			return
 		}
 	}
+
 	// all local scopes are known, so any unresolved identifier
 	// must be found either in the file scope, package scope
 	// (perhaps in another file), or universe scope --- collect
@@ -738,6 +741,7 @@ func (p *parser) parseTypeName() ast.Expr {
 	}
 
 	ident := p.parseIdent()
+
 	// don't resolve ident yet - it may be a parameter or field name
 
 	if p.tok == token.PERIOD {
@@ -1254,6 +1258,7 @@ func (p *parser) parseParameterList(scope *ast.Scope, ellipsisOk bool) (params [
 			Comment: nil,
 		}
 		params = append(params, field)
+
 		// Go spec: The scope of an identifier denoting a function
 		// parameter or result variable is the function body.
 		p.declare(field, scope, ast.Var, idents...)
@@ -1272,6 +1277,7 @@ func (p *parser) parseParameterList(scope *ast.Scope, ellipsisOk bool) (params [
 				Comment: nil,
 			}
 			params = append(params, field)
+
 			// Go spec: The scope of an identifier denoting a function
 			// parameter or result variable is the function body.
 			p.declare(field, scope, ast.Var, idents...)
@@ -2113,6 +2119,7 @@ func (p *parser) parseCommClause() *ast.CommClause {
 				// RecvStmt with assignment
 				if len(lhs) > 2 {
 					p.errorExpected(lhs[0].Pos(), "1 or 2 expressions")
+
 					// continue with first two expressions
 					lhs = lhs[0:2]
 				}
@@ -2219,6 +2226,7 @@ func (p *parser) parseForStmt() ast.Stmt {
 				To: body.End(),
 			}
 		}
+
 		// check lhs
 		var key, value ast.Expr
 
@@ -2234,6 +2242,7 @@ func (p *parser) parseForStmt() ast.Stmt {
 				To: body.End(),
 			}
 		}
+
 		// check rhs
 		if len(as.Rhs) != 1 {
 			p.errorExpected(as.Rhs[0].Pos(), "1 expression")
@@ -2357,6 +2366,7 @@ func (p *parser) parseSwitchStmt() ast.Stmt {
 			Body: body,
 		}
 	}
+
 	// type switch
 	// TODO(gri): do all the checks!
 	return &ast.TypeSwitchStmt{
@@ -2391,6 +2401,7 @@ func (p *parser) parseStmt() (s ast.Stmt) {
 		token.SUB,
 		token.XOR: // unary operators
 		s = p.parseSimpleStmt(true)
+
 		// because of the required look-ahead, labeled statements are
 		// parsed by parseSimpleStmt - don't expect a semicolon after
 		// them
@@ -2543,6 +2554,7 @@ func (p *parser) parseReceiver(scope *ast.Scope) *ast.FieldList {
 	// must have exactly one receiver
 	if par.NumFields() != 1 {
 		p.errorExpected(pos, "exactly one receiver")
+
 		// TODO determine a better range for BadExpr below
 		par.List = []*ast.Field{
 			{

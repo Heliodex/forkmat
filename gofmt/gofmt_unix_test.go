@@ -11,6 +11,8 @@ import (
 )
 
 func TestPermissions(t *testing.T) {
+	const maxWeight = 2 << 20
+
 	if os.Getuid() == 0 {
 		t.Skip("skipping permission test when running as root")
 	}
@@ -43,8 +45,6 @@ func TestPermissions(t *testing.T) {
 
 	initParserMode()
 	initRewrite()
-
-	const maxWeight = 2 << 20
 
 	var buf, errBuf strings.Builder
 

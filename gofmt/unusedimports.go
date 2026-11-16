@@ -142,14 +142,12 @@ func wholeDeclEdit(fset *token.FileSet, file *ast.File, src []byte, gd *ast.GenD
 }
 
 // importDeleteEdits returns the edits that delete the specs in unused from file. When every spec of an import declaration goes, and no comment lies in it, the whole declaration goes. A spec whose lines hold other code is kept.
-func importDeleteEdits(fset *token.FileSet, file *ast.File, src []byte, unused []*ast.ImportSpec) []textEdit {
+func importDeleteEdits(fset *token.FileSet, file *ast.File, src []byte, unused []*ast.ImportSpec) (edits []textEdit) {
 	gone := map[*ast.ImportSpec]bool{}
 
 	for _, spec := range unused {
 		gone[spec] = true
 	}
-
-	var edits []textEdit
 
 	for _, decl := range file.Decls {
 		gd, ok := decl.(*ast.GenDecl)
@@ -171,7 +169,7 @@ func importDeleteEdits(fset *token.FileSet, file *ast.File, src []byte, unused [
 		}
 	}
 
-	return edits
+	return
 }
 
 // removeUnusedImports returns src without the imports that nothing in it uses. It returns src unchanged when there are none, or when removing them would leave a file that does not parse.

@@ -63,6 +63,7 @@ func (p *printer) fixGoBuildLines() {
 		for pos < len(p.output) && (p.output[pos] == ' ' || p.output[pos] == '\t') {
 			pos++
 		}
+
 		// Skip over // comment if any.
 		if pos+3 < len(p.output) && p.output[pos] == tabwriter.Escape && p.output[pos+1] == '/' && p.output[pos+2] == '/' {
 			blank = false
@@ -71,6 +72,7 @@ func (p *printer) fixGoBuildLines() {
 				pos++
 			}
 		}
+
 		// Skip over \n at end of line.
 		if pos >= len(p.output) || !isNL(p.output[pos]) {
 			break

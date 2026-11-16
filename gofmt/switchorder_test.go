@@ -70,12 +70,13 @@ func TestSwitchCaseOrderComments(t *testing.T) {
 
 // TestSwitchCaseOrderStableAcrossSiblings checks that a switch on constants of a sibling file is ordered as the sibling will be once formatted: the sibling's reorder passes sort its constants, and the order must not depend on whether it has been formatted yet.
 func TestSwitchCaseOrderStableAcrossSiblings(t *testing.T) {
-	dir := t.TempDir()
-
 	const (
 		consts string = "package p\n\nconst (\n\tstatusPass = \"pass\"\n\tstatusFail = \"fail\"\n\tstatusError = \"error\"\n)\n"
 		sw string = "package p\n\nfunc f(s string) int {\n\tswitch s {\n\tcase statusFail:\n\t\treturn 1\n\tcase statusPass:\n\t\treturn 2\n\tcase statusError:\n\t\treturn 3\n\t}\n\treturn 0\n}\n"
+		want string = "statusError statusFail statusPass"
 	)
+
+	dir := t.TempDir()
 
 	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte(consts), 0o644); err != nil {
 		t.Fatal(err)
@@ -121,9 +122,6 @@ func TestSwitchCaseOrderStableAcrossSiblings(t *testing.T) {
 		return strings.Join(names, " ")
 	}
 	first := order()
-
-	const want string = "statusError statusFail statusPass"
-
 	if first != want {
 		t.Errorf("order = %q, want %q", first, want)
 	}
@@ -162,7 +160,7 @@ func TestSwitchCaseOrderStdin(t *testing.T) {
 }
 
 // caseOrder returns, for each switch of the file after switchCaseOrder, its clauses' case expressions in order ("default" for the default clause).
-func caseOrder(t *testing.T, filename, src string) []string {
+func caseOrder(t *testing.T, filename, src string) (out []string) {
 	t.Helper()
 
 	fset := token.NewFileSet()
@@ -171,9 +169,6 @@ func caseOrder(t *testing.T, filename, src string) []string {
 		t.Fatalf("parse: %v", err)
 	}
 	switchCaseOrder(filename, file)
-
-	var out []string
-
 	ast.Inspect(file, func(n ast.Node) bool {
 		s, ok := n.(*ast.SwitchStmt)
 		if !ok {
@@ -202,7 +197,7 @@ func caseOrder(t *testing.T, filename, src string) []string {
 
 		return true
 	})
-	return out
+	return
 }
 
 // TestDefaultLast checks that the default clause goes last, unless a fallthrough would change what runs.
@@ -305,6 +300,7 @@ func TestSwitchCaseOrder(t *testing.T) {
 			if err := os.WriteFile(name, []byte(src), 0o644); err != nil {
 				t.Fatal(err)
 			}
+
 			// a constant of another file of the package, declared after the others
 			if err := os.WriteFile(filepath.Join(dir, "y.go"), []byte("package p\n\nconst Far = 99\n"), 0o644); err != nil {
 				t.Fatal(err)
@@ -362,7 +358,7 @@ func TestSwitchCaseOrderPackages(t *testing.T) {
 }
 
 // typeCases returns, for each type switch of src after switchCaseOrder, its clauses' types in order ("default" for the default clause).
-func typeCases(t *testing.T, src string) []string {
+func typeCases(t *testing.T, src string) (out []string) {
 	t.Helper()
 
 	fset := token.NewFileSet()
@@ -371,9 +367,6 @@ func typeCases(t *testing.T, src string) []string {
 		t.Fatalf("parse: %v", err)
 	}
 	switchCaseOrder("x.go", file)
-
-	var out []string
-
 	ast.Inspect(file, func(n ast.Node) bool {
 		s, ok := n.(*ast.TypeSwitchStmt)
 		if !ok {
@@ -402,7 +395,7 @@ func typeCases(t *testing.T, src string) []string {
 
 		return true
 	})
-	return out
+	return
 }
 
 func TestTypeSwitchCaseOrder(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 )
 
 // literalKeys returns the keys of each composite literal of src, in source order, after the struct literal order has been applied. Each literal is written as its keys joined by commas, or "-" when it has no keyed elements.
-func literalKeys(t *testing.T, src string) []string {
+func literalKeys(t *testing.T, src string) (out []string) {
 	t.Helper()
 
 	file, err := parser.ParseFile(token.NewFileSet(), "x.go", src, parser.SkipObjectResolution)
@@ -18,9 +18,6 @@ func literalKeys(t *testing.T, src string) []string {
 		t.Fatalf("parse: %v", err)
 	}
 	structLiteralOrder("x.go", file)
-
-	var out []string
-
 	ast.Inspect(file, func(n ast.Node) bool {
 		x, ok := n.(*ast.CompositeLit)
 		if !ok {
@@ -45,7 +42,7 @@ func literalKeys(t *testing.T, src string) []string {
 
 		return true
 	})
-	return out
+	return
 }
 
 func TestStructLiteralOrder(t *testing.T) {

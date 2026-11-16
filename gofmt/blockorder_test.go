@@ -25,37 +25,37 @@ func TestBlockOrder(t *testing.T) {
 	}{
 		{
 			name: "types and constants move above a variable",
-			src:  "package p\n\nfunc f() int {\n\tx := 1\n\ttype T int\n\tconst C = 2\n\treturn x + C + int(T(1))\n}\n",
+			src: "package p\n\nfunc f() int {\n\tx := 1\n\ttype T int\n\tconst C = 2\n\treturn x + C + int(T(1))\n}\n",
 			want: "package p\n\nfunc f() int {\n\ttype T int\n\tconst C = 2\n\tx := 1\n\treturn x + C + int(T(1))\n}\n",
 		},
 		{
 			name: "a type moves above a call, but a variable with a call stays",
-			src:  "package p\n\nfunc g() {\n\tfmt.Println()\n\tx := h()\n\ttype U int\n\t_ = x\n\t_ = U(0)\n}\n",
+			src: "package p\n\nfunc g() {\n\tfmt.Println()\n\tx := h()\n\ttype U int\n\t_ = x\n\t_ = U(0)\n}\n",
 			want: "package p\n\nfunc g() {\n\ttype U int\n\tfmt.Println()\n\tx := h()\n\t_ = x\n\t_ = U(0)\n}\n",
 		},
 		{
 			name: "a variable does not pass an if statement",
-			src:  "package p\n\nfunc k(c bool) int {\n\tif c {\n\t\treturn 0\n\t}\n\ty := 3\n\ttype V int\n\treturn y + int(V(1))\n}\n",
+			src: "package p\n\nfunc k(c bool) int {\n\tif c {\n\t\treturn 0\n\t}\n\ty := 3\n\ttype V int\n\treturn y + int(V(1))\n}\n",
 			want: "package p\n\nfunc k(c bool) int {\n\ttype V int\n\tif c {\n\t\treturn 0\n\t}\n\ty := 3\n\treturn y + int(V(1))\n}\n",
 		},
 		{
 			name: "a type stays below a statement that uses its name",
-			src:  "package p\n\nfunc s() {\n\t_ = T(0)\n\ttype T int\n\t_ = T(1)\n}\n",
+			src: "package p\n\nfunc s() {\n\t_ = T(0)\n\ttype T int\n\t_ = T(1)\n}\n",
 			want: "package p\n\nfunc s() {\n\t_ = T(0)\n\ttype T int\n\t_ = T(1)\n}\n",
 		},
 		{
 			name: "a variable stays below the variable it uses",
-			src:  "package p\n\nfunc m() {\n\ta := 1\n\tb := T(a)\n\ttype T int\n\t_ = b\n}\n",
+			src: "package p\n\nfunc m() {\n\ta := 1\n\tb := T(a)\n\ttype T int\n\t_ = b\n}\n",
 			want: "package p\n\nfunc m() {\n\ta := 1\n\tb := T(a)\n\ttype T int\n\t_ = b\n}\n",
 		},
 		{
 			name: "a constant moves above a variable it does not use",
-			src:  "package p\n\nfunc n() {\n\tx := 1\n\ty := x + 1\n\tconst x2 = 3\n\t_ = y\n\t_ = x2\n}\n",
+			src: "package p\n\nfunc n() {\n\tx := 1\n\ty := x + 1\n\tconst x2 = 3\n\t_ = y\n\t_ = x2\n}\n",
 			want: "package p\n\nfunc n() {\n\tconst x2 = 3\n\tx := 1\n\ty := x + 1\n\t_ = y\n\t_ = x2\n}\n",
 		},
 		{
 			name: "a block with a label is left alone",
-			src:  "package p\n\nfunc l() {\n\tx := 1\n\ttype T int\n\t_ = x\n\t_ = T(0)\nL:\n\tgoto L\n}\n",
+			src: "package p\n\nfunc l() {\n\tx := 1\n\ttype T int\n\t_ = x\n\t_ = T(0)\nL:\n\tgoto L\n}\n",
 			want: "package p\n\nfunc l() {\n\tx := 1\n\ttype T int\n\t_ = x\n\t_ = T(0)\nL:\n\tgoto L\n}\n",
 		},
 	}

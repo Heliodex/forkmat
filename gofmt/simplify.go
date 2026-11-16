@@ -51,6 +51,7 @@ func (s simplifier) simplifyLiteral(typ reflect.Value, astType, x ast.Expr, px *
 			inner.Type = nil
 		}
 	}
+
 	// if the outer literal's element type is a pointer type *T and the element is & of a composite literal of type T, the inner &T may be omitted.
 	if ptr, ok := astType.(*ast.StarExpr); ok {
 		if addr, ok := x.(*ast.UnaryExpr); ok && addr.Op == token.AND {
@@ -91,6 +92,7 @@ func (s simplifier) Visit(node ast.Node) ast.Visitor {
 
 			for i, x := range outer.Elts {
 				px := &outer.Elts[i]
+
 				// look at value of indexed/named elements
 				if t, ok := x.(*ast.KeyValueExpr); ok {
 					if keyType != nil {
@@ -102,6 +104,7 @@ func (s simplifier) Visit(node ast.Node) ast.Visitor {
 				}
 				s.simplifyLiteral(typ, eltType, x, px)
 			}
+
 			// node was simplified - stop walk (there are no subnodes to simplify)
 			return nil
 		}

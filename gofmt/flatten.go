@@ -218,6 +218,7 @@ func flattenSwitch(list *[]ast.Stmt, s ast.Stmt, body *ast.BlockStmt, names map[
 	if def < 0 {
 		return false
 	}
+
 	// the other clauses must each end in a return: that makes the default clause the only one that reaches the statement after the switch
 	for i, cl := range body.List {
 		if i != def && !endsInReturnList(cl.(*ast.CaseClause).Body) {

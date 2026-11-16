@@ -110,9 +110,7 @@ func unusedPureList(list []ast.Expr) bool {
 }
 
 // unusedQualified reports whether n holds a selector, such as pkg.T, whose package reference would be lost with n.
-func unusedQualified(n ast.Node) bool {
-	var found bool
-
+func unusedQualified(n ast.Node) (found bool) {
 	ast.Inspect(n, func(n ast.Node) bool {
 		if _, ok := n.(*ast.SelectorExpr); ok {
 			found = true
@@ -120,7 +118,7 @@ func unusedQualified(n ast.Node) bool {
 
 		return !found
 	})
-	return found
+	return
 }
 
 // unusedDiscard returns what is left of a := statement whose names are all unused: nothing when the values have no effects and use no package, and an assignment to the blank identifiers otherwise. A call is written as an assignment too, since a conversion to an imported type cannot be told from a call without types, and a conversion is not a valid statement.
@@ -220,16 +218,14 @@ func unusedRefs(file *ast.File) map[*ast.Object]int {
 }
 
 // unusedSpecNames returns the indices of the names of a var spec that are never referenced.
-func unusedSpecNames(vs *ast.ValueSpec, refs map[*ast.Object]int) []int {
-	var out []int
-
+func unusedSpecNames(vs *ast.ValueSpec, refs map[*ast.Object]int) (out []int) {
 	for i, id := range vs.Names {
 		if unusedName(id, refs) {
 			out = append(out, i)
 		}
 	}
 
-	return out
+	return
 }
 
 // unusedDecl removes the unused names of a local var declaration, and the specs that hold nothing else. A spec whose values have effects keeps them, at its place in the declaration, with its names blanked.

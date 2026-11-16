@@ -119,9 +119,7 @@ func checkModernise(fset *token.FileSet, file *ast.File, goVersion string) (*typ
 }
 
 // enabledSuite returns the analyzers whose fixes the flags enable, in the order they run.
-func enabledSuite() []*analysis.Analyzer {
-	var suite []*analysis.Analyzer
-
+func enabledSuite() (suite []*analysis.Analyzer) {
 	if *moderniseFlag {
 		suite = append(suite, modernize.Suite...)
 	}
@@ -138,7 +136,7 @@ func enabledSuite() []*analysis.Analyzer {
 		suite = append(suite, composite.Analyzer)
 	}
 
-	return suite
+	return
 }
 
 // goDirective returns the language version in the go directive of a go.mod file, such as go1.27 for go 1.27.2, or "" if it has no valid one.
@@ -294,12 +292,10 @@ func (r *moderniseRun) analyze(a *analysis.Analyzer) analysisResult {
 }
 
 // fixes runs the modernize suite over the file, and returns the edits of the first suggested fix of each diagnostic, in the order the analyzers report them.
-func (r *moderniseRun) fixes() [][]textEdit {
+func (r *moderniseRun) fixes() (fixes [][]textEdit) {
 	for _, a := range r.suite {
 		r.analyze(a)
 	}
-
-	var fixes [][]textEdit
 
 	for _, d := range r.diags {
 		if len(d.SuggestedFixes) == 0 {
@@ -311,7 +307,7 @@ func (r *moderniseRun) fixes() [][]textEdit {
 		}
 	}
 
-	return fixes
+	return
 }
 
 // moduleGoVersion returns the language version, such as go1.27, that the go.mod governing filename names, or "" if no go.mod governs it. A file outside any module has no version to hold its fixes to.
@@ -390,16 +386,14 @@ func packageFiles(fset *token.FileSet, filename string, file *ast.File) ([]*ast.
 }
 
 // selectFixes returns the edits of the fixes that do not overlap an earlier fix. A fix that overlaps one is left for a later round, once the source has changed.
-func selectFixes(fixes [][]textEdit) []textEdit {
-	var accepted []textEdit
-
+func selectFixes(fixes [][]textEdit) (accepted []textEdit) {
 	for _, fix := range fixes {
 		if !fixOverlaps(fix, accepted) {
 			accepted = append(accepted, fix...)
 		}
 	}
 
-	return accepted
+	return
 }
 
 // moderniseOnce applies one round of fixes to src, and reports whether any applied. The result must still parse, or the round does not apply.

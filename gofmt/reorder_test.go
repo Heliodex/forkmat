@@ -79,15 +79,13 @@ func TestSiblingTypes(t *testing.T) {
 }
 
 // declOrder returns the names of the top-level functions and methods of src, in order.
-func declOrder(t *testing.T, src string) []string {
+func declOrder(t *testing.T, src string) (names []string) {
 	t.Helper()
 
 	file, err := parser.ParseFile(token.NewFileSet(), "x.go", src, 0)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-
-	var names []string
 
 	for _, d := range file.Decls {
 		switch d := d.(type) {
@@ -113,7 +111,7 @@ func declOrder(t *testing.T, src string) []string {
 		}
 	}
 
-	return names
+	return
 }
 
 // reorderText returns src with its function runs reordered.

@@ -40,6 +40,7 @@ func omittable(fset *token.FileSet, body *ast.BlockStmt, i int, c *ast.CaseClaus
 			return false
 		}
 	}
+
 	// the other clauses must reach the same code: each one either has the same body, or this clause is the last and the switch has no default clause
 	last := i == len(body.List)-1
 

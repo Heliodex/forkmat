@@ -151,7 +151,7 @@ func wslTypes(fset *token.FileSet, filename string, file *ast.File) *types.Info 
 		Error: func(error) {},
 	}
 
-	conf.Check(file.Name.Name, fset, files, info)
+	_, _ = conf.Check(file.Name.Name, fset, files, info)
 
 	return info
 }

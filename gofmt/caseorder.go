@@ -50,11 +50,11 @@ func caseListOrder(file *ast.File) {
 		switch s := n.(type) {
 		case *ast.SwitchStmt:
 			for _, cl := range s.Body.List {
-				sorted(cl.(*ast.CaseClause), false)
+				sorted(mustBe[*ast.CaseClause](cl), false)
 			}
 		case *ast.TypeSwitchStmt:
 			for _, cl := range s.Body.List {
-				sorted(cl.(*ast.CaseClause), true)
+				sorted(mustBe[*ast.CaseClause](cl), true)
 			}
 		}
 

@@ -25,7 +25,7 @@ func checkTypes(fset *token.FileSet, file *ast.File) *types.Info {
 		Error: func(error) {},
 	}
 
-	conf.Check(file.Name.Name, fset, []*ast.File{file}, info)
+	_, _ = conf.Check(file.Name.Name, fset, []*ast.File{file}, info)
 
 	return info
 }

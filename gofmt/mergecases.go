@@ -98,7 +98,7 @@ func mergeClauses(fset *token.FileSet, body *ast.BlockStmt, bound map[string]boo
 	clauses := body.List
 
 	for i := 0; i+1 < len(clauses); {
-		a, b := clauses[i].(*ast.CaseClause), clauses[i+1].(*ast.CaseClause)
+		a, b := mustBe[*ast.CaseClause](clauses[i]), mustBe[*ast.CaseClause](clauses[i+1])
 		if a.List == nil || b.List == nil || !mergeable(fset, a, b, bound, file) {
 			i++
 			continue

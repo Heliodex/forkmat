@@ -289,7 +289,7 @@ func rewriteFile(fileSet *token.FileSet, pattern, replace ast.Expr, p *ast.File)
 		clear(m)
 
 		if match(m, pat, val) {
-			val = subst(m, repl, reflect.ValueOf(val.Interface().(ast.Node).Pos()))
+			val = subst(m, repl, reflect.ValueOf(mustBe[ast.Node](val.Interface()).Pos()))
 		}
 
 		return val

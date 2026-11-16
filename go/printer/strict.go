@@ -1247,7 +1247,7 @@ func (p *printer) strictImportSpecs(d *ast.GenDecl) []ast.Spec {
 	specs := slices.Clone(d.Specs)
 
 	slices.SortStableFunc(specs, func(a, b ast.Spec) int {
-		sa, sb := a.(*ast.ImportSpec), b.(*ast.ImportSpec)
+		sa, sb := mustBe[*ast.ImportSpec](a), mustBe[*ast.ImportSpec](b)
 
 		if std, other := stdImport(sa), stdImport(sb); std != other {
 			if std {

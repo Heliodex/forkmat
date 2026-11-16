@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"forkmat/go/printer"
 	"go/ast"
 	"go/parser"
@@ -69,12 +70,12 @@ func defType(info *types.Info, name *ast.Ident) types.Type {
 func initOf(st ast.Stmt) *ast.AssignStmt {
 	switch s := st.(type) {
 	case *ast.ForStmt:
-		return s.Init.(*ast.AssignStmt)
+		return mustBe[*ast.AssignStmt](s.Init)
 	case *ast.IfStmt:
-		return s.Init.(*ast.AssignStmt)
+		return mustBe[*ast.AssignStmt](s.Init)
 	}
 
-	return st.(*ast.SwitchStmt).Init.(*ast.AssignStmt)
+	return mustBe[*ast.AssignStmt](mustBe[*ast.SwitchStmt](st).Init)
 }
 
 // introducedErrors reports whether after has a type error that before does not.
@@ -129,13 +130,14 @@ func packageErrors(filename string, src []byte) (map[string]int, bool) {
 		Importer: sharedImporter,
 		GoVersion: moduleGoVersion(filename),
 		Error: func(err error) {
-			if te, ok := err.(types.Error); ok {
+			var te types.Error
+			if errors.As(err, &te) {
 				counts[te.Msg]++
 			}
 		},
 	}
 
-	conf.Check("gofmt.invalid/"+files[0].Name.Name, fset, files, nil)
+	_, _ = conf.Check("gofmt.invalid/"+files[0].Name.Name, fset, files, nil)
 
 	return counts, true
 }
@@ -481,7 +483,7 @@ func declareConstants(_ *ast.File, cands []constCandidate) {
 				unwrapConversion(vs)
 			}
 		case constDefine:
-			(*c.list)[c.index] = constDecl(c.stmt.(*ast.AssignStmt), c.typ, c.unwrap)
+			(*c.list)[c.index] = constDecl(mustBe[*ast.AssignStmt](c.stmt), c.typ, c.unwrap)
 		case constHoist:
 			*c.list = slices.Insert(*c.list, c.index, constDecl(initOf(c.stmt), c.typ, c.unwrap))
 

@@ -8,6 +8,7 @@ import (
 
 // constantsIn returns src with -constants applied, as x.go of a module with the other files given.
 func constantsIn(t *testing.T, src string, others map[string]string) string {
+	t.Helper()
 	const gomod string = "module example.com/m\n\ngo 1.27\n"
 
 	t.Helper()

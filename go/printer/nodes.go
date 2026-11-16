@@ -990,7 +990,7 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 					name := f.Names[0] // method name
 
 					p.expr(name)
-					p.signature(f.Type.(*ast.FuncType)) // don't print "func"
+					p.signature(mustBe[*ast.FuncType](f.Type)) // don't print "func"
 				} else {
 					// embedded interface
 					p.expr(f.Type)
@@ -1086,7 +1086,7 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 			if name != nil {
 				// method
 				p.expr(name)
-				p.signature(f.Type.(*ast.FuncType)) // don't print "func"
+				p.signature(mustBe[*ast.FuncType](f.Type)) // don't print "func"
 
 				prev = nil
 			} else {
@@ -2049,7 +2049,7 @@ func (p *printer) genDecl(d *ast.GenDecl) {
 					}
 
 					p.recordLine(&line)
-					p.valueSpec(s.(*ast.ValueSpec))
+					p.valueSpec(mustBe[*ast.ValueSpec](s))
 				}
 			} else {
 				var line int
@@ -2072,7 +2072,7 @@ func (p *printer) genDecl(d *ast.GenDecl) {
 
 							if d.Tok == token.IMPORT {
 								// standard library packages are a group of their own
-								if prev, cur := specs[i-1].(*ast.ImportSpec), s.(*ast.ImportSpec); stdImport(prev) != stdImport(cur) {
+								if prev, cur := mustBe[*ast.ImportSpec](specs[i-1]), mustBe[*ast.ImportSpec](s); stdImport(prev) != stdImport(cur) {
 									gap = 2
 								}
 							} else if p.printsLines(specs[i-1]) || p.printsLines(s) {

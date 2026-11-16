@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"forkmat/go/printer"
@@ -245,7 +246,7 @@ func (r *reporter) Report(err error) {
 		panic("Report with nil error")
 	}
 
-	if st := r.getState(); err == errFormattingDiffers {
+	if st := r.getState(); errors.Is(err, errFormattingDiffers) {
 		st.exitCode = 1
 	} else {
 		scanner.PrintError(st.err, err)
@@ -683,7 +684,7 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 			newName := filepath.ToSlash(filename)
 			oldName := newName + ".orig"
 
-			r.Write(diff.Diff(oldName, src, newName, res))
+			_, _ = r.Write(diff.Diff(oldName, src, newName, res))
 
 			return errFormattingDiffers
 		}
@@ -746,7 +747,10 @@ func gofmtMain(s *sequencer) {
 			<-fdSem
 		}()
 
-		pprof.StartCPUProfile(f)
+		if err := pprof.StartCPUProfile(f); err != nil {
+			s.AddReport(fmt.Errorf("starting cpu profile: %w", err))
+			return
+		}
 
 		defer pprof.StopCPUProfile()
 	}

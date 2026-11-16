@@ -79,6 +79,7 @@ func CleanCmdEnv(cmd *exec.Cmd) *exec.Cmd {
 //
 // To check for exec support outside of a test, just try to exec the command. If exec is not supported, testenv.SyscallIsNotSupported will return true for the resulting error.
 func MustHaveExec(tb testing.TB) {
+	tb.Helper()
 	if err := tryExec(); err != nil {
 		msg := fmt.Sprintf("cannot exec subprocess on %s/%s: %v", runtime.GOOS, runtime.GOARCH, err)
 
@@ -176,6 +177,7 @@ func Command(tb testing.TB, name string, args ...string) *exec.Cmd {
 
 // Executable is a wrapper around [MustHaveExec] and [os.Executable]. It returns the path name for the executable that started the current process, or skips the test if the current system can't start new processes, or fails the test if the path can not be obtained.
 func Executable(tb testing.TB) string {
+	tb.Helper()
 	MustHaveExec(tb)
 
 	exe, err := exePath()
@@ -194,6 +196,7 @@ func Executable(tb testing.TB) string {
 
 // MustHaveExecPath checks that the current system can start the named executable using os.StartProcess or (more commonly) exec.Command. If not, MustHaveExecPath calls t.Skip with an explanation.
 func MustHaveExecPath(tb testing.TB, path string) {
+	tb.Helper()
 	MustHaveExec(tb)
 
 	err, found := execPaths.Load(path)

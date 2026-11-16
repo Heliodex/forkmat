@@ -98,7 +98,9 @@ func TestBadNodes(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	Fprint(&buf, fset, f)
+	if err := Fprint(&buf, fset, f); err != nil {
+		t.Fatal(err)
+	}
 
 	if buf.String() != res {
 		t.Errorf("got %q, expected %q", buf.String(), res)
@@ -275,9 +277,11 @@ func TestEmptyDecl(t *testing.T) { // issue 63566
 	for _, tok := range []token.Token{token.IMPORT, token.CONST, token.TYPE, token.VAR} {
 		var buf bytes.Buffer
 
-		Fprint(&buf, token.NewFileSet(), &ast.GenDecl{
+		if err := Fprint(&buf, token.NewFileSet(), &ast.GenDecl{
 			Tok: tok,
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 
 		got := buf.String()
 		if want := tok.String() + " ()"; got != want {
@@ -353,7 +357,9 @@ func TestIssue11151(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	Fprint(&buf, lfset, f)
+	if err := Fprint(&buf, lfset, f); err != nil {
+		t.Fatal(err)
+	}
 
 	got := buf.String()
 	if got != want {
@@ -622,7 +628,7 @@ func TestStmtLists(t *testing.T) {
 
 		var buf bytes.Buffer
 
-		err = Fprint(&buf, fset, file.Decls[0].(*ast.FuncDecl).Body.List) // only print statements
+		err = Fprint(&buf, fset, mustBe[*ast.FuncDecl](file.Decls[0]).Body.List) // only print statements
 		if err != nil {
 			panic(err) // error in test
 		}
@@ -684,7 +690,7 @@ func format(src []byte, mode checkMode) ([]byte, error) {
 	// parse src
 	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
-		return nil, fmt.Errorf("parse: %s\n%s", err, src)
+		return nil, fmt.Errorf("parse: %w\n%s", err, src)
 	}
 
 	// filter exports if necessary
@@ -715,14 +721,14 @@ func format(src []byte, mode checkMode) ([]byte, error) {
 	var buf bytes.Buffer
 
 	if err := cfg.Fprint(&buf, fset, f); err != nil {
-		return nil, fmt.Errorf("print: %s", err)
+		return nil, fmt.Errorf("print: %w", err)
 	}
 
 	// make sure formatted output is syntactically correct
 	res := buf.Bytes()
 
 	if _, err := parser.ParseFile(fset, "", res, parser.ParseComments|parser.SkipObjectResolution); err != nil {
-		return nil, fmt.Errorf("re-parse: %s\n%s", err, buf.Bytes())
+		return nil, fmt.Errorf("re-parse: %w\n%s", err, buf.Bytes())
 	}
 
 	return res, nil
@@ -892,6 +898,7 @@ func (l *limitWriter) Write(buf []byte) (n int, err error) {
 }
 
 func runcheck(t *testing.T, source, golden string, mode checkMode) {
+	t.Helper()
 	src, err := os.ReadFile(source)
 	if err != nil {
 		t.Error(err)
@@ -943,6 +950,7 @@ func runcheck(t *testing.T, source, golden string, mode checkMode) {
 }
 
 func check(t *testing.T, source, golden string, mode checkMode) {
+	t.Helper()
 	// run the test
 	cc := make(chan int, 1)
 
@@ -1248,6 +1256,7 @@ func TestStrictVarHeaders(t *testing.T) {
 // testComment verifies that f can be parsed again after printing it
 // with its first comment set to comment at any possible source offset.
 func testComment(t *testing.T, f *ast.File, srclen int, comment *ast.Comment) {
+	t.Helper()
 	f.Comments[0].List[0] = comment
 
 	var buf bytes.Buffer

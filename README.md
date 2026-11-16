@@ -40,7 +40,7 @@ go test ./gofmt            # upstream tests + golden files
 
 Checked against the installed `gofmt` (go1.27.2): identical output on the same input. `cmd/gofmt` is byte-identical between go1.27.2 and go1.27.4.
 
-`gofmt -all` enables `-strict`, `-unused`, `-unconvert`, `-flatten`, `-mergecases` and `-omitcases` together. Each of them is described below.
+`gofmt -all` enables `-strict`, `-modernise`, `-unused`, `-unconvert`, `-flatten`, `-mergecases` and `-omitcases` together. Each of them is described below.
 
 ## Local changes
 
@@ -321,6 +321,14 @@ return 5
 ```
 
 The removal is made only when it cannot change which code runs. A value that the clause matched would reach a later clause or the `default` clause instead, so every other clause must have the same body, or the clause must be the last one with no `default` clause. The clause's case expressions must have no side effects, since they are no longer evaluated. The body must not declare names (they would clash with the code after the switch), must not use names the switch's header declares, and must not contain a `break` that leaves the switch.
+
+### `-modernise`: apply the modernize analyzers
+
+`gofmt -modernise` applies the fixes of the analyzers in `golang.org/x/tools/go/analysis/passes/modernize`, the suite that `go fix` runs: `interface{}` becomes `any`, a counting loop becomes a range over an int, a search loop becomes `slices.Contains`, and so on, with the import each fix needs added. The analyzers run over the file alone, with its types from `go/types` as `-unconvert` uses them. Their fixes are applied to the source text, which is then parsed again and checked again, since one fix can expose another. Fixes that overlap wait for the next round (`modernise.go`).
+
+The fixes are held to the Go version of the module that governs the file, from its go.mod, so `any` is only written where the module is go 1.18 or later. A file outside any module is left alone.
+
+It is off by default, and runs on complete files only, not on fragments or generated files, like `-unconvert`.
 
 ### `-unused`: remove local variables that are never referenced
 

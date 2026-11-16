@@ -74,8 +74,9 @@ var (
 	mergeCasesFlag = flag.Bool("mergecases", false, "merge adjacent switch cases with the same body into one case (see mergecases.go)")
 	flattenFlag = flag.Bool("flatten", false, "move the final else or default branch of a statement after it, when every other branch returns (see flatten.go)")
 	unconvertFlag = flag.Bool("unconvert", false, "remove conversions T(x) where x already has type T (see unconvert.go)")
+	moderniseFlag = flag.Bool("modernise", false, "apply the fixes of the analyzers in golang.org/x/tools/go/analysis/passes/modernize (see modernise.go)")
 	unusedFlag = flag.Bool("unused", false, "remove local variables that are declared and never referenced (see unused.go)")
-	allFlag = flag.Bool("all", false, "enable -strict, -unused, -unconvert, -flatten, -mergecases and -omitcases")
+	allFlag = flag.Bool("all", false, "enable -strict, -modernise, -unused, -unconvert, -flatten, -mergecases and -omitcases")
 	strict = flag.Bool("strict", false, "lay out code from the AST alone, ignoring the source's line breaks (see go/printer/strict.go)")
 
 	// debugging
@@ -258,6 +259,17 @@ func formatSource(filename string, src []byte, fragmentOk, fromDisk bool, r *rep
 	// a generated file keeps the layout its generator wrote, so the fork's passes and the strict layout leave it alone (see generated.go)
 	generated := sourceAdj == nil && isGenerated(file)
 	rewritable := sourceAdj == nil && !generated
+	if *moderniseFlag && rewritable {
+		// -modernise applies the fixes of the modernize analyzers to the source, and the file is parsed again from the result (see modernise.go)
+		if out := modernise(filename, src); !bytes.Equal(out, src) {
+			src = out
+			fileSet = token.NewFileSet()
+			if file, err = parser.ParseFile(fileSet, filename, src, parserMode); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	if *strict && rewritable {
 		// -strict also reorders declarations below the ones they depend on (see reorder.go). The reordered source is parsed again, for printing.
 		if out := reorderSourceOf(fileSet, filename, src, fromDisk); !bytes.Equal(out, src) {
@@ -627,6 +639,8 @@ func gofmtMain(s *sequencer) {
 	flag.Parse()
 	if *allFlag {
 		*strict = true
+		*moderniseFlag = true
+
 		*unusedFlag = true
 		*unconvertFlag = true
 		*flattenFlag = true

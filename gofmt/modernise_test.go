@@ -97,9 +97,9 @@ func TestGoDirective(t *testing.T) {
 
 func TestApplyFixEdits(t *testing.T) {
 	tests := []struct {
-		name  string
+		name string
 		edits []textEdit
-		want  string
+		want string
 	}{
 		{
 			name: "insertions at one place keep their order",
@@ -170,22 +170,22 @@ func TestVetFix(t *testing.T) {
 
 func TestOptInFixes(t *testing.T) {
 	tests := []struct {
-		name  string
+		name string
 		suite []*analysis.Analyzer
-		src   string
-		want  string
+		src string
+		want string
 	}{
 		{
-			name:  "inline replaces a call to a function marked //go:fix inline",
+			name: "inline replaces a call to a function marked //go:fix inline",
 			suite: []*analysis.Analyzer{inline.Analyzer},
-			src:   "package p\n\n//go:fix inline\nfunc double(x int) int { return x + x }\n\nfunc f() int {\n\treturn double(3)\n}\n",
-			want:  "package p\n\n//go:fix inline\nfunc double(x int) int { return x + x }\n\nfunc f() int {\n\treturn 3 + 3\n}\n",
+			src: "package p\n\n//go:fix inline\nfunc double(x int) int { return x + x }\n\nfunc f() int {\n\treturn double(3)\n}\n",
+			want: "package p\n\n//go:fix inline\nfunc double(x int) int { return x + x }\n\nfunc f() int {\n\treturn 3 + 3\n}\n",
 		},
 		{
-			name:  "composite keys an unkeyed literal of an imported struct",
+			name: "composite keys an unkeyed literal of an imported struct",
 			suite: []*analysis.Analyzer{composite.Analyzer},
-			src:   "package p\n\nimport \"net/url\"\n\nfunc f() *url.URL {\n\treturn &url.URL{\"https\", \"\", nil, \"example.com\", \"\", \"\", \"\", \"\", \"\", false, false}\n}\n",
-			want:  "",
+			src: "package p\n\nimport \"net/url\"\n\nfunc f() *url.URL {\n\treturn &url.URL{\"https\", \"\", nil, \"example.com\", \"\", \"\", \"\", \"\", \"\", false, false}\n}\n",
+			want: "",
 		},
 	}
 

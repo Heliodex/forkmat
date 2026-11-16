@@ -76,8 +76,7 @@ func applyFixEdits(src []byte, edits []textEdit) []byte {
 
 	out := slices.Clone(src)
 
-	for i := len(edits) - 1; i >= 0; i-- {
-		e := edits[i]
+	for _, e := range slices.Backward(edits) {
 		out = slices.Concat(out[:e.start], e.text, out[e.end:])
 	}
 

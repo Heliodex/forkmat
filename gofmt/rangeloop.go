@@ -161,7 +161,7 @@ func loopUses(body ast.Node, info *types.Info, obj types.Object) bool {
 func moduleRangeOver22(dir string) bool {
 	for {
 		if data, err := os.ReadFile(filepath.Join(dir, "go.mod")); err == nil {
-			for _, line := range strings.Split(string(data), "\n") {
+			for line := range strings.SplitSeq(string(data), "\n") {
 				if v, ok := strings.CutPrefix(strings.TrimSpace(line), "go "); ok {
 					major, minor, ok := strings.Cut(strings.TrimSpace(v), ".")
 					if !ok {

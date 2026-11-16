@@ -335,7 +335,7 @@ func declStart(d ast.Decl) token.Pos {
 func findEnclosingModule(dir string) (string, string) {
 	for {
 		if data, err := os.ReadFile(filepath.Join(dir, "go.mod")); err == nil {
-			for _, line := range strings.Split(string(data), "\n") {
+			for line := range strings.SplitSeq(string(data), "\n") {
 				if mod, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
 					return dir, strings.Trim(strings.TrimSpace(mod), "\"")
 				}
@@ -502,7 +502,7 @@ func moduleDeps(root string) map[string]string {
 
 		// a module that cannot be listed has no dependencies found this way; go/build still works
 		if out, err := cmd.Output(); err == nil || len(out) > 0 {
-			for _, line := range strings.Split(string(out), "\n") {
+			for line := range strings.SplitSeq(string(out), "\n") {
 				if path, dir, ok := strings.Cut(line, "\t"); ok && dir != "" {
 					dirs[path] = dir
 				}

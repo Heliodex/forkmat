@@ -3,6 +3,7 @@ package main
 import (
 	"go/ast"
 	"go/token"
+	"slices"
 )
 
 // unusedBlank returns the blank identifier at the position of id.
@@ -15,13 +16,7 @@ func unusedBlank(id *ast.Ident) *ast.Ident {
 
 // unusedIndex reports whether i is in list.
 func unusedIndex(list []int, i int) bool {
-	for _, j := range list {
-		if j == i {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(list, i)
 }
 
 // unusedName reports whether id declares a local variable that is never referenced.

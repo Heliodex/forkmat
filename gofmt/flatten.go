@@ -3,6 +3,7 @@ package main
 import (
 	"go/ast"
 	"go/token"
+	"slices"
 	"sort"
 )
 
@@ -307,8 +308,8 @@ func flatten(file *ast.File, comments []*ast.CommentGroup) {
 
 		return true
 	})
-	for k := len(lists) - 1; k >= 0; k-- {
-		for flattenList(lists[k], comments) {
+	for _, list := range slices.Backward(lists) {
+		for flattenList(list, comments) {
 		}
 	}
 }

@@ -95,8 +95,13 @@ type (
 		cachedLine int // line corresponding to cachedPos
 		endAlignment, // if set, terminate alignment immediately
 		useNodeComments, // if not set, ignore lead and line comments of nodes
-		impliedSemi, // if set, a linebreak implies a semicolon
-		blankBeforeComment bool // under StrictLayout, the next statement is set off by a blank line, which goes before its first own-line comment
+		impliedSemi bool // if set, a linebreak implies a semicolon
+
+		// under StrictLayout, the statement that a blank line sets off, while its comments before it are printed; the blank goes before the first of them, or after a trailing comment of the statement before
+		blankBefore token.Pos
+
+		// under StrictLayout, a blank line goes after the comment being printed, which trails the statement before the one a blank sets off
+		blankAfterComment bool
 	}
 )
 
@@ -596,6 +601,12 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 		// comment on the same line as last item: separate with at least one separator
 		var hasSep bool
 
+		if prev == nil && p.leadsBlankStmt(pos) {
+			// a trailing comment of the statement before a blank line: the blank goes after it
+			p.blankAfterComment = true
+			p.blankBefore = token.NoPos
+		}
+
 		if prev == nil {
 			// first comment of a comment group
 			var j int
@@ -683,10 +694,10 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 			n = 1
 		}
 
-		if p.strict() && p.blankBeforeComment && prev == nil {
+		if prev == nil && p.leadsBlankStmt(pos) {
 			// the blank line that sets off the statement goes before its leading comment, not between the comment and the statement; the layout's newlines are dropped above, so it is restored here
 			n = max(n, 2)
-			p.blankBeforeComment = false
+			p.blankBefore = token.NoPos
 		}
 
 		if n > 0 {
@@ -696,8 +707,17 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 	}
 }
 
+// leadsBlankStmt reports whether the comment at pos comes before the statement that a blank line sets off under StrictLayout, so that the blank goes with the comments before it. A comment inside the statement is not leading.
+func (p *printer) leadsBlankStmt(pos token.Position) bool {
+	return p.strict() && p.blankBefore.IsValid() && pos.Offset < p.posFor(p.blankBefore).Offset
+}
+
 // writeCommentSuffix writes a line break after a comment if indicated and processes any leftover indentation information. If a line break is needed, the kind of break (newline vs formfeed) depends on the pending whitespace. The writeCommentSuffix result indicates if a newline was written or if a formfeed was dropped from the whitespace buffer.
 func (p *printer) writeCommentSuffix(needsLinebreak bool) (wroteNewline, droppedFF bool) {
+	// under StrictLayout, a blank line that sets off the next statement goes after a trailing comment of the statement before it: the comment's line break is then followed by a blank line, instead of the single line break kept below
+	blankLine := p.blankAfterComment && needsLinebreak
+	p.blankAfterComment = false
+
 	for i, ch := range p.wsbuf {
 		switch ch {
 		case blank, vtab:
@@ -707,7 +727,7 @@ func (p *printer) writeCommentSuffix(needsLinebreak bool) (wroteNewline, dropped
 			// don't lose indentation information
 		case formfeed, newline:
 			// if we need a line break, keep exactly one but remember if we dropped any formfeeds
-			if needsLinebreak {
+			if needsLinebreak && !blankLine {
 				needsLinebreak = false
 				wroteNewline = true
 			} else {
@@ -724,6 +744,10 @@ func (p *printer) writeCommentSuffix(needsLinebreak bool) (wroteNewline, dropped
 	// make sure we have a line break
 	if needsLinebreak {
 		p.writeByte('\n', 1)
+
+		if blankLine {
+			p.writeByte('\n', 1)
+		}
 
 		wroteNewline = true
 	}

@@ -292,6 +292,7 @@ func zeros() {
 	n := string(0)
 
 	var r uint8 // trailing
+
 	p, q := 0, 0
 	_, _, _, _, _, _, _, _, _, _ = x, y, z, s, b, a, c, m, n, r
 	_, _ = p, q

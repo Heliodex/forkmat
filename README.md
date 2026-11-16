@@ -40,7 +40,7 @@ go test ./gofmt            # upstream tests + golden files
 
 Checked against the installed `gofmt` (go1.27.2): identical output on the same input. `cmd/gofmt` is byte-identical between go1.27.2 and go1.27.4.
 
-`gofmt -all` enables `-strict`, `-modernise`, `-vetfix`, `-inline`, `-composite`, `-constants`, `-unused`, `-unconvert`, `-flatten`, `-namedresults`, `-wsl`, `-mergecases` and `-omitcases` together. Each of them is described below.
+`gofmt -all` enables `-strict`, `-modernise`, `-vetfix`, `-inline`, `-composite`, `-constants`, `-unused`, `-unconvert`, `-flatten`, `-namedresults`, `-wsl`, `-testnames`, `-mergecases` and `-omitcases` together. Each of them is described below.
 
 ## Local changes
 
@@ -317,6 +317,19 @@ func compatDoc(t *testing.T, body string) map[string]any {                  func
 ```
 
 The function must have unnamed results and one `return` statement, which is its last statement, and each result must be returned as a plain name. A variable's type must be written the same as the result at its position, and the declaration is removed. Several variables become several results in return order. The change is skipped when it could change the meaning of the code: when the function has a `defer` (a recovered panic returns the named results, not zero values); when the name is declared again in the function, or used before its declaration; when the name appears in the signature; or when the declaration has a comment, which would otherwise be lost. It is applied after `-flatten`, and only under `-all` or when asked for.
+
+### `-testnames`: name test parameters t, b and tb
+
+`gofmt -testnames` renames a parameter of type `*testing.T` to `t`, of type `*testing.B` to `b`, and of type `testing.TB` to `tb`, which is the convention that the thelper linter checks:
+
+```go
+func helper(tt *testing.T, x testing.TB) {        func helper(t *testing.T, tb testing.TB) {
+	tt.Helper()                              =>       t.Helper()
+	x.Helper()                                        tb.Helper()
+}                                                 }
+```
+
+A parameter is renamed only when the new name is not used anywhere in its function, including in a function literal inside it, so the rename cannot capture or hide another name. Every use of the parameter is renamed with it, as the type checker resolves them, so a field or method with the old name is left alone. The pass does not add `t.Helper()` calls, which thelper also checks. It is enabled by `-all`.
 
 ### `-wsl`: lay out blank lines for the wsl linter
 

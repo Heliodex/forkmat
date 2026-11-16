@@ -73,6 +73,7 @@ var (
 	omitCasesFlag = flag.Bool("omitcases", false, "remove a case that returns the same code as follows its switch (see omitcases.go)")
 	mergeCasesFlag = flag.Bool("mergecases", false, "merge adjacent switch cases with the same body into one case (see mergecases.go)")
 	flattenFlag = flag.Bool("flatten", false, "move the final else or default branch of a statement after it, when every other branch returns (see flatten.go)")
+	namedResultsFlag = flag.Bool("namedresults", false, "make the local variables that a function's only return statement returns its named results, when they are declared at the top of its body with var (see namedresults.go)")
 	unconvertFlag = flag.Bool("unconvert", false, "remove conversions T(x) where x already has type T (see unconvert.go)")
 	moderniseFlag = flag.Bool("modernise", false, "apply the fixes of the analyzers in golang.org/x/tools/go/analysis/passes/modernize (see modernise.go)")
 	unusedFlag = flag.Bool("unused", false, "remove local variables that are declared and never referenced (see unused.go)")
@@ -82,7 +83,7 @@ var (
 	importsFlag = flag.Bool("imports", true, "remove imports that the file does not use; -imports=false keeps them (see unusedimports.go)")
 	inlineFlag = flag.Bool("inline", false, "apply the fixes of the inline analyzer, which inlines calls to functions marked //go:fix inline (see modernise.go)")
 	compositeFlag = flag.Bool("composite", false, "apply the fixes of the composite analyzer, which keys unkeyed composite literals of imported struct types (see modernise.go)")
-	allFlag = flag.Bool("all", false, "enable -strict, -modernise, -vetfix, -inline, -composite, -constants, -unused, -unconvert, -flatten, -mergecases and -omitcases")
+	allFlag = flag.Bool("all", false, "enable -strict, -modernise, -vetfix, -inline, -composite, -constants, -unused, -unconvert, -flatten, -namedresults, -mergecases and -omitcases")
 	strict = flag.Bool("strict", false, "lay out code from the AST alone, ignoring the source's line breaks (see go/printer/strict.go)")
 
 	// debugging
@@ -384,6 +385,11 @@ func formatSource(filename string, src []byte, fragmentOk, fromDisk bool, r *rep
 		flatten(file, file.Comments)
 	}
 
+	if *namedResultsFlag && rewritable {
+		// -namedresults makes the variables that the final return returns into named results (see namedresults.go)
+		namedResults(fileSet, file)
+	}
+
 	if rewrite != nil {
 		if sourceAdj == nil {
 			file = rewrite(fileSet, file)
@@ -678,6 +684,7 @@ func gofmtMain(s *sequencer) {
 		*unusedFlag = true
 		*unconvertFlag = true
 		*flattenFlag = true
+		*namedResultsFlag = true
 		*mergeCasesFlag = true
 		*omitCasesFlag = true
 	}

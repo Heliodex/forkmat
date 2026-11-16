@@ -73,6 +73,7 @@ var (
 	omitCasesFlag = flag.Bool("omitcases", false, "remove a case that returns the same code as follows its switch (see omitcases.go)")
 	mergeCasesFlag = flag.Bool("mergecases", false, "merge adjacent switch cases with the same body into one case (see mergecases.go)")
 	flattenFlag = flag.Bool("flatten", false, "move the final else or default branch of a statement after it, when every other branch returns (see flatten.go)")
+	wslFlag = flag.Bool("wsl", false, "lay out the blank lines of -strict so that the wsl linter reports nothing, adding or removing the blank lines it asks for (see wsl.go)")
 	namedResultsFlag = flag.Bool("namedresults", false, "make the local variables that a function's only return statement returns its named results, when they are declared at the top of its body with var (see namedresults.go)")
 	unconvertFlag = flag.Bool("unconvert", false, "remove conversions T(x) where x already has type T (see unconvert.go)")
 	moderniseFlag = flag.Bool("modernise", false, "apply the fixes of the analyzers in golang.org/x/tools/go/analysis/passes/modernize (see modernise.go)")
@@ -83,7 +84,7 @@ var (
 	importsFlag = flag.Bool("imports", true, "remove imports that the file does not use; -imports=false keeps them (see unusedimports.go)")
 	inlineFlag = flag.Bool("inline", false, "apply the fixes of the inline analyzer, which inlines calls to functions marked //go:fix inline (see modernise.go)")
 	compositeFlag = flag.Bool("composite", false, "apply the fixes of the composite analyzer, which keys unkeyed composite literals of imported struct types (see modernise.go)")
-	allFlag = flag.Bool("all", false, "enable -strict, -modernise, -vetfix, -inline, -composite, -constants, -unused, -unconvert, -flatten, -namedresults, -mergecases and -omitcases")
+	allFlag = flag.Bool("all", false, "enable -strict, -modernise, -vetfix, -inline, -composite, -constants, -unused, -unconvert, -flatten, -namedresults, -wsl, -mergecases and -omitcases")
 	strict = flag.Bool("strict", false, "lay out code from the AST alone, ignoring the source's line breaks (see go/printer/strict.go)")
 
 	// debugging
@@ -409,6 +410,17 @@ func formatSource(filename string, src []byte, fragmentOk, fromDisk bool, r *rep
 		mode &^= printer.StrictLayout
 	}
 
+	if *wslFlag && rewritable && mode&printer.StrictLayout != 0 {
+		// -wsl prints the file again with the blank lines that the wsl linter asks for (see wsl.go)
+		return wslLayout(filename, func(blank map[int]bool) ([]byte, error) {
+			return format(fileSet, file, sourceAdj, indentAdj, src, printer.Config{
+				Mode: mode,
+				Tabwidth: tabWidth,
+				StmtBlank: blank,
+			})
+		})
+	}
+
 	res, err := format(fileSet, file, sourceAdj, indentAdj, src, printer.Config{
 		Mode: mode,
 		Tabwidth: tabWidth,
@@ -686,9 +698,15 @@ func gofmtMain(s *sequencer) {
 		*unconvertFlag = true
 		*flattenFlag = true
 		*namedResultsFlag = true
+		*wslFlag = true
 		*mergeCasesFlag = true
 		*omitCasesFlag = true
 	}
+	if *wslFlag {
+		// -wsl lays out the statements that -strict lays out
+		*strict = true
+	}
+
 	counter.Inc("gofmt/invocations")
 	counter.CountFlags("gofmt/flag:", *flag.CommandLine)
 	if *strict {

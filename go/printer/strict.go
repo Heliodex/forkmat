@@ -361,13 +361,7 @@ func headAmbiguous(e ast.Expr) bool {
 
 // headAmbiguousList reports whether one of the values holds a composite literal that cannot stand in an if header unparenthesized (see headAmbiguous).
 func headAmbiguousList(list []ast.Expr) bool {
-	for _, e := range list {
-		if headAmbiguous(e) {
-			return true
-		}
-	}
-
-	return false
+	return slices.ContainsFunc(list, headAmbiguous)
 }
 
 // importPath returns the path of an import spec, without its quotes.

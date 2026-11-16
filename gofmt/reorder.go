@@ -25,6 +25,12 @@ import (
 )
 
 type (
+	// reorderKey identifies a reordered source: the file it is of, and a hash of the source that was reordered. The content is part of the key, since one file can be asked for in more than one source: a sibling asks for the file as it is on disk, and the file itself asks for the source it is formatting, which may differ.
+	reorderKey struct {
+		filename string
+		sum [sha256.Size]byte
+	}
+
 	// edit replaces src[start:end] with text.
 	edit struct {
 		start, end int
@@ -1585,12 +1591,6 @@ func reorderStable(filename string, src []byte) bool {
 	out, _ := reorderSource(token.NewFileSet(), filename, src)
 
 	return bytes.Equal(out, src)
-}
-
-// reorderKey identifies a reordered source: the file it is of, and a hash of the source that was reordered. The content is part of the key, since one file can be asked for in more than one source: a sibling asks for the file as it is on disk, and the file itself asks for the source it is formatting, which may differ.
-type reorderKey struct {
-	filename string
-	sum [sha256.Size]byte
 }
 
 // reorderedSource returns the source of the file named filename, whose source is src, with the reorder passes applied. A file on disk is reordered once per source and run: the file itself, and the siblings that the switch pass reads, share the result of the same source.

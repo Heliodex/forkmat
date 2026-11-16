@@ -80,6 +80,7 @@ func CleanCmdEnv(cmd *exec.Cmd) *exec.Cmd {
 // To check for exec support outside of a test, just try to exec the command. If exec is not supported, testenv.SyscallIsNotSupported will return true for the resulting error.
 func MustHaveExec(tb testing.TB) {
 	tb.Helper()
+
 	if err := tryExec(); err != nil {
 		msg := fmt.Sprintf("cannot exec subprocess on %s/%s: %v", runtime.GOOS, runtime.GOARCH, err)
 

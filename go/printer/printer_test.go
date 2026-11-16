@@ -899,6 +899,7 @@ func (l *limitWriter) Write(buf []byte) (n int, err error) {
 
 func runcheck(t *testing.T, source, golden string, mode checkMode) {
 	t.Helper()
+
 	src, err := os.ReadFile(source)
 	if err != nil {
 		t.Error(err)
@@ -951,6 +952,7 @@ func runcheck(t *testing.T, source, golden string, mode checkMode) {
 
 func check(t *testing.T, source, golden string, mode checkMode) {
 	t.Helper()
+
 	// run the test
 	cc := make(chan int, 1)
 
@@ -1257,6 +1259,7 @@ func TestStrictVarHeaders(t *testing.T) {
 // with its first comment set to comment at any possible source offset.
 func testComment(t *testing.T, f *ast.File, srclen int, comment *ast.Comment) {
 	t.Helper()
+
 	f.Comments[0].List[0] = comment
 
 	var buf bytes.Buffer

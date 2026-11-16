@@ -216,6 +216,7 @@ func CanInternalLink(withCgo bool) bool {
 // If GOROOT cannot be found, GOROOT skips t if t is non-nil, or panics otherwise.
 func GOROOT(tb testing.TB) string {
 	tb.Helper()
+
 	path, err := findGOROOT()
 	if err != nil {
 		if tb == nil {
@@ -291,6 +292,7 @@ func HasSymlink() bool {
 // MustHaveBuildMode reports whether the current system can build programs in the given build mode. If not, MustHaveBuildMode calls t.Skip with an explanation.
 func MustHaveBuildMode(tb testing.TB, buildmode string) {
 	tb.Helper()
+
 	if !platform.BuildModeSupported(runtime.Compiler, buildmode, runtime.GOOS, runtime.GOARCH) {
 		tb.Helper()
 		tb.Skipf("skipping test: build mode %s on %s/%s is not supported by the %s compiler", buildmode, runtime.GOOS, runtime.GOARCH, runtime.Compiler)
@@ -300,6 +302,7 @@ func MustHaveBuildMode(tb testing.TB, buildmode string) {
 // MustHaveCGO calls t.Skip if cgo is not available.
 func MustHaveCGO(tb testing.TB) {
 	tb.Helper()
+
 	if !HasCGO() {
 		tb.Helper()
 		tb.Skipf("skipping test: no cgo")
@@ -309,6 +312,7 @@ func MustHaveCGO(tb testing.TB) {
 // MustHaveExternalNetwork checks that the current system can use external (non-localhost) networks. If not, MustHaveExternalNetwork calls t.Skip with an explanation.
 func MustHaveExternalNetwork(tb testing.TB) {
 	tb.Helper()
+
 	if runtime.GOOS == "js" || runtime.GOOS == "wasip1" {
 		tb.Helper()
 		tb.Skipf("skipping test: no external network on %s", runtime.GOOS)
@@ -323,6 +327,7 @@ func MustHaveExternalNetwork(tb testing.TB) {
 // MustHaveGoBuild checks that the current system can build programs with “go build” and then run them with os.StartProcess or exec.Command. If not, MustHaveGoBuild calls t.Skip with an explanation.
 func MustHaveGoBuild(tb testing.TB) {
 	tb.Helper()
+
 	if os.Getenv("GO_GCFLAGS") != "" {
 		tb.Helper()
 		tb.Skipf("skipping test: 'go build' not compatible with setting $GO_GCFLAGS")
@@ -355,6 +360,7 @@ func GoToolPath(tb testing.TB) string {
 // MustHaveGoRun checks that the current system can run programs with “go run”. If not, MustHaveGoRun calls t.Skip with an explanation.
 func MustHaveGoRun(tb testing.TB) {
 	tb.Helper()
+
 	if !HasGoRun() {
 		tb.Helper()
 		tb.Skipf("skipping test: 'go run' not available on %s/%s", runtime.GOOS, runtime.GOARCH)
@@ -364,6 +370,7 @@ func MustHaveGoRun(tb testing.TB) {
 // MustHaveLink reports whether the current system can use os.Link. If not, MustHaveLink calls t.Skip with an explanation.
 func MustHaveLink(tb testing.TB) {
 	tb.Helper()
+
 	if !HasLink() {
 		tb.Helper()
 		tb.Skipf("skipping test: hardlinks are not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
@@ -373,6 +380,7 @@ func MustHaveLink(tb testing.TB) {
 // MustHaveParallelism checks that the current system can execute multiple threads in parallel. If not, MustHaveParallelism calls t.Skip with an explanation.
 func MustHaveParallelism(tb testing.TB) {
 	tb.Helper()
+
 	if !HasParallelism() {
 		tb.Helper()
 		tb.Skipf("skipping test: no parallelism available on %s/%s", runtime.GOOS, runtime.GOARCH)
@@ -409,6 +417,7 @@ func MustHaveSource(tb testing.TB) {
 // MustHaveSymlink reports whether the current system can use os.Symlink. If not, MustHaveSymlink calls t.Skip with an explanation.
 func MustHaveSymlink(tb testing.TB) {
 	tb.Helper()
+
 	if ok, reason := hasSymlink(); !ok {
 		tb.Helper()
 		tb.Skipf("skipping test: cannot make symlinks on %s/%s: %s", runtime.GOOS, runtime.GOARCH, reason)
@@ -418,6 +427,7 @@ func MustHaveSymlink(tb testing.TB) {
 // MustInternalLink checks that the current system can link programs with internal linking. If not, MustInternalLink calls t.Skip with an explanation.
 func MustInternalLink(tb testing.TB, with SpecialBuildTypes) {
 	tb.Helper()
+
 	if with.Asan || with.Msan || with.Race {
 		tb.Skipf("skipping test: internal linking with sanitizers is not supported")
 	}
@@ -436,6 +446,7 @@ func MustInternalLink(tb testing.TB, with SpecialBuildTypes) {
 // MustInternalLinkPIE checks whether the current system can link PIE binary using internal linking. If not, MustInternalLinkPIE calls t.Skip with an explanation.
 func MustInternalLinkPIE(tb testing.TB) {
 	tb.Helper()
+
 	if !platform.InternalLinkPIESupported(runtime.GOOS, runtime.GOARCH) {
 		tb.Helper()
 		tb.Skipf("skipping test: internal linking for buildmode=pie on %s/%s is not supported", runtime.GOOS, runtime.GOARCH)
@@ -445,6 +456,7 @@ func MustInternalLinkPIE(tb testing.TB) {
 // ParallelOn64Bit calls t.Parallel() unless there is a case that cannot be parallel. This function should be used when it is necessary to avoid t.Parallel on 32-bit machines, typically because the test uses lots of memory.
 func ParallelOn64Bit(t *testing.T) {
 	t.Helper()
+
 	if goarch.PtrSize == 4 {
 		return
 	}
@@ -460,6 +472,7 @@ func SetGODEBUG(tb testing.TB, v string) {
 
 func SkipFlaky(tb testing.TB, issue int) {
 	tb.Helper()
+
 	if !*flaky {
 		tb.Helper()
 		tb.Skipf("skipping known flaky test without the -flaky flag; see golang.org/issue/%d", issue)
@@ -468,6 +481,7 @@ func SkipFlaky(tb testing.TB, issue int) {
 
 func SkipFlakyNet(tb testing.TB) {
 	tb.Helper()
+
 	if v, _ := strconv.ParseBool(os.Getenv("GO_BUILDER_FLAKY_NET")); v {
 		tb.Helper()
 		tb.Skip("skipping test on builder known to have frequent network failures")
@@ -477,6 +491,7 @@ func SkipFlakyNet(tb testing.TB) {
 // SkipIfOptimizationOff skips t if optimization is disabled.
 func SkipIfOptimizationOff(tb testing.TB) {
 	tb.Helper()
+
 	if OptimizationOff() {
 		tb.Helper()
 		tb.Skip("skipping test with optimization disabled")
@@ -488,6 +503,7 @@ func SkipIfOptimizationOff(tb testing.TB) {
 // (This is useful for CPU-intensive tests that otherwise complete quickly.)
 func SkipIfShortAndSlow(tb testing.TB) {
 	tb.Helper()
+
 	if testing.Short() && CPUIsSlow() {
 		tb.Helper()
 		tb.Skipf("skipping test in -short mode on %s", runtime.GOARCH)

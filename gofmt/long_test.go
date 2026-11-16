@@ -30,6 +30,7 @@ var (
 
 func genFilenames(t *testing.T, filenames chan<- string) {
 	t.Helper()
+
 	defer close(filenames)
 
 	handleFile := func(filename string, d fs.DirEntry, err error) error {
@@ -52,7 +53,6 @@ func genFilenames(t *testing.T, filenames chan<- string) {
 	if *files != "" {
 		for filename := range strings.SplitSeq(*files, ",") {
 			fi, err := os.Stat(filename)
-
 			_ = handleFile(filename, fs.FileInfoToDirEntry(fi), err)
 		}
 
@@ -87,6 +87,7 @@ func gofmt(fset *token.FileSet, filename string, src *bytes.Buffer) error {
 
 func testFile(t *testing.T, b1, b2 *bytes.Buffer, filename string) {
 	t.Helper()
+
 	// open file
 	f, err := os.Open(filename)
 	if err != nil {
@@ -147,6 +148,7 @@ func testFile(t *testing.T, b1, b2 *bytes.Buffer, filename string) {
 
 func testFiles(t *testing.T, filenames <-chan string, done chan<- int) {
 	t.Helper()
+
 	b1 := &bytes.Buffer{}
 	b2 := &bytes.Buffer{}
 

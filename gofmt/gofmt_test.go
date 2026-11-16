@@ -157,6 +157,7 @@ func TestDiff(t *testing.T) {
 
 func runTest(t *testing.T, in, out string) {
 	t.Helper()
+
 	const maxWeight = 2 << 20
 
 	resetFlags()

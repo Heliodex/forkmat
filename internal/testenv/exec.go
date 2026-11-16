@@ -42,9 +42,7 @@ var (
 
 		return cmd.Run()
 	})
-	exePath = sync.OnceValues(func() (string, error) {
-		return os.Executable()
-	})
+	exePath = sync.OnceValues(os.Executable)
 	execPaths sync.Map // path -> error
 )
 
@@ -99,7 +97,7 @@ func MustHaveExec(tb testing.TB) {
 //   - if the test has a deadline, adds a Context timeout and WaitDelay for an arbitrary grace period before the test's deadline expires,
 //   - fails the test if the command does not complete before the test's deadline, and
 //   - sets a Cleanup function that verifies that the test did not leak a subprocess.
-func CommandContext(tb testing.TB, ctx context.Context, name string, args ...string) *exec.Cmd {
+func CommandContext(ctx context.Context, tb testing.TB, name string, args ...string) *exec.Cmd {
 	tb.Helper()
 	MustHaveExec(tb)
 
@@ -173,7 +171,7 @@ func CommandContext(tb testing.TB, ctx context.Context, name string, args ...str
 // Command is like exec.Command, but applies the same changes as testenv.CommandContext (with a default Context).
 func Command(tb testing.TB, name string, args ...string) *exec.Cmd {
 	tb.Helper()
-	return CommandContext(tb, context.Background(), name, args...)
+	return CommandContext(context.Background(), tb, name, args...)
 }
 
 // Executable is a wrapper around [MustHaveExec] and [os.Executable]. It returns the path name for the executable that started the current process, or skips the test if the current system can't start new processes, or fails the test if the path can not be obtained.

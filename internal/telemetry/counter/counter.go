@@ -15,7 +15,7 @@ func New(_ string) dummyCounter {
 	return dummyCounter{}
 }
 
-func NewStack(name string, depth int) dummyCounter {
+func NewStack(_ string, _ int) dummyCounter {
 	return dummyCounter{}
 }
 

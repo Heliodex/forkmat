@@ -22,6 +22,9 @@ import (
 	"testing"
 )
 
+// newFileMode is the permission of the files that the tests write.
+const newFileMode = 0o666
+
 // SpecialBuildTypes are interesting build types that may affect linking.
 type SpecialBuildTypes struct {
 	Cgo, Asan, Msan, Race bool
@@ -106,7 +109,7 @@ var (
 			parent := filepath.Dir(dir)
 			if parent == dir {
 				// dir is either "." or only a volume name.
-				return "", fmt.Errorf("failed to locate GOROOT/src in any parent directory")
+				return "", errors.New("failed to locate GOROOT/src in any parent directory")
 			}
 
 			if base := filepath.Base(dir); base != "src" {
@@ -393,8 +396,7 @@ func MustHaveParallelism(tb testing.TB) {
 func MustHaveSource(tb testing.TB) {
 	tb.Helper()
 
-	switch runtime.GOOS {
-	case "ios":
+	if runtime.GOOS == "ios" {
 		tb.Skip("skipping test: no source tree on " + runtime.GOOS)
 	}
 
@@ -556,7 +558,7 @@ func WriteImportcfg(tb testing.TB, dstPath string, packageFiles map[string]strin
 		}
 	}
 
-	if err := os.WriteFile(dstPath, icfg.Bytes(), 0o666); err != nil {
+	if err := os.WriteFile(dstPath, icfg.Bytes(), newFileMode); err != nil {
 		tb.Fatal(err)
 	}
 }

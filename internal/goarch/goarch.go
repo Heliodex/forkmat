@@ -1,5 +1,7 @@
-// package goarch contains GOARCH-specific constants.
+// Package goarch contains GOARCH-specific constants.
 package goarch
+
+import "math/bits"
 
 // The next line makes 'go generate' write the zgoarch*.go files with per-arch information, including constants named $GOARCH for every GOARCH. The constant is 1 on the current system, 0 otherwise; multiplying by them is useful for defining GOARCH-specific constants.
 //
@@ -39,7 +41,7 @@ const (
 	PCQuantum = _PCQuantum
 
 	// PtrSize is the size of a pointer in bytes - unsafe.Sizeof(uintptr(0)) but as an ideal constant. It is also the size of the machine's native word size (that is, 4 on 32-bit systems, 8 on 64-bit).
-	PtrSize = 4 << (^uintptr(0) >> 63)
+	PtrSize = 4 << (^uintptr(0) >> (bits.UintSize - 1))
 
 	// Int64Align is the required alignment for a 64-bit integer (4 on 32-bit systems, 8 on 64-bit).
 	Int64Align = PtrSize

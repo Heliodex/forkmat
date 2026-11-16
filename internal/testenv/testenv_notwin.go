@@ -3,7 +3,6 @@
 package testenv
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -33,7 +32,7 @@ var hasSymlink = sync.OnceValues(func() (ok bool, reason string) {
 
 		if err := os.Symlink(fpath, filepath.Join(dir, "testlink")); err != nil {
 			if SyscallIsNotSupported(err) {
-				return false, fmt.Sprintf("symlinks unsupported: %s", err.Error())
+				return false, "symlinks unsupported: " + err.Error()
 			}
 
 			return false, ""

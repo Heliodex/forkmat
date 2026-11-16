@@ -16,8 +16,7 @@ type (
 
 // ASanSupported reports whether goos/goarch supports the address sanitizer option.
 func ASanSupported(goos, goarch string) bool {
-	switch goos {
-	case "linux":
+	if goos == "linux" {
 		return goarch == "arm64" || goarch == "amd64" || goarch == "loong64" || goarch == "riscv64" || goarch == "ppc64le"
 	}
 

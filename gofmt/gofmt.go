@@ -24,7 +24,6 @@ import (
 	"strings"
 
 	"golang.org/x/sync/semaphore"
-	"golang.org/x/tools/go/analysis/passes/modernize"
 )
 
 type (
@@ -77,7 +76,8 @@ var (
 	unconvertFlag = flag.Bool("unconvert", false, "remove conversions T(x) where x already has type T (see unconvert.go)")
 	moderniseFlag = flag.Bool("modernise", false, "apply the fixes of the analyzers in golang.org/x/tools/go/analysis/passes/modernize (see modernise.go)")
 	unusedFlag = flag.Bool("unused", false, "remove local variables that are declared and never referenced (see unused.go)")
-	allFlag = flag.Bool("all", false, "enable -strict, -modernise, -unused, -unconvert, -flatten, -mergecases and -omitcases")
+	vetFixFlag = flag.Bool("vetfix", false, "apply the fixes of the vet analyzers assign, hostport, timeformat and unreachable (see modernise.go)")
+	allFlag = flag.Bool("all", false, "enable -strict, -modernise, -vetfix, -unused, -unconvert, -flatten, -mergecases and -omitcases")
 	strict = flag.Bool("strict", false, "lay out code from the AST alone, ignoring the source's line breaks (see go/printer/strict.go)")
 
 	// debugging
@@ -260,9 +260,9 @@ func formatSource(filename string, src []byte, fragmentOk, fromDisk bool, r *rep
 	// a generated file keeps the layout its generator wrote, so the fork's passes and the strict layout leave it alone (see generated.go)
 	generated := sourceAdj == nil && isGenerated(file)
 	rewritable := sourceAdj == nil && !generated
-	if *moderniseFlag && rewritable {
-		// -modernise applies the fixes of the modernize analyzers to the source, and the file is parsed again from the result (see modernise.go)
-		if out := modernise(filename, src, modernize.Suite); !bytes.Equal(out, src) {
+	if suite := enabledSuite(); len(suite) > 0 && rewritable {
+		// -modernise and -vetfix apply the fixes of their analyzers to the source, and the file is parsed again from the result (see modernise.go)
+		if out := modernise(filename, src, suite); !bytes.Equal(out, src) {
 			src = out
 			fileSet = token.NewFileSet()
 			if file, err = parser.ParseFile(fileSet, filename, src, parserMode); err != nil {
@@ -641,6 +641,7 @@ func gofmtMain(s *sequencer) {
 	if *allFlag {
 		*strict = true
 		*moderniseFlag = true
+		*vetFixFlag = true
 
 		*unusedFlag = true
 		*unconvertFlag = true

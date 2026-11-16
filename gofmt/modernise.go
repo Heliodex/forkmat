@@ -16,9 +16,36 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/assign"
+	"golang.org/x/tools/go/analysis/passes/hostport"
+	"golang.org/x/tools/go/analysis/passes/modernize"
+	"golang.org/x/tools/go/analysis/passes/timeformat"
+	"golang.org/x/tools/go/analysis/passes/unreachable"
 )
 
 // This file implements -modernise: the fixes that the analyzers of golang.org/x/tools/go/analysis/passes/modernize suggest are applied to the source text, the way go fix applies them. Each analyzer runs over the file alone, with its types from checkModernise, and the fixes of a round are applied together. The file is then parsed again, and the analyzers run again, until no fix applies, since a fix can expose another one.
+
+// vetFixSuite lists the vet analyzers whose fixes -vetfix applies: assign removes self-assignments, hostport uses net.JoinHostPort, timeformat corrects time layouts, and unreachable removes code that cannot run.
+var vetFixSuite = []*analysis.Analyzer{
+	assign.Analyzer,
+	hostport.Analyzer,
+	timeformat.Analyzer,
+	unreachable.Analyzer,
+}
+
+// enabledSuite returns the analyzers whose fixes the flags enable, in the order they run.
+func enabledSuite() []*analysis.Analyzer {
+	var suite []*analysis.Analyzer
+	if *moderniseFlag {
+		suite = append(suite, modernize.Suite...)
+	}
+
+	if *vetFixFlag {
+		suite = append(suite, vetFixSuite...)
+	}
+
+	return suite
+}
 
 // maxModeniseRounds bounds how many rounds of fixes are applied to one file. Fixes that overlap are left for the next round, so a file with many fixes can need several rounds.
 const maxModeniseRounds = 50

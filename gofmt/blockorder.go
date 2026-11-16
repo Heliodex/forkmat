@@ -113,6 +113,7 @@ func declaredIn(n ast.Node) map[string]bool {
 
 		return true
 	})
+
 	return names
 }
 
@@ -147,6 +148,7 @@ func mentioned(n ast.Node) map[string]bool {
 
 		return true
 	})
+
 	return names
 }
 
@@ -415,5 +417,6 @@ func reorderBlockDecls(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	sort.Slice(edits, func(i, j int) bool {
 		return edits[i].start < edits[j].start
 	})
+
 	return applyEdits(src, edits)
 }

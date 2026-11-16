@@ -170,7 +170,9 @@ func (r *moderniseRun) importFact(a *analysis.Analyzer, obj types.Object, fact a
 	if !ok {
 		return false
 	}
+
 	reflect.ValueOf(fact).Elem().Set(reflect.ValueOf(stored).Elem())
+
 	return true
 }
 
@@ -362,6 +364,7 @@ func packageFiles(fset *token.FileSet, filename string, file *ast.File) ([]*ast.
 	}
 
 	dir := filepath.Dir(filename)
+
 	bp, err := build.Default.ImportDir(dir, 0)
 	if err != nil || bp.Name != file.Name.Name || len(bp.CgoFiles) > 0 {
 		return nil, false
@@ -399,6 +402,7 @@ func selectFixes(fixes [][]textEdit) (accepted []textEdit) {
 // moderniseOnce applies one round of fixes to src, and reports whether any applied. The result must still parse, or the round does not apply.
 func moderniseOnce(filename string, src []byte, goVersion string, suite []*analysis.Analyzer) ([]byte, bool) {
 	fset := token.NewFileSet()
+
 	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
 	if err != nil {
 		return src, false
@@ -421,6 +425,7 @@ func moderniseOnce(filename string, src []byte, goVersion string, suite []*analy
 		results: map[*analysis.Analyzer]analysisResult{},
 		facts: map[factKey]analysis.Fact{},
 	}
+
 	edits := selectFixes(run.fixes())
 	if len(edits) == 0 {
 		return src, false

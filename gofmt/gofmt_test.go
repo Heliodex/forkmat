@@ -25,6 +25,7 @@ func TestBackupFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	t.Logf("Created: %s", name)
 }
 
@@ -45,7 +46,6 @@ func TestCRLF(t *testing.T) {
 	}
 
 	data, err = os.ReadFile(golden)
-
 	if err != nil {
 		t.Error(err)
 	}
@@ -77,6 +77,7 @@ func gofmtFlags(filename string, maxLines int) string {
 	s.Mode = scanner.GoTokens &^ scanner.SkipComments // want comments
 
 	// look for //gofmt comment
+
 	for s.Line <= maxLines {
 		switch s.Scan() {
 		case scanner.EOF:
@@ -143,6 +144,7 @@ func TestDiff(t *testing.T) {
 		s.Add(fileWeight(tt.in, info), func(r *reporter) error {
 			return processFile(tt.in, info, nil, r)
 		})
+
 		if errBuf.Len() > 0 {
 			t.Logf("%q", errBuf.Bytes())
 		}
@@ -188,6 +190,7 @@ func runTest(t *testing.T, in, out string) {
 			t.Errorf("unrecognized flag name: %s", name)
 		}
 	}
+
 	initParserMode()
 	initRewrite()
 
@@ -198,6 +201,7 @@ func runTest(t *testing.T, in, out string) {
 	s.Add(fileWeight(in, info), func(r *reporter) error {
 		return processFile(in, info, nil, r)
 	})
+
 	if errBuf.Len() > 0 {
 		t.Logf("%q", errBuf.Bytes())
 	}
@@ -224,7 +228,9 @@ func runTest(t *testing.T, in, out string) {
 			// in == out: don't accidentally destroy input
 			t.Errorf("WARNING: -update did not rewrite input file %s", in)
 		}
+
 		t.Errorf("(gofmt %s) != %s (see %s.gofmt)\n%s", in, out, in, diff.Diff("expected", expected, "got", got))
+
 		if err := os.WriteFile(in+".gofmt", got, 0o666); err != nil {
 			t.Error(err)
 		}
@@ -260,10 +266,13 @@ func TestRewrite(t *testing.T) {
 			}
 
 			out := in // for files where input and output are identical
+
 			if strings.HasSuffix(in, ".input") {
 				out = in[:len(in)-len(".input")] + ".golden"
 			}
+
 			runTest(t, in, out)
+
 			if in != out && !t.Failed() {
 				// Check idempotence.
 				runTest(t, out, out)

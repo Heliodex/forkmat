@@ -89,6 +89,7 @@ func match(m map[string]reflect.Value, pattern, val reflect.Value) bool {
 	}
 
 	p := reflect.Indirect(pattern)
+
 	v := reflect.Indirect(val)
 	if !p.IsValid() || !v.IsValid() {
 		return !p.IsValid() && !v.IsValid()
@@ -147,6 +148,7 @@ func set(x, y reflect.Value) {
 				// x cannot be set to y - ignore this rewrite
 				return
 			}
+
 			panic(x)
 		}
 	}()
@@ -285,6 +287,7 @@ func rewriteFile(fileSet *token.FileSet, pattern, replace ast.Expr, p *ast.File)
 		val = apply(rewriteVal, val)
 
 		clear(m)
+
 		if match(m, pat, val) {
 			val = subst(m, repl, reflect.ValueOf(val.Interface().(ast.Node).Pos()))
 		}
@@ -293,12 +296,14 @@ func rewriteFile(fileSet *token.FileSet, pattern, replace ast.Expr, p *ast.File)
 	}
 	r := apply(rewriteVal, reflect.ValueOf(p)).Interface().(*ast.File)
 	r.Comments = cmap.Filter(r).Comments() // recreate comments list
+
 	return r
 }
 
 func initRewrite() {
 	if *rewriteRule == "" {
 		rewrite = nil // disable any previous rewrite
+
 		return
 	}
 

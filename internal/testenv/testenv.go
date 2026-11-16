@@ -39,6 +39,7 @@ var (
 
 		cmd := exec.Command(goTool, "tool", "-n", "compile")
 		cmd.Env = origEnv
+
 		out, err := cmd.Output()
 		if err != nil {
 			return fmt.Errorf("%v: %w", cmd, err)
@@ -61,6 +62,7 @@ var (
 			if os.Getenv("CC") == "" {
 				cmd := exec.Command(goTool, "env", "CC")
 				cmd.Env = origEnv
+
 				out, err := cmd.Output()
 				if err != nil {
 					return fmt.Errorf("%v: %w", cmd, err)
@@ -93,7 +95,6 @@ var (
 		// Since this is internal/testenv, we can cheat and assume that the caller is a test of some package in a subdirectory of GOROOT/src. ('go test' runs the test in the directory containing the packaged under test.) That means that if we start walking up the tree, we should eventually find GOROOT/src/go.mod, and we can report the parent directory of that.
 		//
 		// Notably, this works even if we can't run 'go env GOROOT' as a subprocess.
-
 		cwd, err := os.Getwd()
 		if err != nil {
 			return "", fmt.Errorf("finding GOROOT: %w", err)
@@ -129,6 +130,7 @@ var (
 				var line string
 
 				line, goMod, _ = strings.Cut(goMod, "\n")
+
 				fields := strings.Fields(line)
 				if len(fields) >= 2 && fields[0] == "module" && fields[1] == "std" {
 					// Found "module std", which is the module declaration in GOROOT/src!
@@ -148,6 +150,7 @@ var (
 
 		cmd := exec.Command(goTool, "env", "CGO_ENABLED")
 		cmd.Env = origEnv
+
 		out, err := cmd.Output()
 		if err != nil {
 			panic(fmt.Sprintf("%v: %v", cmd, out))
@@ -217,6 +220,7 @@ func GOROOT(t testing.TB) string {
 		if t == nil {
 			panic(err)
 		}
+
 		t.Helper()
 		t.Skip(err)
 	}
@@ -371,6 +375,7 @@ func MustHaveParallelism(t testing.TB) {
 // This is needed when reading files from GOROOT that are not in ./testdata.
 func MustHaveSource(t testing.TB) {
 	t.Helper()
+
 	switch runtime.GOOS {
 	case "ios":
 		t.Skip("skipping test: no source tree on " + runtime.GOOS)
@@ -408,9 +413,11 @@ func MustInternalLink(t testing.TB, with SpecialBuildTypes) {
 
 	if !CanInternalLink(with.Cgo) {
 		t.Helper()
+
 		if with.Cgo && CanInternalLink(false) {
 			t.Skipf("skipping test: internal linking on %s/%s is not supported with cgo", runtime.GOOS, runtime.GOARCH)
 		}
+
 		t.Skipf("skipping test: internal linking on %s/%s is not supported", runtime.GOOS, runtime.GOARCH)
 	}
 }
@@ -428,6 +435,7 @@ func ParallelOn64Bit(t *testing.T) {
 	if goarch.PtrSize == 4 {
 		return
 	}
+
 	t.Parallel()
 }
 
@@ -483,6 +491,7 @@ func WriteImportcfg(t testing.TB, dstPath string, packageFiles map[string]string
 	icfg := &bytes.Buffer{}
 
 	icfg.WriteString("# import config\n")
+
 	for k, v := range packageFiles {
 		fmt.Fprintf(icfg, "packagefile %s=%s\n", k, v)
 	}
@@ -492,6 +501,7 @@ func WriteImportcfg(t testing.TB, dstPath string, packageFiles map[string]string
 		cmd := Command(t, GoToolPath(t), "list", "-export", "-deps", "-f", `{{if ne .ImportPath "command-line-arguments"}}{{if .Export}}{{.ImportPath}}={{.Export}}{{end}}{{end}}`)
 		cmd.Args = append(cmd.Args, pkgs...)
 		cmd.Stderr = &strings.Builder{}
+
 		out, err := cmd.Output()
 		if err != nil {
 			t.Fatalf("%v: %v\n%s", cmd, err, cmd.Stderr)

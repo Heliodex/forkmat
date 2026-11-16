@@ -51,6 +51,7 @@ func loopNames(e ast.Expr) map[string]bool {
 
 		return true
 	})
+
 	return out
 }
 
@@ -126,6 +127,7 @@ func loopAssigns(body ast.Node, set map[string]bool) (found bool) {
 
 		return !found
 	})
+
 	return
 }
 
@@ -150,6 +152,7 @@ func loopUses(body ast.Node, info *types.Info, obj types.Object) (found bool) {
 
 		return !found
 	})
+
 	return
 }
 
@@ -165,6 +168,7 @@ func moduleRangeOver22(dir string) bool {
 					}
 
 					ma, err1 := strconv.Atoi(major)
+
 					mi, err2 := strconv.Atoi(strings.TrimRight(minor, "abcdefghijklmnopqrstuvwxyz"))
 					if err1 != nil || err2 != nil {
 						return true
@@ -307,6 +311,7 @@ func rangeLoops(filename string, file *ast.File, comments []*ast.CommentGroup, t
 
 		return true
 	})
+
 	if len(repl) == 0 {
 		return
 	}

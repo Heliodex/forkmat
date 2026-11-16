@@ -70,7 +70,6 @@ func TestWSLLayout(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			out := wslText(t, tt.src)
-
 			fset := token.NewFileSet()
 
 			file, err := parser.ParseFile(fset, "x.go", out, parser.ParseComments)

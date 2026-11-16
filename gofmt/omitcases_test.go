@@ -14,10 +14,12 @@ func omitText(t *testing.T, src string) string {
 	t.Helper()
 
 	fset := token.NewFileSet()
+
 	file, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+
 	omitCases(fset, file, file.Comments)
 
 	var buf bytes.Buffer

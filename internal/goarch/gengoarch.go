@@ -46,12 +46,14 @@ func main() {
 		fmt.Fprintf(&buf, "//go:build %s\n\n", target) // must explicitly include target for bootstrapping purposes
 		fmt.Fprintf(&buf, "package goarch\n\n")
 		fmt.Fprintf(&buf, "const GOARCH = `%s`\n\n", target)
+
 		for _, goarch := range goarches {
 			var value int
 
 			if goarch == target {
 				value = 1
 			}
+
 			fmt.Fprintf(&buf, "const Is%s = %d\n", strings.Title(goarch), value)
 		}
 

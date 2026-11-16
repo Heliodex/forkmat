@@ -104,6 +104,7 @@ func tgs(x, y []string) []pair {
 	}
 
 	seq[0] = pair{0, 0} // sentinel at start
+
 	return seq
 }
 
@@ -140,6 +141,7 @@ func Diff(oldName string, old []byte, newName string, new []byte) []byte {
 	for _, m := range tgs(x, y) {
 		// If we're not at EOF and have too few common lines, the chunk includes all the common lines and continues.
 		const C = 3 // number of context lines
+
 		if m.x < done.x {
 			// Already handled scanning forward from earlier match.
 			continue
@@ -179,6 +181,7 @@ func Diff(oldName string, old []byte, newName string, new []byte) []byte {
 			}
 
 			done = end
+
 			continue
 		}
 
@@ -202,7 +205,9 @@ func Diff(oldName string, old []byte, newName string, new []byte) []byte {
 			if count.y > 0 {
 				chunk.y++
 			}
+
 			fmt.Fprintf(&out, "@@ -%d,%d +%d,%d @@\n", chunk.x, count.x, chunk.y, count.y)
+
 			for _, s := range ctext {
 				out.WriteString(s)
 			}

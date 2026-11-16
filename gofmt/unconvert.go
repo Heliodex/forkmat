@@ -26,6 +26,7 @@ func checkTypes(fset *token.FileSet, file *ast.File) *types.Info {
 	}
 
 	conf.Check(file.Name.Name, fset, []*ast.File{file}, info)
+
 	return info
 }
 
@@ -38,6 +39,7 @@ func hasSelector(e ast.Expr) (found bool) {
 
 		return !found
 	})
+
 	return
 }
 
@@ -85,6 +87,7 @@ func packageTypeNames(filename string, file *ast.File) map[string]bool {
 
 		return true
 	})
+
 	return names
 }
 
@@ -115,6 +118,7 @@ func mayConvert(filename string, file *ast.File) (found bool) {
 	for n := range dotImportTypes(filename, file) {
 		names[n] = true
 	}
+
 	ast.Inspect(file, func(n ast.Node) bool {
 		if call, ok := n.(*ast.CallExpr); ok && len(call.Args) == 1 && !call.Ellipsis.IsValid() && !hasSelector(call.Fun) && typeLikeFun(call.Fun, names) {
 			found = true
@@ -122,6 +126,7 @@ func mayConvert(filename string, file *ast.File) (found bool) {
 
 		return !found
 	})
+
 	return
 }
 
@@ -144,6 +149,7 @@ func unconvert(fset *token.FileSet, file *ast.File, info *types.Info) *ast.File 
 		}
 
 		arg := call.Args[0]
+
 		av := info.Types[arg]
 		if target := info.Types[call.Fun].Type; av.Type == nil || av.Value != nil || isUntyped(av.Type) || !types.Identical(target, av.Type) {
 			return true
@@ -153,6 +159,7 @@ func unconvert(fset *token.FileSet, file *ast.File, info *types.Info) *ast.File 
 
 		return true
 	})
+
 	if len(repl) == 0 {
 		return file
 	}

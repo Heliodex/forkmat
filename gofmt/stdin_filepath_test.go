@@ -21,6 +21,7 @@ func formatStdinAs(t *testing.T, path, src string) string {
 	s.Add(0, func(r *reporter) error {
 		return processFile(path, nil, strings.NewReader(src), r)
 	})
+
 	if code := s.GetExitCode(); code != 0 {
 		t.Fatalf("exit code %d: %s", code, errBuf.String())
 	}
@@ -45,6 +46,7 @@ func TestStdinFilepathUsesThePackageOnDisk(t *testing.T) {
 	dir := t.TempDir()
 	must := func(err error) {
 		t.Helper()
+
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -53,6 +55,7 @@ func TestStdinFilepathUsesThePackageOnDisk(t *testing.T) {
 	must(os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/m\n\ngo 1.27\n"), 0o644))
 	must(os.WriteFile(filepath.Join(dir, "b.go"), []byte("package p\n\ntype Source struct {\n\tId uint32\n}\n"), 0o644))
 	must(os.WriteFile(filepath.Join(dir, "a.go"), []byte("package p\n"), 0o644))
+
 	if got := formatStdinAs(t, filepath.Join(dir, "a.go"), buffer); got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}

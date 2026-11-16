@@ -124,6 +124,7 @@ func capturedIn(n ast.Node, names []string) (found bool) {
 	for _, name := range names {
 		set[name] = true
 	}
+
 	ast.Inspect(n, func(m ast.Node) bool {
 		switch x := m.(type) {
 		case *ast.FuncLit:
@@ -142,6 +143,7 @@ func capturedIn(n ast.Node, names []string) (found bool) {
 
 		return !found
 	})
+
 	return
 }
 
@@ -261,6 +263,7 @@ func declaresUsedBy(prev, next ast.Stmt) bool {
 
 		return !used
 	})
+
 	return used
 }
 
@@ -309,6 +312,7 @@ func hasCompositeLit(x ast.Expr) (found bool) {
 
 		return !found
 	})
+
 	return
 }
 
@@ -545,6 +549,7 @@ func SortCaseList(list []ast.Expr) []ast.Expr {
 	slices.SortStableFunc(out, func(a, b ast.Expr) int {
 		return compareMapKeys(keys[a], keys[b])
 	})
+
 	return out
 }
 
@@ -574,6 +579,7 @@ func onlyUsedIn(list []ast.Stmt, i int, scope ast.Node) bool {
 
 			return !outside
 		})
+
 		if outside {
 			return false
 		}
@@ -782,15 +788,6 @@ func (p *printer) blankStmt(s ast.Stmt) bool {
 	return false
 }
 
-// wantsBlank reports whether StrictLayout puts a blank line before next, the statement numbered k, which follows prev: the blank line that Config.StmtBlank gives it, if any, and otherwise the one blankLineBetween gives.
-func (p *printer) wantsBlank(k int, prev, next ast.Stmt) bool {
-	if blank, ok := p.StmtBlank[k]; ok {
-		return blank
-	}
-
-	return p.blankLineBetween(prev, next)
-}
-
 // blankLineBetween reports whether StrictLayout puts a blank line between two adjacent statements.
 func (p *printer) blankLineBetween(prev, next ast.Stmt) bool {
 	// A run of go and defer statements is set off from the statements around it, but its members are not separated from each other.
@@ -888,6 +885,7 @@ func (p *printer) mergeVarSpecs(d *ast.GenDecl) *ast.GenDecl {
 					Type: vs.Type,
 				}
 				merged = true
+
 				continue
 			}
 		}
@@ -931,6 +929,7 @@ func (p *printer) strictFields(list []*ast.Field) []*ast.Field {
 				Type: f.Type,
 				Comment: f.Comment,
 			}
+
 			continue
 		}
 
@@ -951,6 +950,7 @@ func (p *printer) strictFitsOneLine(x *ast.CompositeLit) bool {
 	}
 
 	size := 2 // the braces
+
 	if x.Type != nil {
 		n := p.nodeSize(x.Type, strictMaxSize)
 		if n > strictMaxSize {
@@ -993,6 +993,7 @@ func (p *printer) strictParenExpr(x *ast.ParenExpr, prec1, depth int) {
 		p.expr1(inner, prec1, depth)
 		return
 	}
+
 	p.print(token.LPAREN)
 	p.expr0(inner, reduceDepth(depth))
 	p.setPos(x.Rparen)
@@ -1036,6 +1037,15 @@ func (p *printer) typeBlockPos(before token.Pos, first *ast.GenDecl) token.Pos {
 	return token.Pos(int(anchor) - col) // the newline that ends the line above
 }
 
+// wantsBlank reports whether StrictLayout puts a blank line before next, the statement numbered k, which follows prev: the blank line that Config.StmtBlank gives it, if any, and otherwise the one blankLineBetween gives.
+func (p *printer) wantsBlank(k int, prev, next ast.Stmt) bool {
+	if blank, ok := p.StmtBlank[k]; ok {
+		return blank
+	}
+
+	return p.blankLineBetween(prev, next)
+}
+
 // pureValue reports whether evaluating e has no side effects: it has no call, other than a conversion to a predeclared type, make or new, no receive, and no function literal.
 func pureValue(e ast.Expr) bool {
 	pure := true
@@ -1056,6 +1066,7 @@ func pureValue(e ast.Expr) bool {
 
 		return pure
 	})
+
 	return pure
 }
 
@@ -1101,6 +1112,7 @@ func (p *printer) strictSortedMapElts(x *ast.CompositeLit) []ast.Expr {
 	if !literal {
 		return x.Elts
 	}
+
 	slices.SortStableFunc(elts, func(a, b keyed) int {
 		return compareMapKeys(mapKey{a.rank, a.key}, mapKey{b.rank, b.key})
 	})
@@ -1196,6 +1208,7 @@ func (p *printer) strictShortVars(list []ast.Stmt) (out []ast.Stmt) {
 				pending = append(pending, sp)
 				continue
 			}
+
 			flush()
 
 			lhs := make([]ast.Expr, len(vs.Names))
@@ -1211,6 +1224,7 @@ func (p *printer) strictShortVars(list []ast.Stmt) (out []ast.Stmt) {
 				Rhs: vs.Values,
 			})
 		}
+
 		flush()
 	}
 
@@ -1257,6 +1271,7 @@ func (p *printer) strictImportSpecs(d *ast.GenDecl) []ast.Spec {
 
 		return strings.Compare(name(sa), name(sb))
 	})
+
 	return specs
 }
 
@@ -1354,6 +1369,7 @@ func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode, 
 			if i > 0 {
 				p.print(token.COMMA, blank)
 			}
+
 			p.expr0(x, depth)
 		}
 
@@ -1377,6 +1393,7 @@ func (p *printer) strictExprList(list []ast.Expr, depth int, mode exprListMode, 
 
 			ws = ignore
 		}
+
 		p.expr0(x, depth)
 	}
 
@@ -1411,6 +1428,7 @@ func usesIota(d *ast.GenDecl) (found bool) {
 
 		return !found
 	})
+
 	return
 }
 

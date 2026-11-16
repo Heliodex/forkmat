@@ -89,6 +89,7 @@ func formatDocComment(list []*ast.Comment) []*ast.Comment {
 				directives = append(directives, c)
 				continue
 			}
+
 			b.WriteString(strings.TrimPrefix(after, " "))
 			b.WriteString("\n")
 		}

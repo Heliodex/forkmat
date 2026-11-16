@@ -16,6 +16,7 @@ func incDecOps(t *testing.T, src string) (out []string) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+
 	incDecStmts(file)
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch s := n.(type) {
@@ -27,6 +28,7 @@ func incDecOps(t *testing.T, src string) (out []string) {
 
 		return true
 	})
+
 	return
 }
 

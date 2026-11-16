@@ -237,6 +237,7 @@ func indexConsts(files []*ast.File) map[string]int {
 // likelyName reports whether a package imported as path is probably referred to as name, when the import has no name of its own: its last element, skipping a major version such as v2.
 func likelyName(path, name string) bool {
 	elems := strings.Split(path, "/")
+
 	last := elems[len(elems)-1]
 	if len(elems) > 1 && len(last) > 1 && last[0] == 'v' && strings.Trim(last[1:], "0123456789") == "" {
 		last = elems[len(elems)-2]
@@ -262,6 +263,7 @@ func orderedSibling(path string) *ast.File {
 
 		fset := token.NewFileSet()
 		out := reorderedSource(fset, path, src)
+
 		f, err := parser.ParseFile(fset, path, out, parser.ParseComments)
 		if err != nil {
 			return nil
@@ -284,6 +286,7 @@ func orderedTarget(filename string, src []byte) *ast.File {
 
 	fset := token.NewFileSet()
 	out := reorderedSource(fset, filename, src)
+
 	f, err := parser.ParseFile(fset, filename, out, parser.ParseComments)
 	if err != nil {
 		return nil
@@ -444,6 +447,7 @@ func (placeholderImporter) Import(path string) (*types.Package, error) {
 	pkg := types.NewPackage(path, path[strings.LastIndex(path, "/")+1:])
 
 	pkg.MarkComplete()
+
 	return pkg, nil
 }
 
@@ -537,6 +541,7 @@ func reorderTypeSwitchCases(body *ast.BlockStmt, types map[string]ast.Expr, comm
 		}
 
 		keys[c] = key
+
 		slots = append(slots, i)
 	}
 
@@ -555,6 +560,7 @@ func reorderTypeSwitchCases(body *ast.BlockStmt, types map[string]ast.Expr, comm
 	for k, i := range slots {
 		clauses[k] = body.List[i].(*ast.CaseClause)
 	}
+
 	slices.SortStableFunc(clauses, func(a, b *ast.CaseClause) int {
 		return strings.Compare(keys[a], keys[b])
 	})
@@ -748,6 +754,7 @@ func reorderSwitchCases(body *ast.BlockStmt, env *switchEnv, scope ast.Node, com
 		}
 
 		keys[c] = key
+
 		slots = append(slots, i)
 	}
 
@@ -761,6 +768,7 @@ func reorderSwitchCases(body *ast.BlockStmt, env *switchEnv, scope ast.Node, com
 	for k, i := range slots {
 		clauses[k] = body.List[i].(*ast.CaseClause)
 	}
+
 	slices.SortStableFunc(clauses, func(a, b *ast.CaseClause) int {
 		return keys[a] - keys[b]
 	})

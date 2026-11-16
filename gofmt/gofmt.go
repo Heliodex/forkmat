@@ -115,7 +115,6 @@ func fileWeight(path string, info fs.FileInfo) int64 {
 		var err error
 
 		info, err = os.Stat(path)
-
 		if err != nil {
 			return exclusive
 		}
@@ -149,6 +148,7 @@ func isGoFilename(name string) bool {
 // newSequencer returns a sequencer that allows concurrent tasks up to maxWeight and writes tasks' output to out and err.
 func newSequencer(maxWeight int64, out, err io.Writer) *sequencer {
 	sem := semaphore.NewWeighted(maxWeight)
+
 	prev := make(chan *reporterState, 1)
 	prev <- &reporterState{
 		out: out,
@@ -166,6 +166,7 @@ func newSequencer(maxWeight int64, out, err io.Writer) *sequencer {
 func readFile(filename string, info fs.FileInfo, in io.Reader) ([]byte, error) {
 	if in == nil {
 		fdSem <- true
+
 		var err error
 
 		f, err := os.Open(filename)
@@ -260,6 +261,7 @@ func (r *reporter) Warnf(format string, args ...any) {
 // formatSource returns src, the source of filename, formatted as the options ask. fromDisk says that src is the file as it is on disk, whose reordered form may be shared (see reorderedSource). fragmentOk accepts a program fragment, and r reports warnings.
 func formatSource(filename string, src []byte, fragmentOk, fromDisk bool, r *reporter) ([]byte, error) {
 	fileSet := token.NewFileSet()
+
 	file, sourceAdj, indentAdj, err := parse(fileSet, filename, src, fragmentOk)
 	if err != nil {
 		return nil, err
@@ -267,6 +269,7 @@ func formatSource(filename string, src []byte, fragmentOk, fromDisk bool, r *rep
 
 	// a generated file keeps the layout its generator wrote, so the fork's passes and the strict layout leave it alone (see generated.go)
 	generated := sourceAdj == nil && isGenerated(file)
+
 	rewritable := sourceAdj == nil && !generated
 	if suite := enabledSuite(); len(suite) > 0 && rewritable {
 		// -modernise and -vetfix apply the fixes of their analyzers to the source, and the file is parsed again from the result (see modernise.go)
@@ -399,7 +402,9 @@ func formatSource(filename string, src []byte, fragmentOk, fromDisk bool, r *rep
 			r.Warnf("warning: rewrite ignored for incomplete programs\n")
 		}
 	}
+
 	ast.SortImports(fileSet, file)
+
 	if *simplifyAST {
 		simplify(file)
 	}
@@ -463,7 +468,6 @@ func backupFile(filename string, data []byte, perm fs.FileMode) (string, error) 
 		var err error
 
 		f, err = os.OpenFile(bakname, os.O_RDWR|os.O_CREATE|os.O_EXCL, perm)
-
 		if err == nil {
 			break
 		}
@@ -517,6 +521,7 @@ func (s *sequencer) Add(weight int64, f func(*reporter) error) {
 		}
 
 		next <- r.getState() // Release the next task.
+
 		s.sem.Release(weight)
 	}()
 }
@@ -537,6 +542,7 @@ func (s *sequencer) GetExitCode() int {
 
 		return nil
 	})
+
 	return <-c
 }
 
@@ -571,6 +577,7 @@ func writeFile(filename string, orig, formatted []byte, perm fs.FileMode) error 
 	restoreFail := func(err error) {
 		fmt.Fprintf(os.Stderr, "gofmt: %s: error restoring file to original: %v; backup in %s\n", filename, err, bakname)
 	}
+
 	n, err := fout.Write(formatted)
 	if err == nil {
 		err = fout.Truncate(int64(n))
@@ -578,7 +585,6 @@ func writeFile(filename string, orig, formatted []byte, perm fs.FileMode) error 
 
 	if err != nil {
 		// Rewriting the file failed.
-
 		if n == 0 {
 			// Original file unchanged.
 			os.Remove(bakname)
@@ -586,7 +592,6 @@ func writeFile(filename string, orig, formatted []byte, perm fs.FileMode) error 
 		}
 
 		// Try to restore the original contents.
-
 		no, erro := fout.WriteAt(orig, 0)
 		if erro != nil {
 			// That failed too.
@@ -609,6 +614,7 @@ func writeFile(filename string, orig, formatted []byte, perm fs.FileMode) error 
 
 		// Original contents restored.
 		os.Remove(bakname)
+
 		return err
 	}
 
@@ -619,6 +625,7 @@ func writeFile(filename string, orig, formatted []byte, perm fs.FileMode) error 
 
 	// File updated.
 	os.Remove(bakname)
+
 	return nil
 }
 
@@ -631,6 +638,7 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 
 	// If we are formatting stdin, we accept a program fragment in lieu of a complete source file.
 	fragmentOk := info == nil
+
 	res, err := formatSource(filename, src, fragmentOk, info != nil, r)
 	if err != nil {
 		return err
@@ -670,6 +678,7 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 			oldName := newName + ".orig"
 
 			r.Write(diff.Diff(oldName, src, newName, res))
+
 			return errFormattingDiffers
 		}
 	}
@@ -687,6 +696,7 @@ func gofmtMain(s *sequencer) {
 	flag.Usage = usage
 
 	flag.Parse()
+
 	if *allFlag {
 		*strict = true
 		*moderniseFlag = true
@@ -702,6 +712,7 @@ func gofmtMain(s *sequencer) {
 		*mergeCasesFlag = true
 		*omitCasesFlag = true
 	}
+
 	if *wslFlag {
 		// -wsl lays out the statements that -strict lays out
 		*strict = true
@@ -709,12 +720,14 @@ func gofmtMain(s *sequencer) {
 
 	counter.Inc("gofmt/invocations")
 	counter.CountFlags("gofmt/flag:", *flag.CommandLine)
+
 	if *strict {
 		printerMode |= printer.StrictLayout
 	}
 
 	if *cpuprofile != "" {
 		fdSem <- true
+
 		f, err := os.Create(*cpuprofile)
 		if err != nil {
 			s.AddReport(fmt.Errorf("creating cpu profile: %s", err))
@@ -730,6 +743,7 @@ func gofmtMain(s *sequencer) {
 
 		defer pprof.StopCPUProfile()
 	}
+
 	initParserMode()
 	initRewrite()
 
@@ -745,9 +759,11 @@ func gofmtMain(s *sequencer) {
 			s.AddReport(fmt.Errorf("error: cannot use -w with -stdin-filepath"))
 			return
 		}
+
 		s.Add(0, func(r *reporter) error {
 			return processFile(*stdinFilepath, nil, os.Stdin, r)
 		})
+
 		return
 	}
 
@@ -756,9 +772,11 @@ func gofmtMain(s *sequencer) {
 			s.AddReport(fmt.Errorf("error: cannot use -w with standard input"))
 			return
 		}
+
 		s.Add(0, func(r *reporter) error {
 			return processFile("<standard input>", nil, os.Stdin, r)
 		})
+
 		return
 	}
 
@@ -780,9 +798,11 @@ func gofmtMain(s *sequencer) {
 			if err != nil {
 				return err
 			}
+
 			s.Add(fileWeight(path, info), func(r *reporter) error {
 				return processFile(path, info, nil, r)
 			})
+
 			return nil
 		}); err != nil {
 			s.AddReport(err)

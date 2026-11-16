@@ -21,7 +21,11 @@ var (
 )
 
 func testprint(out io.Writer, node ast.Node) {
-	if err := (&Config{Mode: TabIndent | UseSpaces | normalizeNumbers, Tabwidth: 8, Indent: 0}).Fprint(out, fset, node); err != nil {
+	if err := (&Config{
+		Mode: TabIndent | UseSpaces | normalizeNumbers,
+		Tabwidth: 8,
+		Indent: 0,
+	}).Fprint(out, fset, node); err != nil {
 		log.Fatalf("print error: %s", err)
 	}
 }
@@ -43,6 +47,7 @@ func initialize() {
 	var buf bytes.Buffer
 
 	testprint(&buf, file)
+
 	if !bytes.Equal(buf.Bytes(), src) {
 		log.Fatalf("print error: %s not idempotent", filename)
 	}
@@ -57,6 +62,7 @@ func initialize() {
 		if decl, ok := decl.(*ast.GenDecl); ok && decl.Tok == token.VAR {
 			declNode = decl
 			declSize = int64(fset.Position(decl.End()).Offset - fset.Position(decl.Pos()).Offset)
+
 			break
 		}
 	}
@@ -66,8 +72,10 @@ func BenchmarkPrintDecl(b *testing.B) {
 	if declNode == nil {
 		initialize()
 	}
+
 	b.ReportAllocs()
 	b.SetBytes(declSize)
+
 	for b.Loop() {
 		testprint(io.Discard, declNode)
 	}
@@ -77,8 +85,10 @@ func BenchmarkPrintFile(b *testing.B) {
 	if fileNode == nil {
 		initialize()
 	}
+
 	b.ReportAllocs()
 	b.SetBytes(fileSize)
+
 	for b.Loop() {
 		testprint(io.Discard, fileNode)
 	}

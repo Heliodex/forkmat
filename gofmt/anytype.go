@@ -62,6 +62,7 @@ func anyTypes(file *ast.File) {
 
 		return true
 	})
+
 	if len(repl) == 0 {
 		return
 	}

@@ -102,6 +102,7 @@ func (s simplifier) Visit(node ast.Node) ast.Visitor {
 					x = t.Value
 					px = &t.Value
 				}
+
 				s.simplifyLiteral(typ, eltType, x, px)
 			}
 
@@ -142,7 +143,6 @@ func (s simplifier) Visit(node ast.Node) ast.Visitor {
 		//       x, y, z := b[0:2], b[2:4], b[4:6]
 		// An example where it does not:
 		//       x, y := b[:n], b[n:]
-
 	case *ast.RangeStmt:
 		// - a range of the form: for x, _ = range v {...}
 		// can be simplified to: for x = range v {...}

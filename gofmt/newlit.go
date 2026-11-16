@@ -21,6 +21,7 @@ func headerCalls(file *ast.File) map[*ast.CallExpr]bool {
 		if n == nil {
 			return
 		}
+
 		ast.Inspect(n, func(n ast.Node) bool {
 			if c, ok := n.(*ast.CallExpr); ok {
 				calls[c] = true
@@ -51,6 +52,7 @@ func headerCalls(file *ast.File) map[*ast.CallExpr]bool {
 
 		return true
 	})
+
 	return calls
 }
 
@@ -72,6 +74,7 @@ func structNew(c *ast.CallExpr, info *types.Info) (ast.Expr, bool) {
 	}
 
 	arg := c.Args[0]
+
 	tv, ok := info.Types[arg]
 	if !ok || !tv.IsType() {
 		return nil, false
@@ -99,6 +102,7 @@ func newLiterals(file *ast.File, typesOf func() *types.Info) {
 
 		return true
 	})
+
 	if len(cands) == 0 {
 		return
 	}

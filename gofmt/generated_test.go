@@ -66,6 +66,7 @@ func TestGeneratedFileIsNotRewritten(t *testing.T) {
 			s.Add(fileWeight(name, info), func(r *reporter) error {
 				return processFile(name, info, nil, r)
 			})
+
 			if s.GetExitCode() != 0 {
 				t.Fatalf("exit code %d: %s", s.GetExitCode(), errBuf.String())
 			}

@@ -191,6 +191,7 @@ func mentions(n ast.Node, names map[string]bool) bool {
 
 		return !found
 	})
+
 	return found
 }
 
@@ -233,6 +234,7 @@ func flattenSwitch(list *[]ast.Stmt, s ast.Stmt, body *ast.BlockStmt, names map[
 
 	l := *list
 	n := len(l)
+
 	body.List = append(append([]ast.Stmt{}, body.List[:def]...), body.List[def+1:]...)
 	*list = append(append([]ast.Stmt{}, l[:n-1]...), s)
 	*list = append(*list, dc.Body...)
@@ -243,6 +245,7 @@ func flattenSwitch(list *[]ast.Stmt, s ast.Stmt, body *ast.BlockStmt, names map[
 // flattenList moves the final branch out of the last statement of list, if it can. It reports whether it did, so that the statement now moved out may be flattened in turn.
 func flattenList(list *[]ast.Stmt, comments []*ast.CommentGroup) bool {
 	l := *list
+
 	n := len(l)
 	if n == 0 {
 		return false
@@ -256,6 +259,7 @@ func flattenList(list *[]ast.Stmt, comments []*ast.CommentGroup) bool {
 		}
 
 		owner.Else = nil
+
 		*list = append(append([]ast.Stmt{}, l[:n-1]...), s)
 		*list = append(*list, final.List...)
 
@@ -309,6 +313,7 @@ func flatten(file *ast.File, comments []*ast.CommentGroup) {
 
 		return true
 	})
+
 	for _, list := range slices.Backward(lists) {
 		for flattenList(list, comments) {
 		}

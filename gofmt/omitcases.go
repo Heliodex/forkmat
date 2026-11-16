@@ -81,6 +81,7 @@ func omitClauses(fset *token.FileSet, body *ast.BlockStmt, names map[string]bool
 
 			body.List = append(append([]ast.Stmt{}, body.List[:i]...), body.List[i+1:]...)
 			changed = true
+
 			break
 		}
 	}
@@ -102,6 +103,7 @@ func omitInList(fset *token.FileSet, list []ast.Stmt, comments []*ast.CommentGro
 			for name := range bindName(s) {
 				names[name] = true
 			}
+
 			omitClauses(fset, s.Body, names, rest, comments)
 		}
 	}
@@ -133,6 +135,7 @@ func omitCases(fset *token.FileSet, file *ast.File, comments []*ast.CommentGroup
 
 		return true
 	})
+
 	for _, list := range lists {
 		omitInList(fset, *list, comments)
 	}

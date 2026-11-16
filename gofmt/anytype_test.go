@@ -17,6 +17,7 @@ func anyText(t *testing.T, src string) string {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+
 	anyTypes(file)
 
 	var out []string
@@ -33,6 +34,7 @@ func anyText(t *testing.T, src string) string {
 
 		return true
 	})
+
 	return strings.Join(out, ",")
 }
 

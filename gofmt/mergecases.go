@@ -64,6 +64,7 @@ func printList(fset *token.FileSet, list []ast.Stmt) string {
 		if err := cfg.Fprint(&buf, fset, s); err != nil {
 			return "\x00" // never equal to another body
 		}
+
 		buf.WriteByte('\n')
 	}
 

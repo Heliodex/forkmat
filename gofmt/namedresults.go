@@ -37,6 +37,7 @@ func hasDefer(body *ast.BlockStmt) (found bool) {
 
 		return !found
 	})
+
 	return
 }
 
@@ -101,6 +102,7 @@ func redeclares(body *ast.BlockStmt, name string, own map[*ast.ValueSpec]bool) (
 
 		return !found
 	})
+
 	return
 }
 
@@ -261,6 +263,7 @@ func namedResults(fset *token.FileSet, file *ast.File) {
 		funcs []*ast.FuncType
 		bodies []*ast.BlockStmt
 	)
+
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.FuncDecl:
@@ -275,6 +278,7 @@ func namedResults(fset *token.FileSet, file *ast.File) {
 
 		return true
 	})
+
 	for i := range funcs {
 		nameResults(fset, file.Comments, funcs[i], bodies[i])
 	}

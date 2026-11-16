@@ -130,6 +130,7 @@ func alphabeticalOrder(run []unit, deps, comps [][]int) (order []int) {
 	type edge struct {
 		from, to int
 	}
+
 	compOf := make([]int, len(run))
 
 	for c, members := range comps {
@@ -277,6 +278,7 @@ func components(deps [][]int) [][]int {
 	connect = func(t int) {
 		num[t], low[t] = counter, counter
 		counter++
+
 		stack = append(stack, t)
 		onStack[t] = true
 
@@ -303,6 +305,7 @@ func components(deps [][]int) [][]int {
 					break
 				}
 			}
+
 			sort.Ints(comp)
 
 			comps = append(comps, comp)
@@ -606,6 +609,7 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 	}
 
 	var m int // index of the first declaration after the imports
+
 	for ; m < len(decls); m++ {
 		g, ok := decls[m].(*ast.GenDecl)
 		if !ok || g.Tok != token.IMPORT {
@@ -721,6 +725,7 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 				if bad[j] {
 					bad[i] = true
 					changed = true
+
 					break
 				}
 			}
@@ -828,6 +833,7 @@ func pureExpr(n ast.Node, funcLitOK bool) bool {
 
 		return pure
 	})
+
 	return pure
 }
 
@@ -927,7 +933,9 @@ func references(n ast.Node, byName map[string]int, byObj map[any]int) []int {
 			if _, isName := x.Key.(*ast.Ident); !isName {
 				ast.Inspect(x.Key, visit)
 			}
+
 			ast.Inspect(x.Value, visit)
+
 			return false
 		case *ast.LabeledStmt:
 			ast.Inspect(x.Stmt, visit)
@@ -941,6 +949,7 @@ func references(n ast.Node, byName map[string]int, byObj map[any]int) []int {
 	}
 
 	ast.Inspect(n, visit)
+
 	return out
 }
 
@@ -948,6 +957,7 @@ func references(n ast.Node, byName map[string]int, byObj map[any]int) []int {
 func dependencyOrder(run []unit) []int {
 	byName := map[string]int{} // for names that are not resolved
 	byObj := map[any]int{} // for names resolved to a unit's declaration
+
 	for t, u := range run {
 		for _, n := range u.names {
 			byName[n] = t
@@ -983,6 +993,7 @@ func dependencyOrder(run []unit) []int {
 				deps[t] = append(deps[t], v)
 			}
 		}
+
 		sort.Ints(deps[t])
 	}
 
@@ -1057,6 +1068,7 @@ func reorderAssignRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	sort.Slice(edits, func(i, j int) bool {
 		return edits[i].start < edits[j].start
 	})
+
 	return applyEdits(src, edits)
 }
 
@@ -1069,6 +1081,7 @@ func selectorNames(n ast.Node) (out []string) {
 
 		return true
 	})
+
 	return
 }
 
@@ -1166,7 +1179,6 @@ func specRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bo
 	}
 
 	var (
-
 		// one unit per spec. text is what the unit prints as: the lines that lead into it, then a single declaration of the spec.
 		run []unit
 		texts [][]byte
@@ -1183,6 +1195,7 @@ func specRunEdit(l layout, file *ast.File, decls []ast.Decl, i, j int) (edit, bo
 			run = append(run, specUnit(g.Tok, sp))
 			texts = append(texts, specText(src, cut, g.TokPos, sp, keyword, l))
 			cut = l.lineEnd(l.off(g.End()))
+
 			continue
 		}
 
@@ -1462,6 +1475,7 @@ func usesIota(d ast.Node) (found bool) {
 
 		return !found
 	})
+
 	return
 }
 
@@ -1560,6 +1574,7 @@ func reorderSource(fset *token.FileSet, filename string, src []byte) ([]byte, *a
 		reorderAssignRuns,
 		reorderBlockDecls,
 	}
+
 	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
 	if err != nil {
 		return src, nil

@@ -15,10 +15,12 @@ func emptyText(t *testing.T, src string) string {
 	t.Helper()
 
 	fset := token.NewFileSet()
+
 	file, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+
 	emptySlices(file)
 
 	var buf bytes.Buffer

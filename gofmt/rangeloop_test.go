@@ -31,10 +31,12 @@ func TestRangeLoopsNeedGo122(t *testing.T) {
 
 		name := filepath.Join(dir, "x.go")
 		fset := token.NewFileSet()
+
 		file, err := parser.ParseFile(fset, name, src, parser.ParseComments)
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		rangeLoops(name, file, file.Comments, func() *types.Info {
 			return checkTypes(fset, file)
 		})
@@ -57,10 +59,12 @@ func rangeText(t *testing.T, src string) string {
 	t.Helper()
 
 	fset := token.NewFileSet()
+
 	file, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+
 	rangeLoops("x.go", file, file.Comments, func() *types.Info {
 		return checkTypes(fset, file)
 	})

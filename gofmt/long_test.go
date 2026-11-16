@@ -40,6 +40,7 @@ func genFilenames(t *testing.T, filenames chan<- string) {
 		// don't descend into testdata directories
 		if !d.IsDir() && isGoFilename(d.Name()) && !strings.Contains(filepath.ToSlash(filename), "/testdata/") {
 			filenames <- filename
+
 			nfiles++
 		}
 
@@ -62,6 +63,7 @@ func genFilenames(t *testing.T, filenames chan<- string) {
 	if goroot == "" {
 		goroot = testenv.GOROOT(t)
 	}
+
 	filepath.WalkDir(goroot, handleFile)
 }
 
@@ -70,8 +72,10 @@ func gofmt(fset *token.FileSet, filename string, src *bytes.Buffer) error {
 	if err != nil {
 		return err
 	}
+
 	ast.SortImports(fset, f)
 	src.Reset()
+
 	return (&printer.Config{
 		Mode: printerMode,
 		Tabwidth: tabWidth,
@@ -92,6 +96,7 @@ func testFile(t *testing.T, b1, b2 *bytes.Buffer, filename string) {
 	_, err = io.Copy(b1, f)
 
 	f.Close()
+
 	if err != nil {
 		t.Error(err)
 		return
@@ -131,6 +136,7 @@ func testFile(t *testing.T, b1, b2 *bytes.Buffer, filename string) {
 			t.Log("known gofmt idempotency bug (Issue #24472)")
 			return
 		}
+
 		t.Errorf("gofmt %s not idempotent", filename)
 	}
 }

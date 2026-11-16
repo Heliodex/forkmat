@@ -52,10 +52,12 @@ func TestCaseListOrder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			src := "package p\n\nfunc f(k any) {\n" + tt.switchSrc + "\n}\n"
+
 			file, err := parser.ParseFile(token.NewFileSet(), "x.go", src, parser.ParseComments|parser.SkipObjectResolution)
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
+
 			caseListOrder(file)
 
 			var got []string
@@ -69,6 +71,7 @@ func TestCaseListOrder(t *testing.T) {
 
 				return true
 			})
+
 			if g := strings.Join(got, ","); g != tt.want {
 				t.Errorf("list = %q, want %q", g, tt.want)
 			}

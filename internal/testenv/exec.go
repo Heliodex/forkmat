@@ -26,7 +26,6 @@ var (
 		// ios has an exec syscall but on real iOS devices it might return a permission error. In an emulated environment (such as a Corellium host) it might succeed, so if we need to exec we'll just have to try it and find out.
 		//
 		// As of 2023-04-19 wasip1 and js don't have exec syscalls at all, but we may as well use the same path so that this branch can be tested without an ios environment.
-
 		if !testing.Testing() {
 			// This isn't a standard 'go test' binary, so we don't know how to self-exec in a way that should succeed without side effects. Just forget it.
 			return errors.New("can't probe for exec support with a non-test executable")
@@ -86,6 +85,7 @@ func MustHaveExec(t testing.TB) {
 		if t == nil {
 			panic(msg)
 		}
+
 		t.Helper()
 		t.Skip("skipping test:", msg)
 	}
@@ -100,6 +100,7 @@ func MustHaveExec(t testing.TB) {
 func CommandContext(t testing.TB, ctx context.Context, name string, args ...string) *exec.Cmd {
 	t.Helper()
 	MustHaveExec(t)
+
 	var (
 		cancelCtx context.CancelFunc
 		gracePeriod time.Duration // unlimited unless the test has a deadline (to allow for interactive debugging)
@@ -163,6 +164,7 @@ func CommandContext(t testing.TB, ctx context.Context, name string, args ...stri
 			t.Errorf("command was started, but test did not wait for it to complete: %v", cmd)
 		}
 	})
+
 	return cmd
 }
 
@@ -183,6 +185,7 @@ func Executable(t testing.TB) string {
 		if t == nil {
 			panic(msg)
 		}
+
 		t.Fatal(msg)
 	}
 

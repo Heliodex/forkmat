@@ -110,8 +110,8 @@ func parse(fset *token.FileSet, filename string, src []byte, fragmentOk bool) (f
 
 	// If this is a declaration list, make it a source file by inserting a package clause. Insert using a ';', not a newline, so that the line numbers in psrc match the ones in src.
 	psrc := append([]byte("package p;"), src...)
-	file, err = parser.ParseFile(fset, filename, psrc, parserMode)
 
+	file, err = parser.ParseFile(fset, filename, psrc, parserMode)
 	if err == nil {
 		sourceAdj = func(src []byte, indent int) []byte {
 			// Remove the package clause. Gofmt has turned the ';' into a '\n'.
@@ -130,8 +130,8 @@ func parse(fset *token.FileSet, filename string, src []byte, fragmentOk bool) (f
 
 	// If this is a statement list, make it a source file by inserting a package clause and turning the list into a function body. This handles expressions too. Insert using a ';', not a newline, so that the line numbers in fsrc match the ones in src. Add an extra '\n' before the '}' to make sure comments are flushed before the '}'.
 	fsrc := append(append([]byte("package p; func _() {"), src...), '\n', '\n', '}')
-	file, err = parser.ParseFile(fset, filename, fsrc, parserMode)
 
+	file, err = parser.ParseFile(fset, filename, fsrc, parserMode)
 	if err == nil {
 		sourceAdj = func(src []byte, indent int) []byte {
 			// Cap adjusted indent to zero.

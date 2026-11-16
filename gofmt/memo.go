@@ -33,5 +33,6 @@ func (c *memo[K, V]) get(key K, compute func() V) V {
 	e.once.Do(func() {
 		e.v = compute()
 	})
+
 	return e.v
 }

@@ -311,11 +311,33 @@ func (p *printer) containsLinebreak() bool {
 	return false
 }
 
+// writeString writes the string s to p.output and updates p.pos, p.out, and p.last. If isLit is set, s is escaped w/ tabwriter.Escape characters to protect s from being interpreted by the tabwriter.
+//
+// Note: writeString is only used to write Go tokens, literals, and comments, all of which must be written literally. Thus, it is correct to always set isLit = true. However, setting it explicitly only when needed (i.e., when we don't know that s contains no tabs or line breaks) avoids processing extra escape characters and reduces run time of the printer benchmark by up to 10%.
+// dropPendingBreak ignores the first line break among the first n pending white spaces, which follow a comment whose line end is written. Other white space before it is kept.
+func (p *printer) dropPendingBreak(n int) {
+	p.lineEnded = false
+
+	for i := range n {
+		switch p.wsbuf[i] {
+		case blank, ignore, indent, unindent, vtab:
+			continue
+		case formfeed, newline:
+			p.wsbuf[i] = ignore
+
+			return
+		}
+
+		return
+	}
+}
+
 func (p *printer) free() {
 	// Hard limit on buffer size; see https://golang.org/issue/23199.
 	if cap(p.output) > 64<<10 {
 		return
 	}
+
 	printerPool.Put(p)
 }
 
@@ -373,6 +395,11 @@ func (p *printer) posFor(pos token.Pos) token.Position {
 	)
 }
 
+// leadsBlankStmt reports whether the comment at pos comes before the statement that a blank line sets off under StrictLayout, so that the blank goes with the comments before it. A comment inside the statement is not leading.
+func (p *printer) leadsBlankStmt(pos token.Position) bool {
+	return p.strict() && p.blankBefore.IsValid() && pos.Offset < p.posFor(p.blankBefore).Offset
+}
+
 func (p *printer) nextComment() {
 	for p.cindex < len(p.comments) {
 		c := p.comments[p.cindex]
@@ -405,6 +432,7 @@ func (p *printer) commentSizeBefore(next token.Position) int {
 		for _, c := range p.comment.List {
 			size += len(c.Text)
 		}
+
 		p.nextComment()
 	}
 
@@ -426,6 +454,7 @@ func (p *printer) setPos(pos token.Pos) {
 func (p *printer) writeIndent() {
 	// use "hard" htabs - indentation columns must not be discarded by the tabwriter
 	n := p.Config.Indent + p.indent // include base indentation
+
 	for range n {
 		p.output = append(p.output, '\t')
 	}
@@ -496,27 +525,6 @@ func (p *printer) writeLineDirective(pos token.Position) {
 	}
 }
 
-// writeString writes the string s to p.output and updates p.pos, p.out, and p.last. If isLit is set, s is escaped w/ tabwriter.Escape characters to protect s from being interpreted by the tabwriter.
-//
-// Note: writeString is only used to write Go tokens, literals, and comments, all of which must be written literally. Thus, it is correct to always set isLit = true. However, setting it explicitly only when needed (i.e., when we don't know that s contains no tabs or line breaks) avoids processing extra escape characters and reduces run time of the printer benchmark by up to 10%.
-// dropPendingBreak ignores the first line break among the first n pending white spaces, which follow a comment whose line end is written. Other white space before it is kept.
-func (p *printer) dropPendingBreak(n int) {
-	p.lineEnded = false
-
-	for i := range n {
-		switch p.wsbuf[i] {
-		case formfeed, newline:
-			p.wsbuf[i] = ignore
-
-			return
-		case blank, vtab, ignore, indent, unindent:
-			continue
-		}
-
-		return
-	}
-}
-
 func (p *printer) writeString(pos token.Position, s string, isLit bool) {
 	p.lineEnded = false
 
@@ -524,6 +532,7 @@ func (p *printer) writeString(pos token.Position, s string, isLit bool) {
 		if p.Config.Mode&SourcePos != 0 {
 			p.writeLineDirective(pos)
 		}
+
 		p.writeIndent()
 	}
 
@@ -544,7 +553,6 @@ func (p *printer) writeString(pos token.Position, s string, isLit bool) {
 	p.output = append(p.output, s...)
 
 	var (
-
 		// update positions
 		nlines int
 		li int // index of last newline; valid if nlines > 0
@@ -609,6 +617,7 @@ func (p *printer) writeWhitespace(n int) {
 				// Use a formfeed to terminate the current section. Otherwise, a long label name on the next line leading to a wide column may increase the indentation column of lines before the label; effectively leading to wrong indentation.
 				p.wsbuf[i], p.wsbuf[i+1] = unindent, formfeed
 				i-- // do it again
+
 				continue
 			}
 
@@ -666,8 +675,10 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 				}
 
 				j = i
+
 				break
 			}
+
 			p.writeWhitespace(j)
 		}
 
@@ -707,8 +718,10 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 			}
 
 			j = i
+
 			break
 		}
+
 		p.writeWhitespace(j)
 
 		// determine number of linebreaks before the comment
@@ -746,11 +759,6 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 	}
 }
 
-// leadsBlankStmt reports whether the comment at pos comes before the statement that a blank line sets off under StrictLayout, so that the blank goes with the comments before it. A comment inside the statement is not leading.
-func (p *printer) leadsBlankStmt(pos token.Position) bool {
-	return p.strict() && p.blankBefore.IsValid() && pos.Offset < p.posFor(p.blankBefore).Offset
-}
-
 // writeCommentSuffix writes a line break after a comment if indicated and processes any leftover indentation information. If a line break is needed, the kind of break (newline vs formfeed) depends on the pending whitespace. The writeCommentSuffix result indicates if a newline was written or if a formfeed was dropped from the whitespace buffer.
 func (p *printer) writeCommentSuffix(needsLinebreak bool) (wroteNewline, droppedFF bool) {
 	// under StrictLayout, a blank line that sets off the next statement goes after a trailing comment of the statement before it: the comment's line break is then followed by a blank line, instead of the single line break kept below
@@ -778,6 +786,7 @@ func (p *printer) writeCommentSuffix(needsLinebreak bool) (wroteNewline, dropped
 			}
 		}
 	}
+
 	p.writeWhitespace(len(p.wsbuf))
 
 	// make sure we have a line break
@@ -864,6 +873,7 @@ func stripCommonPrefix(lines []string) {
 			// comment text on the first line
 			suffix := make([]byte, len(first))
 			n := 2 // start after opening /*
+
 			for n < len(first) && first[n] <= ' ' {
 				suffix[n] = first[n]
 				n++
@@ -886,6 +896,7 @@ func stripCommonPrefix(lines []string) {
 	// Handle last line: If it only contains a closing */, align it with the opening /*, otherwise align the text with the other lines.
 	last := lines[len(lines)-1]
 	closing := "*/"
+
 	before, _, _ := strings.Cut(last, closing) // closing always present
 	if isBlank(before) {
 		// last line only contains closing */
@@ -916,6 +927,7 @@ func (p *printer) writeComment(comment *ast.Comment) {
 	const linePrefix = "//line "
 
 	text := comment.Text
+
 	pos := p.posFor(comment.Pos())
 	if strings.HasPrefix(text, linePrefix) && (!pos.IsValid() || pos.Column == 1) {
 		// Possibly a //-style line directive. Suspend indentation temporarily to keep line directive valid.
@@ -933,7 +945,9 @@ func (p *printer) writeComment(comment *ast.Comment) {
 		} else if constraint.IsPlusBuild(text) {
 			p.plusBuild = append(p.plusBuild, len(p.output))
 		}
+
 		p.writeString(pos, trimRight(text), true)
+
 		return
 	}
 
@@ -946,6 +960,7 @@ func (p *printer) writeComment(comment *ast.Comment) {
 			lines[1+i] = "   " + line
 		}
 	}
+
 	stripCommonPrefix(lines)
 
 	// write comment lines, separated by formfeed, without a line break after the last line
@@ -987,6 +1002,7 @@ func (p *printer) intersperseComments(next token.Position, tok token.Token) (wro
 
 				// There can't be any more comments.
 				p.nextComment()
+
 				return p.writeCommentSuffix(false)
 			}
 		}
@@ -1004,6 +1020,7 @@ func (p *printer) intersperseComments(next token.Position, tok token.Token) (wro
 			p.pos = p.posFor(last.End())
 			p.last = p.pos
 		}
+
 		p.nextComment()
 	}
 
@@ -1029,6 +1046,7 @@ func (p *printer) intersperseComments(next token.Position, tok token.Token) (wro
 
 	// no comment was written - we should never reach here since intersperseComments should not be called in that case
 	p.internalError("intersperseComments called without pending comments")
+
 	return
 }
 
@@ -1096,6 +1114,7 @@ func (p *printer) print(args ...any) {
 			}
 
 			p.lastTok = token.ILLEGAL
+
 			continue
 		case *ast.Ident:
 			data = x.Name
@@ -1138,10 +1157,10 @@ func (p *printer) print(args ...any) {
 			panic("go/printer type")
 		}
 
-		// data != ""
-
-		next := p.pos // estimated/accurate position of next item
 		head := p.stmtHead
+
+		// data != ""
+		next := p.pos // estimated/accurate position of next item
 		p.stmtHead = false
 		wroteNewline, droppedFF := p.flush(next, p.lastTok)
 
@@ -1159,6 +1178,7 @@ func (p *printer) print(args ...any) {
 				if droppedFF {
 					ch = '\f' // use formfeed since we dropped one before
 				}
+
 				p.writeByte(ch, n)
 
 				impliedSemi = false
@@ -1170,6 +1190,7 @@ func (p *printer) print(args ...any) {
 			*p.linePtr = p.out.Line
 			p.linePtr = nil
 		}
+
 		p.writeString(next, data, isLit)
 
 		p.impliedSemi = impliedSemi
@@ -1246,6 +1267,7 @@ func (p *printer) printNode(node any) error {
 		if _, ok := n.(*ast.LabeledStmt); ok {
 			p.indent = 1
 		}
+
 		p.stmt(n, false)
 	case ast.Decl:
 		p.decl(n)
@@ -1258,6 +1280,7 @@ func (p *printer) printNode(node any) error {
 				p.indent = 1
 			}
 		}
+
 		p.stmtList(n, token.NoPos, 0, false)
 	case []ast.Decl:
 		p.declList(n)
@@ -1300,6 +1323,7 @@ func (p *trimmer) Write(data []byte) (n int, err error) {
 				p.space = append(p.space, b)
 			case '\n', '\f':
 				p.resetSpace() // discard trailing space
+
 				_, err = p.output.Write(aNewline)
 			case tabwriter.Escape:
 				_, err = p.output.Write(p.space)
@@ -1328,6 +1352,7 @@ func (p *trimmer) Write(data []byte) (n int, err error) {
 				_, err = p.output.Write(data[m:n])
 
 				p.resetSpace()
+
 				if err == nil {
 					_, err = p.output.Write(aNewline)
 				}
@@ -1370,6 +1395,7 @@ func (cfg *Config) fprint(output io.Writer, fset *token.FileSet, node any, nodeS
 
 	// print outstanding comments
 	p.impliedSemi = false // EOF acts like a newline
+
 	p.flush(token.Position{
 		Offset: infinity,
 		Line: infinity,

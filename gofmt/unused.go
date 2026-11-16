@@ -118,6 +118,7 @@ func unusedQualified(n ast.Node) (found bool) {
 
 		return !found
 	})
+
 	return
 }
 
@@ -214,6 +215,7 @@ func unusedRefs(file *ast.File) map[*ast.Object]int {
 
 		return true
 	})
+
 	return refs
 }
 
@@ -242,6 +244,7 @@ func unusedDecl(fset *token.FileSet, s *ast.DeclStmt, refs map[*ast.Object]int, 
 
 	for _, sp := range g.Specs {
 		vs := sp.(*ast.ValueSpec)
+
 		unused := unusedSpecNames(vs, refs)
 		if len(unused) == 0 || unusedNearComment(fset, comments, vs) {
 			specs = append(specs, vs)
@@ -258,6 +261,7 @@ func unusedDecl(fset *token.FileSet, s *ast.DeclStmt, refs map[*ast.Object]int, 
 				}
 
 				specs = append(specs, vs)
+
 				continue
 			}
 
@@ -347,6 +351,7 @@ func unusedVars(fset *token.FileSet, file *ast.File, comments []*ast.CommentGrou
 
 		return true
 	})
+
 	for _, list := range lists {
 		out := make([]ast.Stmt, 0, len(*list))
 

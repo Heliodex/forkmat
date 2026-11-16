@@ -22,6 +22,7 @@ func parseFunc(filename, functionname string) (fun *ast.FuncDecl, fset *token.Fi
 			}
 		}
 	}
+
 	panic("function not found")
 }
 

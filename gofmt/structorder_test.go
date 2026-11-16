@@ -17,6 +17,7 @@ func literalKeys(t *testing.T, src string) (out []string) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+
 	structLiteralOrder("x.go", file)
 	ast.Inspect(file, func(n ast.Node) bool {
 		x, ok := n.(*ast.CompositeLit)
@@ -42,6 +43,7 @@ func literalKeys(t *testing.T, src string) (out []string) {
 
 		return true
 	})
+
 	return
 }
 

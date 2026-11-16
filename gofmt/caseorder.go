@@ -20,6 +20,7 @@ func sortTypeList(list []ast.Expr) []ast.Expr {
 	slices.SortStableFunc(out, func(a, b ast.Expr) int {
 		return strings.Compare(texts[a], texts[b])
 	})
+
 	return out
 }
 

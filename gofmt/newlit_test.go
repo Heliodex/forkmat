@@ -15,10 +15,12 @@ func newText(t *testing.T, src string) string {
 	t.Helper()
 
 	fset := token.NewFileSet()
+
 	file, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+
 	newLiterals(file, func() *types.Info {
 		return checkTypes(fset, file)
 	})

@@ -35,10 +35,12 @@ func TestSwitchCaseOrderComments(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			src := "package p\n\nconst (\n\tKindA = iota\n\tKindB\n)\n\nfunc f(k int) int {\n" + tt.body + "\n\treturn 0\n}\n"
 			fset := token.NewFileSet()
+
 			file, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments|parser.SkipObjectResolution)
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
+
 			switchCaseOrder("x.go", file)
 
 			var buf bytes.Buffer
@@ -91,6 +93,7 @@ func TestSwitchCaseOrderStableAcrossSiblings(t *testing.T) {
 	// the file is processed as gofmt does it: its reorder passes first, then the switch order
 	order := func() string {
 		fset := token.NewFileSet()
+
 		src, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
@@ -104,6 +107,7 @@ func TestSwitchCaseOrderStableAcrossSiblings(t *testing.T) {
 		if _, reordered := reorderSource(fset, name, src); reordered != nil {
 			file = reordered
 		}
+
 		switchCaseOrder(name, file)
 
 		var names []string
@@ -119,8 +123,10 @@ func TestSwitchCaseOrderStableAcrossSiblings(t *testing.T) {
 
 			return true
 		})
+
 		return strings.Join(names, " ")
 	}
+
 	first := order()
 	if first != want {
 		t.Errorf("order = %q, want %q", first, want)
@@ -137,10 +143,12 @@ func TestSwitchCaseOrderStdin(t *testing.T) {
 	const src string = "package p\n\nconst (\n\tia = iota\n\tib\n)\n\nfunc f(k int) int {\n\tswitch k {\n\tcase ib:\n\t\treturn 2\n\tcase ia:\n\t\treturn 1\n\t}\n\treturn 0\n}\n"
 
 	fset := token.NewFileSet()
+
 	file, err := parser.ParseFile(fset, "<standard input>", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+
 	switchCaseOrder("<standard input>", file)
 
 	var got []string
@@ -154,6 +162,7 @@ func TestSwitchCaseOrderStdin(t *testing.T) {
 
 		return true
 	})
+
 	if want := []string{"ia", "ib"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("order = %v, want %v", got, want)
 	}
@@ -164,10 +173,12 @@ func caseOrder(t *testing.T, filename, src string) (out []string) {
 	t.Helper()
 
 	fset := token.NewFileSet()
+
 	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+
 	switchCaseOrder(filename, file)
 	ast.Inspect(file, func(n ast.Node) bool {
 		s, ok := n.(*ast.SwitchStmt)
@@ -197,6 +208,7 @@ func caseOrder(t *testing.T, filename, src string) (out []string) {
 
 		return true
 	})
+
 	return
 }
 
@@ -362,10 +374,12 @@ func typeCases(t *testing.T, src string) (out []string) {
 	t.Helper()
 
 	fset := token.NewFileSet()
+
 	file, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+
 	switchCaseOrder("x.go", file)
 	ast.Inspect(file, func(n ast.Node) bool {
 		s, ok := n.(*ast.TypeSwitchStmt)
@@ -395,6 +409,7 @@ func typeCases(t *testing.T, src string) (out []string) {
 
 		return true
 	})
+
 	return
 }
 

@@ -45,6 +45,7 @@ func importedName(spec *ast.ImportSpec, importPath, dir string, info *types.Info
 func lineEdit(src []byte, fset *token.FileSet, from, to token.Pos) (textEdit, bool) {
 	start := fset.Position(from).Offset
 	end := fset.Position(to).Offset
+
 	lineStart := bytes.LastIndexByte(src[:start], '\n') + 1
 	if len(bytes.TrimSpace(src[lineStart:start])) != 0 {
 		return textEdit{}, false
@@ -84,6 +85,7 @@ func selectorBases(file *ast.File) map[string]bool {
 
 		return true
 	})
+
 	return bases
 }
 
@@ -175,6 +177,7 @@ func importDeleteEdits(fset *token.FileSet, file *ast.File, src []byte, unused [
 // removeUnusedImports returns src without the imports that nothing in it uses. It returns src unchanged when there are none, or when removing them would leave a file that does not parse.
 func removeUnusedImports(filename string, src []byte) []byte {
 	fset := token.NewFileSet()
+
 	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
 	if err != nil {
 		return src

@@ -171,6 +171,7 @@ func (l *depImporter) importPkg(path, dir string, chain int) (*types.Package, er
 		e.pkg, e.err = l.load(path, dir, chain)
 
 		close(e.done)
+
 		return e.pkg, e.err
 	}
 
@@ -193,6 +194,7 @@ func (l *depImporter) importPkg(path, dir string, chain int) (*types.Package, er
 	l.mu.Lock()
 	delete(l.waits, chain)
 	l.mu.Unlock()
+
 	return e.pkg, e.err
 }
 
@@ -203,6 +205,7 @@ func (l *depImporter) load(path, dir string, chain int) (*types.Package, error) 
 			return pkg, err
 		}
 	}
+
 	l.srcMu.Lock()
 
 	defer l.srcMu.Unlock()

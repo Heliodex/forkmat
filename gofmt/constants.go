@@ -106,12 +106,14 @@ func conflictsIn(info *types.Info, scope ast.Node, name *ast.Ident, obj types.Ob
 
 		return !found
 	})
+
 	return
 }
 
 // packageErrors returns the messages of the type errors of the package of filename, with src as the file, counted by message. It reports false when the package cannot be taken as a whole.
 func packageErrors(filename string, src []byte) (map[string]int, bool) {
 	fset := token.NewFileSet()
+
 	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
 	if err != nil {
 		return nil, false
@@ -134,6 +136,7 @@ func packageErrors(filename string, src []byte) (map[string]int, bool) {
 	}
 
 	conf.Check("gofmt.invalid/"+files[0].Name.Name, fset, files, nil)
+
 	return counts, true
 }
 
@@ -239,6 +242,7 @@ func modifiedIn(info *types.Info, scope ast.Node, obj types.Object) (found bool)
 
 		return !found
 	})
+
 	return
 }
 
@@ -298,6 +302,7 @@ func constHoistCandidate(fset *token.FileSet, info *types.Info, scope ast.Node, 
 	}
 
 	name := identOf(a.Lhs[0])
+
 	typ, ok := constVar(fset, info, scope, name, a.Rhs[0], false, true)
 	if !ok {
 		return constCandidate{}, false
@@ -331,6 +336,7 @@ func constCandidateOf(fset *token.FileSet, info *types.Info, scope ast.Node, lis
 		}
 
 		name := identOf(a.Lhs[0])
+
 		typ, ok := constVar(fset, info, scope, name, a.Rhs[0], false, false)
 		if !ok {
 			return constCandidate{}, false
@@ -396,12 +402,14 @@ func constCandidates(fset *token.FileSet, file *ast.File, info *types.Info) (can
 
 		return true
 	})
+
 	return
 }
 
 // analyseConstants parses src as filename, and returns its file and candidates, checked with its package. It reports false when the package cannot be taken as a whole.
 func analyseConstants(filename string, src []byte) (*token.FileSet, *ast.File, []constCandidate, bool) {
 	fset := token.NewFileSet()
+
 	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
 	if err != nil {
 		return nil, nil, nil, false
@@ -454,6 +462,7 @@ func declareConstants(file *ast.File, cands []constCandidate) {
 	slices.SortFunc(cands, func(a, b constCandidate) int {
 		return b.offset - a.offset
 	})
+
 	for _, c := range cands {
 		switch c.kind {
 		case constInPlace:
@@ -499,6 +508,7 @@ func constantsWith(filename string, src []byte, offsets []int, base map[string]i
 	if len(chosen) == 0 {
 		return nil, false
 	}
+
 	declareConstants(file, chosen)
 
 	out, err := printFile(fset, file)

@@ -99,6 +99,7 @@ func TestBadNodes(t *testing.T) {
 	var buf bytes.Buffer
 
 	Fprint(&buf, fset, f)
+
 	if buf.String() != res {
 		t.Errorf("got %q, expected %q", buf.String(), res)
 	}
@@ -212,6 +213,7 @@ type bar int // comment2
 	)
 
 	lfset := token.NewFileSet()
+
 	f, err := parser.ParseFile(lfset, "input.go", input, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +225,6 @@ type bar int // comment2
 		Node: f.Decls[0],
 		Comments: f.Comments,
 	})
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,13 +232,13 @@ type bar int // comment2
 	if buf.String() != foo {
 		t.Errorf("got %q, want %q", buf.String(), foo)
 	}
+
 	buf.Reset()
 
 	err = Fprint(&buf, lfset, &CommentedNode{
 		Node: f.Decls[1],
 		Comments: f.Comments,
 	})
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,6 +345,7 @@ func TestIssue11151(t *testing.T) {
 	)
 
 	lfset := token.NewFileSet()
+
 	f, err := parser.ParseFile(lfset, "", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatal(err)
@@ -360,7 +362,6 @@ func TestIssue11151(t *testing.T) {
 
 	// the resulting program must be valid
 	_, err = parser.ParseFile(lfset, "", got, parser.SkipObjectResolution)
-
 	if err != nil {
 		t.Errorf("%v\norig: %q\ngot : %q", err, src, got)
 	}
@@ -381,6 +382,7 @@ func f() {
 	)
 
 	lfset := token.NewFileSet()
+
 	file, err := parser.ParseFile(lfset, "", src, parser.SkipObjectResolution)
 	if err != nil {
 		panic(err)
@@ -434,7 +436,6 @@ type T struct {
 	var buf bytes.Buffer
 
 	err = Fprint(&buf, fset, f)
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,7 +486,6 @@ func g() {
 		Mode: UseSpaces | SourcePos,
 		Tabwidth: 8,
 	}).Fprint(&buf, fset, f1)
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -512,6 +512,7 @@ func TestLineComments(t *testing.T) {
 	)
 
 	lfset := token.NewFileSet()
+
 	f, err := parser.ParseFile(lfset, "", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		panic(err) // error in test
@@ -520,6 +521,7 @@ func TestLineComments(t *testing.T) {
 	var buf bytes.Buffer
 
 	lfset = token.NewFileSet() // use the wrong file set
+
 	Fprint(&buf, lfset, f)
 
 	var nlines int
@@ -543,6 +545,7 @@ func TestParenthesizedDecl(t *testing.T) {
 	const src = "package p; var ( a float64; b int )"
 
 	lfset := token.NewFileSet()
+
 	f, err := parser.ParseFile(lfset, "", src, parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatal(err)
@@ -552,7 +555,6 @@ func TestParenthesizedDecl(t *testing.T) {
 	var buf bytes.Buffer
 
 	err = Fprint(&buf, lfset, f)
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -563,10 +565,10 @@ func TestParenthesizedDecl(t *testing.T) {
 	for i := 0; i != len(f.Decls); i++ {
 		f.Decls[i].(*ast.GenDecl).Lparen = token.NoPos
 	}
+
 	buf.Reset()
 
 	err = Fprint(&buf, lfset, f)
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -589,6 +591,7 @@ func TestSourcePosNewline(t *testing.T) {
 	)
 
 	lfset := token.NewFileSet()
+
 	f, err := parser.ParseFile(lfset, fname, src, parser.ParseComments|parser.AllErrors|parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatal(err)
@@ -687,6 +690,7 @@ func format(src []byte, mode checkMode) ([]byte, error) {
 	// filter exports if necessary
 	if mode&export != 0 {
 		ast.FileExports(f) // ignore result
+
 		f.Comments = nil // don't print comments that are not in AST
 	}
 
@@ -826,7 +830,6 @@ func (t *t) foo(a, b, c int) int {
 		Mode: UseSpaces | SourcePos,
 		Tabwidth: 8,
 	}).Fprint(&buf, fset, f1)
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -928,7 +931,6 @@ func runcheck(t *testing.T, source, golden string, mode checkMode) {
 		// (This is very difficult to achieve in general and for now
 		// it is only checked for files explicitly marked as such.)
 		res, err = format(gld, mode)
-
 		if err != nil {
 			t.Error(err)
 			return
@@ -946,6 +948,7 @@ func check(t *testing.T, source, golden string, mode checkMode) {
 
 	go func() {
 		runcheck(t, source, golden, mode)
+
 		cc <- 0
 	}()
 
@@ -961,6 +964,7 @@ func check(t *testing.T, source, golden string, mode checkMode) {
 
 func TestFiles(t *testing.T) {
 	t.Parallel()
+
 	for _, e := range data {
 		source := filepath.Join(dataDir, e.source)
 		golden := filepath.Join(dataDir, e.golden)
@@ -980,6 +984,7 @@ func strictText(t *testing.T, src string) string {
 	t.Helper()
 
 	fset := token.NewFileSet()
+
 	file, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -1294,6 +1299,7 @@ func fibo(n int) {
 	}
 
 	comment := f.Comments[0].List[0]
+
 	pos := comment.Pos()
 	if fset.PositionFor(
 		pos,
@@ -1301,6 +1307,7 @@ func fibo(n int) {
 	).Offset != 1 {
 		t.Error("expected offset 1") // error in test
 	}
+
 	testComment(t, f, len(src), &ast.Comment{
 		Slash: pos,
 		Text: "//-style comment",

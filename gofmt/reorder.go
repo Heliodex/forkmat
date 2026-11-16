@@ -11,6 +11,7 @@ package main
 // In every run, a declaration comes after the declarations it refers to, and otherwise in alphabetical order. A cycle keeps its source order. Declarations and statements move with the comments that lead into them. A var whose value calls a function is not moved above another var, only above functions and the declarations that do not take part in initialisation (see pureExpr).
 import (
 	"bytes"
+	"crypto/sha256"
 	"go/ast"
 	"go/build"
 	"go/parser"
@@ -114,8 +115,8 @@ var (
 		"uintptr": true,
 	}
 
-	// reordered remembers the source of each file on disk with the reorder passes applied (see reorderedSource).
-	reordered memo[string, []byte]
+	// reordered remembers the reordered form of each source, by its file name and content (see reorderedSource).
+	reordered memo[reorderKey, []byte]
 )
 
 // alphabeticalOrder orders the components of a run of types. A component is ready when every component it depends on has been placed; among the ready ones, the one whose first name (in alphabetical order) is smallest goes next. So types are sorted wherever the dependencies allow it, and a type always comes after the types it refers to.
@@ -1586,7 +1587,13 @@ func reorderStable(filename string, src []byte) bool {
 	return bytes.Equal(out, src)
 }
 
-// reorderedSource returns the source of the file named filename, whose source is src, with the reorder passes applied. A file on disk is reordered once per run: the file itself, and the siblings that the switch pass reads, need the same result.
+// reorderKey identifies a reordered source: the file it is of, and a hash of the source that was reordered. The content is part of the key, since one file can be asked for in more than one source: a sibling asks for the file as it is on disk, and the file itself asks for the source it is formatting, which may differ.
+type reorderKey struct {
+	filename string
+	sum [sha256.Size]byte
+}
+
+// reorderedSource returns the source of the file named filename, whose source is src, with the reorder passes applied. A file on disk is reordered once per source and run: the file itself, and the siblings that the switch pass reads, share the result of the same source.
 func reorderedSource(fset *token.FileSet, filename string, src []byte) []byte {
 	if !onDisk(filename) {
 		out, _ := reorderSource(fset, filename, src)
@@ -1594,7 +1601,7 @@ func reorderedSource(fset *token.FileSet, filename string, src []byte) []byte {
 		return out
 	}
 
-	return reordered.get(filename, func() []byte {
+	return reordered.get(reorderKey{filename, sha256.Sum256(src)}, func() []byte {
 		out, _ := reorderSource(token.NewFileSet(), filename, src)
 
 		return out

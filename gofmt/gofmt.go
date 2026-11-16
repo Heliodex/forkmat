@@ -93,7 +93,7 @@ var (
 	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to this file")
 
 	// errors
-	errFormattingDiffers = fmt.Errorf("formatting differs from gofmt's")
+	errFormattingDiffers = errors.New("formatting differs from gofmt's")
 
 	// printerMode may gain printer.StrictLayout from the -strict flag.
 	printerMode = printer.UseSpaces | printer.TabIndent | printerNormalizeNumbers
@@ -460,7 +460,7 @@ func backupFile(filename string, data []byte, perm fs.FileMode) (string, error) 
 	}()
 
 	nextRandom := func() string {
-		return strconv.Itoa(rand.Int())
+		return strconv.Itoa(rand.Int()) //nolint:gosec // backup names only need to avoid collisions, not to be unguessable
 	}
 	dir, base := filepath.Split(filename)
 
@@ -738,7 +738,7 @@ func gofmtMain(s *sequencer) {
 
 		f, err := os.Create(*cpuprofile)
 		if err != nil {
-			s.AddReport(fmt.Errorf("creating cpu profile: %s", err))
+			s.AddReport(fmt.Errorf("creating cpu profile: %w", err))
 			return
 		}
 
@@ -762,12 +762,12 @@ func gofmtMain(s *sequencer) {
 
 	if *stdinFilepath != "" {
 		if len(args) != 0 {
-			s.AddReport(fmt.Errorf("error: cannot give paths with -stdin-filepath"))
+			s.AddReport(errors.New("error: cannot give paths with -stdin-filepath"))
 			return
 		}
 
 		if *write {
-			s.AddReport(fmt.Errorf("error: cannot use -w with -stdin-filepath"))
+			s.AddReport(errors.New("error: cannot use -w with -stdin-filepath"))
 			return
 		}
 
@@ -780,7 +780,7 @@ func gofmtMain(s *sequencer) {
 
 	if len(args) == 0 {
 		if *write {
-			s.AddReport(fmt.Errorf("error: cannot use -w with standard input"))
+			s.AddReport(errors.New("error: cannot use -w with standard input"))
 			return
 		}
 

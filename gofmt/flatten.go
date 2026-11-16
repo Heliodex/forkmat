@@ -138,8 +138,7 @@ func endsInReturn(b *ast.BlockStmt) bool {
 func initNames(s ast.Stmt) map[string]bool {
 	names := map[string]bool{}
 
-	switch s := s.(type) {
-	case *ast.AssignStmt:
+	if s, ok := s.(*ast.AssignStmt); ok {
 		if s.Tok == token.DEFINE {
 			for _, lhs := range s.Lhs {
 				if id, ok := lhs.(*ast.Ident); ok {

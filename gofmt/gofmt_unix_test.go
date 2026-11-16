@@ -21,7 +21,7 @@ func TestPermissions(t *testing.T) {
 	fn := filepath.Join(dir, "perm.go")
 
 	// Create a file that needs formatting without write permission.
-	if err := os.WriteFile(filepath.Join(fn), []byte("  package main"), 0o400); err != nil {
+	if err := os.WriteFile(fn, []byte("  package main"), 0o400); err != nil {
 		t.Fatal(err)
 	}
 

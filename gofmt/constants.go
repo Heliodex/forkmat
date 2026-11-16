@@ -130,8 +130,7 @@ func packageErrors(filename string, src []byte) (map[string]int, bool) {
 		Importer: sharedImporter,
 		GoVersion: moduleGoVersion(filename),
 		Error: func(err error) {
-			var te types.Error
-			if errors.As(err, &te) {
+			if te, ok := errors.AsType[types.Error](err); ok {
 				counts[te.Msg]++
 			}
 		},
@@ -284,7 +283,7 @@ func constVar(_ *token.FileSet, info *types.Info, scope ast.Node, name *ast.Iden
 }
 
 // constHoistCandidate returns the candidate of an if, for or switch statement whose := initialiser can move out in front of it.
-func constHoistCandidate(fset *token.FileSet, info *types.Info, scope ast.Node, _ *[]ast.Stmt, i int, st ast.Stmt, mk func(constKind, ast.Stmt, *ast.Ident, string) constCandidate) (constCandidate, bool) {
+func constHoistCandidate(fset *token.FileSet, info *types.Info, scope ast.Node, _ *[]ast.Stmt, _ int, st ast.Stmt, mk func(constKind, ast.Stmt, *ast.Ident, string) constCandidate) (constCandidate, bool) {
 	var init ast.Stmt
 
 	switch s := st.(type) {

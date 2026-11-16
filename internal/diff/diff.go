@@ -195,8 +195,6 @@ func Diff(oldName string, old []byte, newName string, newText []byte) []byte {
 				count.y++
 			}
 
-			done = pair{start.x + n, start.y + n}
-
 			// Format and emit chunk. Convert line numbers to 1-indexed. Special case: empty file shows up as 0,0 not 1,0.
 			if count.x > 0 {
 				chunk.x++

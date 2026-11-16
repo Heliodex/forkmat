@@ -373,6 +373,14 @@ The pass needs the object links the parser writes, so it parses the file without
 
 Both run through the same fix runner as `-modernise`, and `-all` enables both. Each can also be turned on alone.
 
+### `-imports`: remove unused imports
+
+`gofmt` removes an import that the file does not use, on by default. An import is unused when nothing in the file selects from its name, so `"os"` goes when `os.Exit` appears nowhere. A named import goes when its name is unused, and a grouped import goes with its line, or with its whole declaration when the group empties. Blank and dot imports are kept, since they are used by their side effects or by their names.
+
+An import without a name needs its package's name, which the package supplies, so it is only removed when the package can be imported. An import that cannot be resolved, such as one from a module that is not present, is kept. An import that shares its line with other code is kept too, so that no code is lost with it.
+
+The pass runs after the other fixes, since a fix such as `-modernise` can leave an import unused. `-imports=false` keeps unused imports.
+
 ## What differs from upstream
 
 Only import paths, so that code outside the Go tree can reach packages that used to be resolved as `std`/`cmd` internals:

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"forkmat/go/printer"
 	"go/ast"
 	"go/build"
@@ -23,6 +24,7 @@ type (
 	// switchEnv gives the constants that the cases of a switch may name: those of the package of the file, and those of the packages it imports. The constants are read from the package's declarations, which are checked once per directory (see packageOf).
 	switchEnv struct {
 		filename string
+		src []byte // the source of the file as it is given, or nil to take the file as it is on disk
 		file *ast.File
 		pkg *types.Package // the package of the file, once checked (see pkgOf)
 		checked bool
@@ -48,8 +50,6 @@ var (
 	// orderedFiles remembers orderedSibling, by path.
 	orderedFiles memo[string, *ast.File]
 
-	// localIndexes remembers the constant positions of each package directory, by directory and package name (see indexConsts).
-	localIndexes memo[string, map[string]int]
 )
 
 // commentsKeepOrder reports whether the comments inside the clauses of list stay in their clauses once the clauses are in that order. The printer writes a comment before the first token that follows it in the source, so a comment is misplaced when a clause printed before its clause comes later in the source.
@@ -196,11 +196,13 @@ func exprText(e ast.Expr) string {
 // hasTopLevelConst reports whether the file at path declares a constant at top level. Only such a file can change the numbering of the constants (see indexConsts), so the others are not reordered for it, which costs much more than parsing them.
 func hasTopLevelConst(path string) bool {
 	f := parsedSibling(path)
-	if f == nil {
-		return false
-	}
 
-	for _, d := range f.Decls {
+	return f != nil && hasTopLevelConstDecl(f)
+}
+
+// hasTopLevelConstDecl reports whether file declares a constant at top level.
+func hasTopLevelConstDecl(file *ast.File) bool {
+	for _, d := range file.Decls {
 		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.CONST {
 			return true
 		}
@@ -315,8 +317,8 @@ func packagePaths(filename, pkg string) []string {
 	return paths
 }
 
-// checkPackage checks the package of file. A package on disk is checked from its files, which are read from disk, with the file itself among them; otherwise the file alone is checked, as it is now.
-func checkPackage(filename string, file *ast.File, onDisk bool) *types.Package {
+// checkPackage checks the package of file. A package on disk is checked from its files, which are read from disk, with the file itself among them, as target when it is given, and otherwise as it is on disk; a file that is not on disk is checked alone, as it is now.
+func checkPackage(filename string, file *ast.File, onDisk bool, target []byte) *types.Package {
 	// the files are parsed into one file set, which the checker needs
 	fset := token.NewFileSet()
 
@@ -329,7 +331,13 @@ func checkPackage(filename string, file *ast.File, onDisk bool) *types.Package {
 		files = []*ast.File{file}
 	} else {
 		for _, path := range packagePaths(filename, file.Name.Name) {
-			if f, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution); err == nil {
+			// a nil source of type []byte would parse as an empty file, so the file is read from disk unless its source is given
+			var src any
+			if path == filename && target != nil {
+				src = target
+			}
+
+			if f, err := parser.ParseFile(fset, path, src, parser.SkipObjectResolution); err == nil {
 				files = append(files, f)
 			}
 		}
@@ -345,16 +353,45 @@ func checkPackage(filename string, file *ast.File, onDisk bool) *types.Package {
 	return pkg
 }
 
-// packageConstFiles returns the files of the package of file, for the constant positions (see indexConsts): the file as it is now, and the siblings as they are on disk.
-func packageConstFiles(filename string, file *ast.File) []*ast.File {
+// orderedTarget returns the file being formatted, from src, or from disk when src is nil, as the reorder passes leave it (see orderedSibling). The file's own constants are numbered from it, so that an unsaved constant is numbered too.
+func orderedTarget(filename string, src []byte) *ast.File {
+	if src == nil {
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			return nil
+		}
+
+		src = data
+	}
+
+	fset := token.NewFileSet()
+	out := reorderedSource(fset, filename, src)
+
+	f, err := parser.ParseFile(fset, filename, out, parser.ParseComments)
+	if err != nil {
+		return nil
+	}
+
+	return f
+}
+
+// packageConstFiles returns the files of the package of file, for the constant positions (see indexConsts): the file as its source src gives it, and the siblings as they are on disk. The siblings are read from disk, so that the numbering of their constants does not change while the file is being edited; the file's own constants are numbered from its source, so that an unsaved constant is numbered too.
+func packageConstFiles(filename string, src []byte, file *ast.File) []*ast.File {
 	if !onDisk(filename) {
 		return []*ast.File{file}
 	}
 
-	// the file itself is taken as the passes leave it, like its siblings: the same as the file as it is in memory, since gofmt reorders it the same way
 	var files []*ast.File
 
 	for _, path := range packagePaths(filename, file.Name.Name) {
+		if path == filename {
+			if f := orderedTarget(filename, src); f != nil && hasTopLevelConstDecl(f) {
+				files = append(files, f)
+			}
+
+			continue
+		}
+
 		if hasTopLevelConst(path) {
 			if f := orderedSibling(path); f != nil {
 				files = append(files, f)
@@ -365,14 +402,20 @@ func packageConstFiles(filename string, file *ast.File) []*ast.File {
 	return files
 }
 
-// packageOf returns the package of file, checked from its source with the function bodies skipped: the constants and the types are all a switch needs. Each directory is checked once, however many of its files have switches. A file read from standard input is checked alone.
-func packageOf(filename string, file *ast.File) *types.Package {
+// packageOf returns the package of file, checked from its source with the function bodies skipped: the constants and the types are all a switch needs. The other files of the package are read from disk, and the file itself is checked from src when src is given. Each package is checked once for each source of its file, however many of its files have switches. A file read from standard input is checked alone.
+func packageOf(filename string, src []byte, file *ast.File) *types.Package {
 	if !onDisk(filename) {
-		return checkPackage(filename, file, false)
+		return checkPackage(filename, file, false, nil)
 	}
 
-	return checkedPackages.get(filepath.Dir(filename)+"\x00"+file.Name.Name, func() *types.Package {
-		return checkPackage(filename, file, true)
+	key := filepath.Dir(filename) + "\x00" + file.Name.Name
+	if src != nil {
+		sum := sha256.Sum256(src)
+		key += "\x00" + string(sum[:])
+	}
+
+	return checkedPackages.get(key, func() *types.Package {
+		return checkPackage(filename, file, true, src)
 	})
 }
 
@@ -574,15 +617,9 @@ func (env *switchEnv) importNamed(name string) *types.Package {
 	return found
 }
 
-// localIndex returns the constant positions of the package of the file: one index for the directory, which every file of the package shares.
+// localIndex returns the constant positions of the package of the file, as this file sees them (see packageConstFiles). The index is not shared by the files of a directory: each file numbers its own constants from its source, so a directory's index would depend on which of its files asked first.
 func (env *switchEnv) localIndex() map[string]int {
-	if !onDisk(env.filename) {
-		return indexConsts(packageConstFiles(env.filename, env.file))
-	}
-
-	return localIndexes.get(filepath.Dir(env.filename)+"\x00"+env.file.Name.Name, func() map[string]int {
-		return indexConsts(packageConstFiles(env.filename, env.file))
-	})
+	return indexConsts(packageConstFiles(env.filename, env.src, env.file))
 }
 
 // index returns the constant positions of the package with import path path (see constOf).
@@ -607,7 +644,7 @@ func (env *switchEnv) index(path string) map[string]int {
 // pkgOf returns the package of the file (see packageOf), which is checked on first use.
 func (env *switchEnv) pkgOf() *types.Package {
 	if !env.checked {
-		env.pkg = packageOf(env.filename, env.file)
+		env.pkg = packageOf(env.filename, env.src, env.file)
 		env.checked = true
 	}
 
@@ -746,9 +783,16 @@ func reorderSwitchCases(body *ast.BlockStmt, env *switchEnv, scope ast.Node, com
 // This file implements the case order of -strict: the clauses of a switch whose cases are constants are put in the order the constants are declared in, typically the order of an iota block. The constants may be those of the package of the file, or of another package, such as token.CONST from go/token. A clause moves only among the slots of the other clauses of its kind; the default clause goes last (see defaultLast). The switch is changed only if its behaviour cannot change: no clause falls through, every case is a package-level constant with a value of its own, and all cases name constants of one package. Constants are not evaluated, so moving clauses changes nothing else.
 
 // switchCaseOrder reorders the clauses of the switch statements of file, whose name is filename. The constants of a package count: those of the file and of the other files of its directory with the same package name, and those of the packages the file imports.
+// switchCaseOrder reorders the cases of the switch statements of file, which is taken as it is on disk. See switchCaseOrderSource.
 func switchCaseOrder(filename string, file *ast.File) {
+	switchCaseOrderSource(filename, nil, file)
+}
+
+// switchCaseOrderSource reorders the cases of the switch statements of file, whose source is src. The constants of the file are read from src, so that a constant that only the unsaved source declares orders its cases; a nil src takes the file as it is on disk.
+func switchCaseOrderSource(filename string, src []byte, file *ast.File) {
 	env := &switchEnv{
 		filename: filename,
+		src: src,
 		file: file,
 		imports: map[string]*types.Package{},
 		scopes: map[ast.Node]map[string]bool{},

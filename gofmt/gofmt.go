@@ -342,7 +342,7 @@ func formatSource(filename string, src []byte, fragmentOk, fromDisk bool, r *rep
 
 	if *strict && rewritable {
 		// -strict orders the cases of a switch over iota constants by declaration (see switchorder.go)
-		switchCaseOrder(filename, file)
+		switchCaseOrderSource(filename, src, file)
 	}
 
 	if *strict && rewritable {

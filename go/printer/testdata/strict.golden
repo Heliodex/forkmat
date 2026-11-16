@@ -221,6 +221,7 @@ var (
 func vars() {
 	x := 1
 	y := 2
+
 	// a comment keeps these apart
 	var z = 3
 

@@ -96,6 +96,7 @@ type (
 		endAlignment, // if set, terminate alignment immediately
 		useNodeComments, // if not set, ignore lead and line comments of nodes
 		impliedSemi bool // if set, a linebreak implies a semicolon
+		blankBeforeComment bool // under StrictLayout, the next statement is set off by a blank line, which goes before its first own-line comment
 	}
 )
 
@@ -676,6 +677,12 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev *ast.Comment
 		if p.strict() && (p.afterOpenBrace() || p.afterDeclParen() || tok == token.RBRACE) {
 			// under StrictLayout a comment that opens or closes a block sits right after the brace, with no blank line
 			n = 1
+		}
+
+		if p.strict() && p.blankBeforeComment && prev == nil {
+			// the blank line that sets off the statement goes before its leading comment, not between the comment and the statement; the layout's newlines are dropped above, so it is restored here
+			n = max(n, 2)
+			p.blankBeforeComment = false
 		}
 
 		if n > 0 {

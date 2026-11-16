@@ -1495,12 +1495,15 @@ func (p *printer) stmtList(list []ast.Stmt, head token.Pos, nindent int, nextIsR
 						gap = 2
 					}
 					p.linebreak(p.pos.Line+gap, 1, ignore, newSection)
+					// a leading comment of s is written before s, so the blank must move up to it
+					p.blankBeforeComment = gap == 2
 				} else {
 					p.linebreak(p.lineFor(s.Pos()), 1, ignore, newSection)
 				}
 			}
 			p.recordLine(&line)
 			p.stmt(s, nextIsRBrace && i == len(list)-1)
+			p.blankBeforeComment = false
 
 			prev = s
 			// labeled statements put labels on a separate line, but here we only care about the start line of the actual statement without label - correct line for each label

@@ -11,6 +11,7 @@ import (
 	"go/token"
 	"io"
 	"os"
+	"strconv"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -126,7 +127,7 @@ func TestBaseIndent(t *testing.T) {
 	}
 
 	for indent := range 4 {
-		t.Run(fmt.Sprint(indent), func(t *testing.T) {
+		t.Run(strconv.Itoa(indent), func(t *testing.T) {
 			t.Parallel()
 
 			var buf bytes.Buffer
@@ -528,7 +529,9 @@ func TestLineComments(t *testing.T) {
 
 	lfset = token.NewFileSet() // use the wrong file set
 
-	Fprint(&buf, lfset, f)
+	if err := Fprint(&buf, lfset, f); err != nil {
+		t.Fatal(err)
+	}
 
 	var nlines int
 
@@ -984,7 +987,7 @@ func TestFiles(t *testing.T) {
 			t.Parallel()
 			check(t, source, golden, mode)
 			// TODO(gri) check that golden is idempotent
-			//check(t, golden, golden, e.mode)
+			// check(t, golden, golden, e.mode)
 		})
 	}
 }

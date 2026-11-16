@@ -58,6 +58,12 @@ type (
 	whiteSpace byte
 
 	printer struct {
+		// Configuration (does not change after initialization)
+		Config
+
+		// Information about p.comments[p.cindex]; set up by nextComment.
+		commentInfo
+
 		// head is where the declarations of the file begin: the end of its package clause. It places a type block that starts the file (see joinTypeDecls).
 		head token.Pos
 
@@ -66,9 +72,6 @@ type (
 		linePtr *int // if set, record out.Line for the next token in *linePtr
 		fset *token.FileSet // configuration: does not change after initialization
 		nodeSizes map[ast.Node]int // cache of already computed node sizes
-
-		// Information about p.comments[p.cindex]; set up by nextComment.
-		commentInfo
 
 		// The list of all source comments, in order of appearance.
 		comments []*ast.CommentGroup // may be nil
@@ -84,9 +87,6 @@ type (
 		out, // current position in output space
 		last, // value of pos after calling writeString
 		pos token.Position // current position in AST (source) space
-
-		// Configuration (does not change after initialization)
-		Config
 
 		// Current state
 		mode pmode // current printer mode
@@ -1165,7 +1165,7 @@ func (p *printer) print(args ...any) {
 		wroteNewline, droppedFF := p.flush(next, p.lastTok)
 
 		// intersperse extra newlines if present in the source and if they don't cause extra semicolons (don't do this in flush as it will cause extra newlines at the end of a file) Under StrictLayout a closing brace gets no blank lines from the source after a comment: the block's own line break is the only one. Nor does a statement, after a comment whose line end was just written, since the layout's line breaks come after it.
-		if !p.impliedSemi && (!p.strict() || data != "}" && !(head && wroteNewline)) {
+		if !p.impliedSemi && (!p.strict() || data != "}" && (!head || !wroteNewline)) {
 			n := nlimit(next.Line - p.pos.Line)
 			// don't exceed maxNewlines if we already wrote one
 			if wroteNewline && n == maxNewlines {

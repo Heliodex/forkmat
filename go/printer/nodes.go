@@ -2133,14 +2133,14 @@ func (p *printer) declList(list []ast.Decl) {
 		// If the declaration token changed (e.g., from CONST to TYPE) or the next declaration has documentation associated with it, print an empty line between top-level declarations. (because p.linebreak is called with the position of d, which is past any documentation, the minimum requirement is satisfied even w/o the extra getDoc(d) nil-check - leave it in case the linebreak logic improves - there's already a TODO).
 		if len(p.output) > 0 {
 			// only print line break if we are not at the beginning of the output (i.e., we are not printing only a partial program)
-			min := 1
+			minBreaks := 1
 
 			if prev != tok || getDoc(d) != nil {
-				min = 2
+				minBreaks = 2
 			}
 
 			if p.strict() && (multiLine || p.multiLineDecl(prevDecl)) {
-				min = 2
+				minBreaks = 2
 			}
 
 			// start a new section if the next declaration is a function that spans multiple lines (see also issue #19544)
@@ -2150,7 +2150,7 @@ func (p *printer) declList(list []ast.Decl) {
 				newSection = tok == token.FUNC && multiLine
 			}
 
-			p.linebreak(p.layoutLine(d.Pos(), min), min, ignore, newSection)
+			p.linebreak(p.layoutLine(d.Pos(), minBreaks), minBreaks, ignore, newSection)
 		}
 
 		p.decl(d)

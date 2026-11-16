@@ -59,7 +59,8 @@ func formatDocComment(list []*ast.Comment) []*ast.Comment {
 		directives []*ast.Comment
 	)
 
-	if len(list) == 1 && strings.HasPrefix(list[0].Text, "/*") {
+	switch {
+	case len(list) == 1 && strings.HasPrefix(list[0].Text, "/*"):
 		kind = "/*"
 		text = list[0].Text
 
@@ -73,7 +74,7 @@ func formatDocComment(list []*ast.Comment) []*ast.Comment {
 		}
 
 		text = text[2 : len(text)-2] // cut /* and */
-	} else if strings.HasPrefix(list[0].Text, "//") {
+	case strings.HasPrefix(list[0].Text, "//"):
 		var b strings.Builder
 
 		kind = "//"
@@ -95,7 +96,7 @@ func formatDocComment(list []*ast.Comment) []*ast.Comment {
 		}
 
 		text = b.String()
-	} else {
+	default:
 		// Not sure what this is, so leave alone.
 		return list
 	}
@@ -133,11 +134,12 @@ func formatDocComment(list []*ast.Comment) []*ast.Comment {
 
 		line, text, _ = strings.Cut(text, "\n")
 
-		if line == "" {
+		switch {
+		case line == "":
 			line = "//"
-		} else if strings.HasPrefix(line, "\t") {
+		case strings.HasPrefix(line, "\t"):
 			line = "//" + line
-		} else {
+		default:
 			line = "// " + line
 		}
 

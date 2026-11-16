@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/composite"
+	"golang.org/x/tools/go/analysis/passes/inline"
 	"golang.org/x/tools/go/analysis/passes/modernize"
 )
 
@@ -161,6 +163,40 @@ func TestVetFix(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := fixIn(t, vetFixSuite, tt.goVersion, tt.src); got != tt.want {
 				t.Errorf("got:\n%s\nwant:\n%s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOptInFixes(t *testing.T) {
+	tests := []struct {
+		name  string
+		suite []*analysis.Analyzer
+		src   string
+		want  string
+	}{
+		{
+			name:  "inline replaces a call to a function marked //go:fix inline",
+			suite: []*analysis.Analyzer{inline.Analyzer},
+			src:   "package p\n\n//go:fix inline\nfunc double(x int) int { return x + x }\n\nfunc f() int {\n\treturn double(3)\n}\n",
+			want:  "package p\n\n//go:fix inline\nfunc double(x int) int { return x + x }\n\nfunc f() int {\n\treturn 3 + 3\n}\n",
+		},
+		{
+			name:  "composite keys an unkeyed literal of an imported struct",
+			suite: []*analysis.Analyzer{composite.Analyzer},
+			src:   "package p\n\nimport \"net/url\"\n\nfunc f() *url.URL {\n\treturn &url.URL{\"https\", \"\", nil, \"example.com\", \"\", \"\", \"\", \"\", \"\", false, false}\n}\n",
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fixIn(t, tt.suite, "1.27", tt.src)
+			if tt.want != "" && got != tt.want {
+				t.Errorf("got:\n%s\nwant:\n%s", got, tt.want)
+			}
+			if tt.want == "" && got == tt.src {
+				t.Errorf("composite made no fix")
 			}
 		})
 	}

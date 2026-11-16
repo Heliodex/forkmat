@@ -77,6 +77,8 @@ var (
 	moderniseFlag = flag.Bool("modernise", false, "apply the fixes of the analyzers in golang.org/x/tools/go/analysis/passes/modernize (see modernise.go)")
 	unusedFlag = flag.Bool("unused", false, "remove local variables that are declared and never referenced (see unused.go)")
 	vetFixFlag = flag.Bool("vetfix", false, "apply the fixes of the vet analyzers assign, hostport, timeformat and unreachable (see modernise.go)")
+	inlineFlag = flag.Bool("inline", false, "apply the fixes of the inline analyzer, which inlines calls to functions marked //go:fix inline (see modernise.go)")
+	compositeFlag = flag.Bool("composite", false, "apply the fixes of the composite analyzer, which keys unkeyed composite literals of imported struct types (see modernise.go)")
 	allFlag = flag.Bool("all", false, "enable -strict, -modernise, -vetfix, -unused, -unconvert, -flatten, -mergecases and -omitcases")
 	strict = flag.Bool("strict", false, "lay out code from the AST alone, ignoring the source's line breaks (see go/printer/strict.go)")
 

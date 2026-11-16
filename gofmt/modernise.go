@@ -17,6 +17,8 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/assign"
+	"golang.org/x/tools/go/analysis/passes/composite"
+	"golang.org/x/tools/go/analysis/passes/inline"
 	"golang.org/x/tools/go/analysis/passes/hostport"
 	"golang.org/x/tools/go/analysis/passes/modernize"
 	"golang.org/x/tools/go/analysis/passes/timeformat"
@@ -42,6 +44,14 @@ func enabledSuite() []*analysis.Analyzer {
 
 	if *vetFixFlag {
 		suite = append(suite, vetFixSuite...)
+	}
+
+	if *inlineFlag {
+		suite = append(suite, inline.Analyzer)
+	}
+
+	if *compositeFlag {
+		suite = append(suite, composite.Analyzer)
 	}
 
 	return suite

@@ -152,7 +152,7 @@ func (p *printer) fixGoBuildLines() {
 	block = append(block, '\n')
 
 	// Build sorted list of lines to delete from remainder of output.
-	toDelete := append(p.goBuild, p.plusBuild...)
+	toDelete := slices.Concat(p.goBuild, p.plusBuild)
 
 	slices.Sort(toDelete)
 

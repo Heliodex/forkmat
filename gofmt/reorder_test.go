@@ -153,7 +153,8 @@ func TestHoistOrder(t *testing.T) {
 }
 
 func TestHoistTypesAfterImports(t *testing.T) {
-	src := "package p\n\nimport \"fmt\"\n\nfunc f() { fmt.Println() }\n\ntype T struct{ s fmt.Stringer }\n"
+	const src string = "package p\n\nimport \"fmt\"\n\nfunc f() { fmt.Println() }\n\ntype T struct{ s fmt.Stringer }\n"
+
 	got := reorderText(t, src)
 
 	if i, j := strings.Index(got, "import"), strings.Index(got, "type T"); !(i >= 0 && j > i) {
@@ -207,8 +208,11 @@ func TestHoistVars(t *testing.T) {
 }
 
 func TestReorderComments(t *testing.T) {
-	src := "package p\n\n// a is documented.\nfunc a() {\n\tb()\n}\n\n// b is documented.\nfunc b() {}\n"
-	want := "package p\n\n// b is documented.\nfunc b() {}\n\n// a is documented.\nfunc a() {\n\tb()\n}\n"
+	const (
+		src string = "package p\n\n// a is documented.\nfunc a() {\n\tb()\n}\n\n// b is documented.\nfunc b() {}\n"
+		want string = "package p\n\n// b is documented.\nfunc b() {}\n\n// a is documented.\nfunc a() {\n\tb()\n}\n"
+	)
+
 	if got := reorderText(t, src); got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
@@ -366,7 +370,8 @@ func TestReorderFuncs(t *testing.T) {
 }
 
 func TestReorderIdempotent(t *testing.T) {
-	src := "package p\n\nfunc a() {\n\tb()\n}\n\nfunc b() {\n\tc()\n}\n\nfunc c() {}\n"
+	const src string = "package p\n\nfunc a() {\n\tb()\n}\n\nfunc b() {\n\tc()\n}\n\nfunc c() {}\n"
+
 	once := reorderText(t, src)
 	if twice := reorderText(t, once); once != twice {
 		t.Errorf("second pass changed the output:\n%s", twice)

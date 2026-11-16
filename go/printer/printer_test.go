@@ -367,13 +367,14 @@ func TestIssue11151(t *testing.T) {
 // Verify that we don't print a newline between "return" and its results, as
 // that would incorrectly cause a naked return.
 func TestIssue32854(t *testing.T) {
-	src := `package foo
+	const src string = `package foo
 
 func f() {
         return Composite{
                 call(),
         }
 }`
+
 	lfset := token.NewFileSet()
 	file, err := parser.ParseFile(lfset, "", src, parser.SkipObjectResolution)
 	if err != nil {
@@ -391,7 +392,8 @@ func f() {
 		t.Fatal(err)
 	}
 
-	want := "return call()"
+	const want string = "return call()"
+
 	if got := buf.String(); got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -571,14 +573,17 @@ func TestParenthesizedDecl(t *testing.T) {
 }
 
 func TestSourcePosNewline(t *testing.T) {
-	// We don't provide a syntax for escaping or unescaping characters in line
-	// directives (see https://go.dev/issue/24183#issuecomment-372449628).
-	// As a result, we cannot write a line directive with the correct path for a
-	// filename containing newlines. We should return an error rather than
-	// silently dropping or mangling it.
+	const (
+		// We don't provide a syntax for escaping or unescaping characters in line
+		// directives (see https://go.dev/issue/24183#issuecomment-372449628).
+		// As a result, we cannot write a line directive with the correct path for a
+		// filename containing newlines. We should return an error rather than
+		// silently dropping or mangling it.
 
-	fname := "foo\nbar/bar.go"
-	src := `package bar`
+		fname string = "foo\nbar/bar.go"
+		src string = `package bar`
+	)
+
 	lfset := token.NewFileSet()
 	f, err := parser.ParseFile(lfset, fname, src, parser.ParseComments|parser.AllErrors|parser.SkipObjectResolution)
 	if err != nil {

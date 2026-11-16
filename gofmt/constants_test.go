@@ -13,6 +13,7 @@ func constantsIn(t *testing.T, src string, others map[string]string) string {
 	dir := t.TempDir()
 
 	const gomod string = "module example.com/m\n\ngo 1.27\n"
+
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(gomod), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -113,6 +114,7 @@ func TestConstants(t *testing.T) {
 func TestConstantsNeedsThePackage(t *testing.T) {
 	// the variable has a named type declared in a sibling file, whose name is not written here, so it stays a variable
 	const src = "package p\n\nfunc f() Count {\n\tn := Count(3)\n\treturn n\n}\n"
+
 	got := constantsIn(t, src, map[string]string{"b.go": "package p\n\ntype Count int\n"})
 	if got != src {
 		t.Errorf("got:\n%s\nwant:\n%s", got, src)
@@ -120,6 +122,7 @@ func TestConstantsNeedsThePackage(t *testing.T) {
 
 	// a file read from standard input has no package to check, so it is left alone
 	const plain = "package p\n\nfunc f() int {\n\tx := 5\n\treturn x\n}\n"
+
 	if got := string(constantsSource("<standard input>", []byte(plain))); got != plain {
 		t.Errorf("standard input got:\n%s\nwant:\n%s", got, plain)
 	}

@@ -255,6 +255,7 @@ func TestRewrite(t *testing.T) {
 				defer func(old bool) {
 					*importsFlag = old
 				}(*importsFlag)
+
 				*importsFlag = false
 			}
 

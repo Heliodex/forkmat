@@ -89,42 +89,6 @@ func bytesOverlap(a, b textEdit) bool {
 	return a.start < b.end && b.start < a.end
 }
 
-// packageFiles parses the package of the file being fixed into fset: the file itself, as src gives it, and its siblings as they are on disk. It reports false when the package cannot be taken as a whole, such as a file read from standard input, a directory that does not build as one package, or a package that uses cgo. Types declared in another file of a package are otherwise undefined, and the analyzers can then take two different types for the same one (see moderniseRun).
-func packageFiles(fset *token.FileSet, filename string, file *ast.File) ([]*ast.File, bool) {
-	if !onDisk(filename) {
-		return nil, false
-	}
-
-	dir := filepath.Dir(filename)
-
-	bp, err := build.Default.ImportDir(dir, 0)
-	if err != nil || bp.Name != file.Name.Name || len(bp.CgoFiles) > 0 {
-		return nil, false
-	}
-
-	files := []*ast.File{file}
-
-	for _, name := range bp.GoFiles {
-		if name == filepath.Base(filename) {
-			continue
-		}
-
-		f, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, parser.ParseComments)
-		if err != nil {
-			return nil, false
-		}
-
-		files = append(files, f)
-	}
-
-	return files, true
-}
-
-// checkModernise type-checks the file on its own, under the Go version of its module. Errors are expected for names declared in other files, and are ignored: an expression whose type cannot be found has no entry, and the analyzers leave it alone. The import pass uses it, which needs only the names of the imports.
-func checkModernise(fset *token.FileSet, file *ast.File, goVersion string) (*types.Package, *types.Info) {
-	return checkModerniseFiles(fset, []*ast.File{file}, goVersion)
-}
-
 // checkModerniseFiles type-checks the files of one package under the Go version of its module, the first file among them. Errors are ignored: an expression whose type cannot be found has no entry.
 func checkModerniseFiles(fset *token.FileSet, files []*ast.File, goVersion string) (*types.Package, *types.Info) {
 	info := &types.Info{
@@ -147,6 +111,11 @@ func checkModerniseFiles(fset *token.FileSet, files []*ast.File, goVersion strin
 	pkg, _ := conf.Check("gofmt.invalid/"+files[0].Name.Name, fset, files, info)
 
 	return pkg, info
+}
+
+// checkModernise type-checks the file on its own, under the Go version of its module. Errors are expected for names declared in other files, and are ignored: an expression whose type cannot be found has no entry, and the analyzers leave it alone. The import pass uses it, which needs only the names of the imports.
+func checkModernise(fset *token.FileSet, file *ast.File, goVersion string) (*types.Package, *types.Info) {
+	return checkModerniseFiles(fset, []*ast.File{file}, goVersion)
 }
 
 // enabledSuite returns the analyzers whose fixes the flags enable, in the order they run.
@@ -197,6 +166,23 @@ func goDirective(gomod []byte) string {
 	return ""
 }
 
+// importFact copies the fact that analyzer a exported for obj into fact, and reports whether there was one.
+func (r *moderniseRun) importFact(a *analysis.Analyzer, obj types.Object, fact analysis.Fact) bool {
+	stored, ok := r.facts[factKey{a, obj, reflect.TypeOf(fact)}]
+	if !ok {
+		return false
+	}
+	reflect.ValueOf(fact).Elem().Set(reflect.ValueOf(stored).Elem())
+	return true
+}
+
+// inFile reports whether pos is in the file being fixed. The analyzers run over the whole package, so a fix may edit a sibling file; that fix is not applied.
+func (r *moderniseRun) inFile(pos token.Pos) bool {
+	f := r.fset.File(pos)
+
+	return f != nil && f.Name() == r.filename
+}
+
 // editsOf returns the edits of a suggested fix, as offsets into the source.
 func (r *moderniseRun) editsOf(fix analysis.SuggestedFix) ([]textEdit, bool) {
 	var edits []textEdit
@@ -221,23 +207,6 @@ func (r *moderniseRun) editsOf(fix analysis.SuggestedFix) ([]textEdit, bool) {
 	}
 
 	return edits, true
-}
-
-// inFile reports whether pos is in the file being fixed. The analyzers run over the whole package, so a fix may edit a sibling file; that fix is not applied.
-func (r *moderniseRun) inFile(pos token.Pos) bool {
-	f := r.fset.File(pos)
-
-	return f != nil && f.Name() == r.filename
-}
-
-// importFact copies the fact that analyzer a exported for obj into fact, and reports whether there was one.
-func (r *moderniseRun) importFact(a *analysis.Analyzer, obj types.Object, fact analysis.Fact) bool {
-	stored, ok := r.facts[factKey{a, obj, reflect.TypeOf(fact)}]
-	if !ok {
-		return false
-	}
-	reflect.ValueOf(fact).Elem().Set(reflect.ValueOf(stored).Elem())
-	return true
 }
 
 // readFile reads a file for the analyzers. The file being fixed is read from the source in memory, which may differ from the file on disk.
@@ -388,6 +357,36 @@ func fixOverlaps(fix, accepted []textEdit) bool {
 	}
 
 	return false
+}
+
+// packageFiles parses the package of the file being fixed into fset: the file itself, as src gives it, and its siblings as they are on disk. It reports false when the package cannot be taken as a whole, such as a file read from standard input, a directory that does not build as one package, or a package that uses cgo. Types declared in another file of a package are otherwise undefined, and the analyzers can then take two different types for the same one (see moderniseRun).
+func packageFiles(fset *token.FileSet, filename string, file *ast.File) ([]*ast.File, bool) {
+	if !onDisk(filename) {
+		return nil, false
+	}
+
+	dir := filepath.Dir(filename)
+	bp, err := build.Default.ImportDir(dir, 0)
+	if err != nil || bp.Name != file.Name.Name || len(bp.CgoFiles) > 0 {
+		return nil, false
+	}
+
+	files := []*ast.File{file}
+
+	for _, name := range bp.GoFiles {
+		if name == filepath.Base(filename) {
+			continue
+		}
+
+		f, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, parser.ParseComments)
+		if err != nil {
+			return nil, false
+		}
+
+		files = append(files, f)
+	}
+
+	return files, true
 }
 
 // selectFixes returns the edits of the fixes that do not overlap an earlier fix. A fix that overlaps one is left for a later round, once the source has changed.

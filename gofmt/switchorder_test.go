@@ -71,8 +71,11 @@ func TestSwitchCaseOrderComments(t *testing.T) {
 // TestSwitchCaseOrderStableAcrossSiblings checks that a switch on constants of a sibling file is ordered as the sibling will be once formatted: the sibling's reorder passes sort its constants, and the order must not depend on whether it has been formatted yet.
 func TestSwitchCaseOrderStableAcrossSiblings(t *testing.T) {
 	dir := t.TempDir()
-	consts := "package p\n\nconst (\n\tstatusPass = \"pass\"\n\tstatusFail = \"fail\"\n\tstatusError = \"error\"\n)\n"
-	sw := "package p\n\nfunc f(s string) int {\n\tswitch s {\n\tcase statusFail:\n\t\treturn 1\n\tcase statusPass:\n\t\treturn 2\n\tcase statusError:\n\t\treturn 3\n\t}\n\treturn 0\n}\n"
+
+	const (
+		consts string = "package p\n\nconst (\n\tstatusPass = \"pass\"\n\tstatusFail = \"fail\"\n\tstatusError = \"error\"\n)\n"
+		sw string = "package p\n\nfunc f(s string) int {\n\tswitch s {\n\tcase statusFail:\n\t\treturn 1\n\tcase statusPass:\n\t\treturn 2\n\tcase statusError:\n\t\treturn 3\n\t}\n\treturn 0\n}\n"
+	)
 
 	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte(consts), 0o644); err != nil {
 		t.Fatal(err)
@@ -118,7 +121,10 @@ func TestSwitchCaseOrderStableAcrossSiblings(t *testing.T) {
 		return strings.Join(names, " ")
 	}
 	first := order()
-	if want := "statusError statusFail statusPass"; first != want {
+
+	const want string = "statusError statusFail statusPass"
+
+	if first != want {
 		t.Errorf("order = %q, want %q", first, want)
 	}
 
@@ -130,7 +136,8 @@ func TestSwitchCaseOrderStableAcrossSiblings(t *testing.T) {
 
 // A file read from standard input has no file name on disk, but its own constants still count, and no other file of its directory does.
 func TestSwitchCaseOrderStdin(t *testing.T) {
-	src := "package p\n\nconst (\n\tia = iota\n\tib\n)\n\nfunc f(k int) int {\n\tswitch k {\n\tcase ib:\n\t\treturn 2\n\tcase ia:\n\t\treturn 1\n\t}\n\treturn 0\n}\n"
+	const src string = "package p\n\nconst (\n\tia = iota\n\tib\n)\n\nfunc f(k int) int {\n\tswitch k {\n\tcase ib:\n\t\treturn 2\n\tcase ia:\n\t\treturn 1\n\t}\n\treturn 0\n}\n"
+
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "<standard input>", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {

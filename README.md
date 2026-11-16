@@ -324,9 +324,9 @@ The removal is made only when it cannot change which code runs. A value that the
 
 ### `-modernise`: apply the modernize analyzers
 
-`gofmt -modernise` applies the fixes of the analyzers in `golang.org/x/tools/go/analysis/passes/modernize`, the suite that `go fix` runs: `interface{}` becomes `any`, a counting loop becomes a range over an int, a search loop becomes `slices.Contains`, and so on, with the import each fix needs added. The analyzers run over the file alone, with its types from `go/types` as `-unconvert` uses them. Their fixes are applied to the source text, which is then parsed again and checked again, since one fix can expose another. Fixes that overlap wait for the next round (`modernise.go`).
+`gofmt -modernise` applies the fixes of the analyzers in `golang.org/x/tools/go/analysis/passes/modernize`, the suite that `go fix` runs: `interface{}` becomes `any`, a counting loop becomes a range over an int, a search loop becomes `slices.Contains`, and so on, with the import each fix needs added. The analyzers run over the package of the file, checked with `go/types` from the other files of its directory as they are on disk, so a type declared in a sibling file is known to them. Only the fixes that edit the file itself are applied. Their fixes are applied to the source text, which is then parsed again and checked again, since one fix can expose another. Fixes that overlap wait for the next round (`modernise.go`).
 
-The fixes are held to the Go version of the module that governs the file, from its go.mod, so `any` is only written where the module is go 1.18 or later. A file outside any module is left alone.
+The fixes are held to the Go version of the module that governs the file, from its go.mod, so `any` is only written where the module is go 1.18 or later. A file outside any module is left alone. A file read from standard input gets no fixes, and neither does a file whose package cannot be taken as a whole, such as one that uses cgo or whose directory does not build as one package, or a file that its build constraints exclude from the package.
 
 It is off by default, and runs on complete files only, not on fragments or generated files, like `-unconvert`.
 

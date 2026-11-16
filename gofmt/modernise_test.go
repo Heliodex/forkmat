@@ -4,10 +4,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/composite"
+	"golang.org/x/tools/go/analysis/passes/inline"
+	"golang.org/x/tools/go/analysis/passes/modernize"
 )
 
-// moderniseIn returns src modernised as a file of a module whose go.mod names goVersion, or as a file outside any module when goVersion is "".
-func moderniseIn(t *testing.T, goVersion, src string) string {
+// fixIn returns src with the fixes of suite applied, as a file of a module whose go.mod names goVersion, or as a file outside any module when goVersion is "".
+func fixIn(t *testing.T, suite []*analysis.Analyzer, goVersion, src string) string {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -18,7 +23,7 @@ func moderniseIn(t *testing.T, goVersion, src string) string {
 		}
 	}
 
-	return string(modernise(filepath.Join(dir, "x.go"), []byte(src)))
+	return string(modernise(filepath.Join(dir, "x.go"), []byte(src), suite))
 }
 
 func TestModernise(t *testing.T) {
@@ -64,7 +69,7 @@ func TestModernise(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := moderniseIn(t, tt.goVersion, tt.src); got != tt.want {
+			if got := fixIn(t, modernize.Suite, tt.goVersion, tt.src); got != tt.want {
 				t.Errorf("got:\n%s\nwant:\n%s", got, tt.want)
 			}
 		})
@@ -112,6 +117,86 @@ func TestApplyFixEdits(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := string(applyFixEdits([]byte("abcdef"), tt.edits)); got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVetFix(t *testing.T) {
+	const selfAssign = "package p\n\nfunc f(x int) int {\n\tx = x\n\treturn x\n}\n"
+
+	tests := []struct {
+		name, goVersion, src, want string
+	}{
+		{
+			name: "self-assignment is removed",
+			goVersion: "1.27",
+			src: selfAssign,
+			want: "package p\n\nfunc f(x int) int {\n\treturn x\n}\n",
+		},
+		{
+			name: "time layout is corrected",
+			goVersion: "1.27",
+			src: "package p\n\nimport \"time\"\n\nfunc f() string {\n\treturn time.Now().Format(\"2006-02-01\")\n}\n",
+			want: "package p\n\nimport \"time\"\n\nfunc f() string {\n\treturn time.Now().Format(\"2006-01-02\")\n}\n",
+		},
+		{
+			name: "host and port are joined by net.JoinHostPort",
+			goVersion: "1.27",
+			src: "package p\n\nimport (\n\t\"fmt\"\n\t\"net\"\n)\n\nfunc f(host string, port int) (net.Conn, error) {\n\treturn net.Dial(\"tcp\", fmt.Sprintf(\"%s:%d\", host, port))\n}\n",
+			want: "package p\n\nimport (\n\t\"fmt\"\n\t\"net\"\n)\n\nfunc f(host string, port int) (net.Conn, error) {\n\treturn net.Dial(\"tcp\", net.JoinHostPort(host, fmt.Sprintf(\"%d\", port)))\n}\n",
+		},
+		{
+			name: "code after a return is removed",
+			goVersion: "1.27",
+			src: "package p\n\nfunc g() int {\n\treturn 1\n\tprintln(\"dead\")\n}\n",
+			want: "package p\n\nfunc g() int {\n\treturn 1\n}\n",
+		},
+		{
+			name: "a file outside any module is left alone",
+			src: selfAssign,
+			want: selfAssign,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := fixIn(t, vetFixSuite, tt.goVersion, tt.src); got != tt.want {
+				t.Errorf("got:\n%s\nwant:\n%s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOptInFixes(t *testing.T) {
+	tests := []struct {
+		name  string
+		suite []*analysis.Analyzer
+		src   string
+		want  string
+	}{
+		{
+			name:  "inline replaces a call to a function marked //go:fix inline",
+			suite: []*analysis.Analyzer{inline.Analyzer},
+			src:   "package p\n\n//go:fix inline\nfunc double(x int) int { return x + x }\n\nfunc f() int {\n\treturn double(3)\n}\n",
+			want:  "package p\n\n//go:fix inline\nfunc double(x int) int { return x + x }\n\nfunc f() int {\n\treturn 3 + 3\n}\n",
+		},
+		{
+			name:  "composite keys an unkeyed literal of an imported struct",
+			suite: []*analysis.Analyzer{composite.Analyzer},
+			src:   "package p\n\nimport \"net/url\"\n\nfunc f() *url.URL {\n\treturn &url.URL{\"https\", \"\", nil, \"example.com\", \"\", \"\", \"\", \"\", \"\", false, false}\n}\n",
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fixIn(t, tt.suite, "1.27", tt.src)
+			if tt.want != "" && got != tt.want {
+				t.Errorf("got:\n%s\nwant:\n%s", got, tt.want)
+			}
+			if tt.want == "" && got == tt.src {
+				t.Errorf("composite made no fix")
 			}
 		})
 	}

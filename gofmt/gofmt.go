@@ -79,7 +79,7 @@ var (
 	vetFixFlag = flag.Bool("vetfix", false, "apply the fixes of the vet analyzers assign, hostport, timeformat and unreachable (see modernise.go)")
 	inlineFlag = flag.Bool("inline", false, "apply the fixes of the inline analyzer, which inlines calls to functions marked //go:fix inline (see modernise.go)")
 	compositeFlag = flag.Bool("composite", false, "apply the fixes of the composite analyzer, which keys unkeyed composite literals of imported struct types (see modernise.go)")
-	allFlag = flag.Bool("all", false, "enable -strict, -modernise, -vetfix, -unused, -unconvert, -flatten, -mergecases and -omitcases")
+	allFlag = flag.Bool("all", false, "enable -strict, -modernise, -vetfix, -inline, -composite, -unused, -unconvert, -flatten, -mergecases and -omitcases")
 	strict = flag.Bool("strict", false, "lay out code from the AST alone, ignoring the source's line breaks (see go/printer/strict.go)")
 
 	// debugging
@@ -644,6 +644,8 @@ func gofmtMain(s *sequencer) {
 		*strict = true
 		*moderniseFlag = true
 		*vetFixFlag = true
+		*inlineFlag = true
+		*compositeFlag = true
 
 		*unusedFlag = true
 		*unconvertFlag = true

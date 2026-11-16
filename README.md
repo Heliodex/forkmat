@@ -40,7 +40,7 @@ go test ./gofmt            # upstream tests + golden files
 
 Checked against the installed `gofmt` (go1.27.2): identical output on the same input. `cmd/gofmt` is byte-identical between go1.27.2 and go1.27.4.
 
-`gofmt -all` enables `-strict`, `-modernise`, `-vetfix`, `-unused`, `-unconvert`, `-flatten`, `-mergecases` and `-omitcases` together. `-inline` and `-composite` are opt-ins, left out of `-all`. Each of them is described below.
+`gofmt -all` enables `-strict`, `-modernise`, `-vetfix`, `-inline`, `-composite`, `-unused`, `-unconvert`, `-flatten`, `-mergecases` and `-omitcases` together. Each of them is described below.
 
 ## Local changes
 
@@ -334,7 +334,7 @@ It is off by default, and runs on complete files only, not on fragments or gener
 
 `gofmt -vetfix` applies the fixes of the analyzers `assign`, `hostport`, `timeformat` and `unreachable` from `golang.org/x/tools/go/analysis/passes`. `assign` removes a self-assignment such as `x = x`. `hostport` turns `net.Dial("tcp", fmt.Sprintf("%s:%d", host, port))` into `net.JoinHostPort`. `timeformat` corrects a time layout such as `2006-02-01` to `2006-01-02`. `unreachable` removes code that follows a `return` or `panic`.
 
-It runs through the same fix runner as `-modernise`, under the same Go version gate, and is enabled by `-all`.
+It runs through the same fix runner as `-modernise`, under the same Go version gate. `-all` enables it.
 
 ### `-unused`: remove local variables that are never referenced
 
@@ -365,13 +365,13 @@ A declaration is not removed when a comment lies in it or on the line before or 
 
 The pass needs the object links the parser writes, so it parses the file without `parser.SkipObjectResolution`. It is off by default. Without `-strict`, the printer keeps the source's line breaks, so a removed line may leave a blank line behind; `-strict` lays the block out from the AST and drops it.
 
-### `-inline` and `-composite`: opt-in fixes
+### `-inline` and `-composite`: fixes for specific code
 
 `gofmt -inline` applies the fixes of the `inline` analyzer, which replaces a call to a function marked `//go:fix inline` with the function's body, as `go fix` does. Because it works from the directive, it only changes code that carries one.
 
 `gofmt -composite` applies the fixes of the `composite` analyzer, which adds field names to an unkeyed literal of an imported struct type, such as `&url.URL{"https", …}`. The analyzer leaves alone a short list of frozen stdlib types, such as `image.Point`, where unkeyed literals are safe.
 
-Neither is enabled by `-all`. Both run through the same fix runner as `-modernise`.
+Both run through the same fix runner as `-modernise`, and `-all` enables both. Each can also be turned on alone.
 
 ## What differs from upstream
 

@@ -23,6 +23,7 @@ type (
 		stmt ast.Stmt
 		name *ast.Ident
 		typ string
+		unwrap bool // the value is a conversion of an untyped constant to typ, which the declaration makes redundant
 	}
 )
 
@@ -181,7 +182,7 @@ func identOf(e ast.Expr) *ast.Ident {
 }
 
 // constDecl returns the const declaration of the := statement a, with the type typ when it is inferred.
-func constDecl(a *ast.AssignStmt, typ string) ast.Stmt {
+func constDecl(a *ast.AssignStmt, typ string, unwrap bool) ast.Stmt {
 	spec := &ast.ValueSpec{
 		Names: []*ast.Ident{identOf(a.Lhs[0])},
 		Values: a.Rhs,
@@ -194,6 +195,10 @@ func constDecl(a *ast.AssignStmt, typ string) ast.Stmt {
 		}
 	}
 
+	if unwrap {
+		unwrapConversion(spec)
+	}
+
 	return &ast.DeclStmt{
 		Decl: &ast.GenDecl{
 			TokPos: a.Pos(),
@@ -201,6 +206,32 @@ func constDecl(a *ast.AssignStmt, typ string) ast.Stmt {
 			Specs: []ast.Spec{spec},
 		},
 	}
+}
+
+// redundantConversion reports whether value is a conversion to the type named typ, of an operand that already has the type t: the declaration of a constant of type t makes the conversion redundant, as in const r uint32 = uint32(0), which means the same as const r uint32 = 0. A conversion that changes the type is not redundant.
+func redundantConversion(value ast.Expr, typ string, t types.Type, info *types.Info) bool {
+	call, ok := value.(*ast.CallExpr)
+	if !ok || typ == "" || len(call.Args) != 1 || call.Ellipsis.IsValid() {
+		return false
+	}
+
+	if fun, ok := call.Fun.(*ast.Ident); !ok || fun.Name != typ {
+		return false
+	}
+
+	tv, ok := info.Types[call.Args[0]]
+
+	return ok && tv.Type != nil && types.Identical(tv.Type, t)
+}
+
+// defType returns the type of the variable that name declares.
+func defType(info *types.Info, name *ast.Ident) types.Type {
+	return info.Defs[name].Type()
+}
+
+// unwrapConversion replaces the value of vs, a conversion of an untyped constant (see untypedConversionTo), by the constant.
+func unwrapConversion(vs *ast.ValueSpec) {
+	vs.Values[0] = vs.Values[0].(*ast.CallExpr).Args[0]
 }
 
 // declareConstants rewrites the candidates of file, which they were found in. The candidates are done from the last in the file, so that the index of each one in its list is still right when it is reached.
@@ -214,17 +245,22 @@ func declareConstants(file *ast.File, cands []constCandidate) {
 			gd := c.stmt.(*ast.DeclStmt).Decl.(*ast.GenDecl)
 			gd.Tok = token.CONST
 
+			vs := gd.Specs[0].(*ast.ValueSpec)
+
 			if c.typ != "" {
-				vs := gd.Specs[0].(*ast.ValueSpec)
 				vs.Type = &ast.Ident{
 					NamePos: vs.Pos(),
 					Name: c.typ,
 				}
 			}
+
+			if c.unwrap {
+				unwrapConversion(vs)
+			}
 		case constDefine:
-			(*c.list)[c.index] = constDecl(c.stmt.(*ast.AssignStmt), c.typ)
+			(*c.list)[c.index] = constDecl(c.stmt.(*ast.AssignStmt), c.typ, c.unwrap)
 		case constHoist:
-			*c.list = slices.Insert(*c.list, c.index, constDecl(initOf(c.stmt), c.typ))
+			*c.list = slices.Insert(*c.list, c.index, constDecl(initOf(c.stmt), c.typ, c.unwrap))
 
 			setInit(c.stmt, nil)
 		}
@@ -336,7 +372,10 @@ func constHoistCandidate(fset *token.FileSet, info *types.Info, scope ast.Node, 
 		return constCandidate{}, false
 	}
 
-	return mk(constHoist, st, name, typ), true
+	c := mk(constHoist, st, name, typ)
+	c.unwrap = redundantConversion(a.Rhs[0], typ, defType(info, name), info)
+
+	return c, true
 }
 
 // constCandidateOf returns the candidate that the statement st, at index i of list, makes, if it makes one. scope is the node that holds list.
@@ -366,7 +405,10 @@ func constCandidateOf(fset *token.FileSet, info *types.Info, scope ast.Node, lis
 			return constCandidate{}, false
 		}
 
-		return mk(constDefine, s, name, typ), true
+		c := mk(constDefine, s, name, typ)
+		c.unwrap = redundantConversion(a.Rhs[0], typ, defType(info, name), info)
+
+		return c, true
 	case *ast.DeclStmt:
 		gd, ok := s.Decl.(*ast.GenDecl)
 		if !ok || gd.Tok != token.VAR || len(gd.Specs) != 1 {
@@ -383,7 +425,16 @@ func constCandidateOf(fset *token.FileSet, info *types.Info, scope ast.Node, lis
 			return constCandidate{}, false
 		}
 
-		return mk(constInPlace, s, vs.Names[0], typ), true
+		// the type is the one written, or else the one that := gives
+		declared := typ
+		if id, ok := vs.Type.(*ast.Ident); ok {
+			declared = id.Name
+		}
+
+		c := mk(constInPlace, s, vs.Names[0], typ)
+		c.unwrap = redundantConversion(vs.Values[0], declared, defType(info, vs.Names[0]), info)
+
+		return c, true
 	}
 
 	return constHoistCandidate(fset, info, scope, list, i, st, mk)

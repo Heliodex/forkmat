@@ -66,6 +66,21 @@ func TestConstants(t *testing.T) {
 			want: "package p\n\nimport \"fmt\"\n\nfunc f() {\n\tconst k int = 10\n\tfor k > 0 {\n\t\tfmt.Println(k)\n\t\tbreak\n\t}\n}\n",
 		},
 		{
+			name: "a conversion to the declared type is dropped",
+			src: "package p\n\nfunc f() uint32 {\n\tr := uint32(0)\n\treturn r\n}\n",
+			want: "package p\n\nfunc f() uint32 {\n\tconst r uint32 = 0\n\treturn r\n}\n",
+		},
+		{
+			name: "a conversion of a var to its declared type is dropped",
+			src: "package p\n\nfunc g() int {\n\tvar k int = int(7)\n\treturn k\n}\n",
+			want: "package p\n\nfunc g() int {\n\tconst k int = 7\n\treturn k\n}\n",
+		},
+		{
+			name: "a conversion to another type stays",
+			src: "package p\n\nfunc h() int64 {\n\tx := int64(uint8(3))\n\treturn x\n}\n",
+			want: "package p\n\nfunc h() int64 {\n\tconst x int64 = int64(uint8(3))\n\treturn x\n}\n",
+		},
+		{
 			name: "a variable that is incremented stays",
 			src: "package p\n\nfunc f() int {\n\tc := 1\n\tc++\n\treturn c\n}\n",
 			want: "package p\n\nfunc f() int {\n\tc := 1\n\tc++\n\treturn c\n}\n",

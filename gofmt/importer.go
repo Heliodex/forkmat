@@ -147,7 +147,7 @@ func (l *depImporter) waitsForItself(chain int, e *importEntry) bool {
 }
 
 // ImportFrom implements types.ImporterFrom. It starts a chain of its own.
-func (l *depImporter) ImportFrom(path, dir string, mode types.ImportMode) (*types.Package, error) {
+func (l *depImporter) ImportFrom(path, dir string, _ types.ImportMode) (*types.Package, error) {
 	return l.importPkg(path, dir, l.newChain())
 }
 
@@ -214,7 +214,7 @@ func (l *depImporter) load(path, dir string, chain int) (*types.Package, error) 
 }
 
 // ImportFrom implements types.ImporterFrom. The directory types passes is that of the package being checked, which is not where its module's packages are listed, so ctx is used instead.
-func (r reentrantImporter) ImportFrom(path, _ string, mode types.ImportMode) (*types.Package, error) {
+func (r reentrantImporter) ImportFrom(path, _ string, _ types.ImportMode) (*types.Package, error) {
 	return r.l.importPkg(path, r.ctx, r.chain)
 }
 

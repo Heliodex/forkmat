@@ -228,8 +228,8 @@ func (p *printer) distanceFrom(startPos token.Pos, startOutCol int) int {
 // Print as many newlines as necessary (but at least min newlines) to get to the current line. ws is printed before the first line break. If newSection is set, the first line break is printed as formfeed. Returns 0 if no line breaks were printed, returns 1 if there was exactly one newline printed, and returns a value > 1 if there was a formfeed or more than one newline printed.
 //
 // TODO(gri): linebreak may add too many lines if the next statement at "line" is preceded by comments because the computation of n assumes the current position before the comment and the target position after the comment. Thus, after interspersing such comments, the space taken up by them is not considered to reduce the number of linebreaks. At the moment there is no easy way to know about future (not yet interspersed) comments in this function.
-func (p *printer) linebreak(line, min int, ws whiteSpace, newSection bool) (nbreaks int) {
-	if n := max(nlimit(line-p.pos.Line), min); n > 0 {
+func (p *printer) linebreak(line, atLeast int, ws whiteSpace, newSection bool) (nbreaks int) {
+	if n := max(nlimit(line-p.pos.Line), atLeast); n > 0 {
 		p.print(ws)
 
 		if newSection {
@@ -1071,13 +1071,13 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 			if i > 0 {
 				// don't do a line break (min == 0) if we are printing a list of types TODO(gri) this doesn't work quite right if the list of types is
 				//           spread across multiple lines
-				min := 1
+				gap := 1
 
 				if prev != nil && name == prev {
-					min = 0
+					gap = 0
 				}
 
-				p.linebreak(p.layoutLine(f.Pos(), min), min, ignore, p.linesFrom(line) > 0)
+				p.linebreak(p.layoutLine(f.Pos(), gap), gap, ignore, p.linesFrom(line) > 0)
 			}
 
 			p.setComment(f.Doc)

@@ -36,9 +36,9 @@ func fieldType[T any](name string) reflect.Type {
 }
 
 func isWildcard(s string) bool {
-	rune, size := utf8.DecodeRuneInString(s)
+	r, size := utf8.DecodeRuneInString(s)
 
-	return size == len(s) && unicode.IsLower(rune)
+	return size == len(s) && unicode.IsLower(r)
 }
 
 // match reports whether pattern matches val, recording wildcard submatches in m. If m == nil, match checks whether pattern == val.

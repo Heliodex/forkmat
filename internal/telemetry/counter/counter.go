@@ -7,11 +7,11 @@ import "flag"
 
 type dummyCounter struct{}
 
-func CountFlagValue(prefix string, flagSet flag.FlagSet, flagName string) {}
-func CountFlags(name string, flagSet flag.FlagSet) {}
-func Inc(name string) {}
+func CountFlagValue(_ string, _ flag.FlagSet, _ string) {}
+func CountFlags(_ string, _ flag.FlagSet) {}
+func Inc(_ string) {}
 
-func New(name string) dummyCounter {
+func New(_ string) dummyCounter {
 	return dummyCounter{}
 }
 

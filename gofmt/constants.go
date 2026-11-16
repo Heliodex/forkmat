@@ -247,7 +247,7 @@ func modifiedIn(info *types.Info, scope ast.Node, obj types.Object) (found bool)
 }
 
 // constVar reports whether the variable declared by name, with value, can be declared with const within scope, and the name of its type when it is inferred. explicit says whether the declaration writes its type.
-func constVar(fset *token.FileSet, info *types.Info, scope ast.Node, name *ast.Ident, value ast.Expr, explicit, hoist bool) (string, bool) {
+func constVar(_ *token.FileSet, info *types.Info, scope ast.Node, name *ast.Ident, value ast.Expr, explicit, hoist bool) (string, bool) {
 	obj, ok := info.Defs[name].(*types.Var)
 	if !ok || obj.Parent() == nil || obj.Parent() == obj.Pkg().Scope() {
 		return "", false
@@ -282,7 +282,7 @@ func constVar(fset *token.FileSet, info *types.Info, scope ast.Node, name *ast.I
 }
 
 // constHoistCandidate returns the candidate of an if, for or switch statement whose := initialiser can move out in front of it.
-func constHoistCandidate(fset *token.FileSet, info *types.Info, scope ast.Node, list *[]ast.Stmt, i int, st ast.Stmt, mk func(constKind, ast.Stmt, *ast.Ident, string) constCandidate) (constCandidate, bool) {
+func constHoistCandidate(fset *token.FileSet, info *types.Info, scope ast.Node, _ *[]ast.Stmt, i int, st ast.Stmt, mk func(constKind, ast.Stmt, *ast.Ident, string) constCandidate) (constCandidate, bool) {
 	var init ast.Stmt
 
 	switch s := st.(type) {
@@ -458,7 +458,7 @@ func constDecl(a *ast.AssignStmt, typ string, unwrap bool) ast.Stmt {
 }
 
 // declareConstants rewrites the candidates of file, which they were found in. The candidates are done from the last in the file, so that the index of each one in its list is still right when it is reached.
-func declareConstants(file *ast.File, cands []constCandidate) {
+func declareConstants(_ *ast.File, cands []constCandidate) {
 	slices.SortFunc(cands, func(a, b constCandidate) int {
 		return b.offset - a.offset
 	})

@@ -102,7 +102,7 @@ func CgoSupported(goos, goarch string) bool {
 }
 
 // DefaultPIE reports whether goos/goarch produces a PIE binary when using the "default" buildmode. On Windows this is affected by -race, so force the caller to pass that in to centralize that choice.
-func DefaultPIE(goos, goarch string, isRace bool) bool {
+func DefaultPIE(goos, _ string, isRace bool) bool {
 	switch goos {
 	case "android", "ios":
 		return true
@@ -121,7 +121,7 @@ func DefaultPIE(goos, goarch string, isRace bool) bool {
 }
 
 // ExecutableHasDWARF reports whether the linked executable includes DWARF symbols on goos/goarch.
-func ExecutableHasDWARF(goos, goarch string) bool {
+func ExecutableHasDWARF(goos, _ string) bool {
 	switch goos {
 	case "ios", "plan9":
 		return false
@@ -147,7 +147,7 @@ func FirstClass(goos, goarch string) bool {
 }
 
 // FuzzSupported reports whether goos/goarch supports fuzzing ('go test -fuzz=.').
-func FuzzSupported(goos, goarch string) bool {
+func FuzzSupported(goos, _ string) bool {
 	switch goos {
 	case "darwin", "freebsd", "linux", "openbsd", "windows":
 		return true

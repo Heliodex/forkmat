@@ -180,8 +180,8 @@ func wslDiagnostics(fset *token.FileSet, filename string, file *ast.File) []wslD
 	return diags
 }
 
-// wslLayout prints the file with print, which takes the blank lines to give each statement, numbered as StmtBlank numbers them. It runs wsl on the result, and sets the blank lines that wsl asks for, until wsl reports nothing. The result is the output of the last print. filename is the file's name.
-func wslLayout(filename string, print func(map[int]bool) ([]byte, error)) ([]byte, error) {
+// wslLayout prints the file with printFile, which takes the blank lines to give each statement, numbered as StmtBlank numbers them. It runs wsl on the result, and sets the blank lines that wsl asks for, until wsl reports nothing. The result is the output of the last print. filename is the file's name.
+func wslLayout(filename string, printFile func(map[int]bool) ([]byte, error)) ([]byte, error) {
 	// wsl reads a file by its name, so a file that has none on disk is checked under a name that ends in .go
 	name := filename
 	if !strings.HasSuffix(name, ".go") {
@@ -194,7 +194,7 @@ func wslLayout(filename string, print func(map[int]bool) ([]byte, error)) ([]byt
 
 	for range maxWSLRounds {
 		var err error
-		if out, err = print(blank); err != nil {
+		if out, err = printFile(blank); err != nil {
 			return nil, err
 		}
 

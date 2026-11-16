@@ -22,7 +22,7 @@ func hasDeclarations(list []ast.Stmt) bool {
 }
 
 // omittable reports whether clause i of body, which is c, can be removed.
-func omittable(fset *token.FileSet, body *ast.BlockStmt, i int, c *ast.CaseClause, names map[string]bool, rest []ast.Stmt, want string, comments []*ast.CommentGroup) bool {
+func omittable(fset *token.FileSet, body *ast.BlockStmt, i int, c *ast.CaseClause, names map[string]bool, _ []ast.Stmt, want string, comments []*ast.CommentGroup) bool {
 	if !endsInReturnList(c.Body) || printList(fset, c.Body) != want {
 		return false
 	}

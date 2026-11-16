@@ -115,13 +115,13 @@ func tgs(x, y []string) []pair {
 // In contrast, this implementation looks for a diff with the smallest number of “unique” lines inserted and removed, where unique means a line that appears just once in both old and new. We call this an “anchored diff” because the unique lines anchor the chosen matching regions. An anchored diff is usually clearer than a standard diff, because the algorithm does not try to reuse unrelated blank lines or closing braces. The algorithm also guarantees to run in O(n log n) time instead of the standard O(n²) time.
 //
 // Some systems call this approach a “patience diff,” named for the “patience sorting” algorithm, itself named for a solitaire card game. We avoid that name for two reasons. First, the name has been used for a few different variants of the algorithm, so it is imprecise. Second, the name is frequently interpreted as meaning that you have to wait longer (to be patient) for the diff, meaning that it is a slower algorithm, when in fact the algorithm is faster than the standard one.
-func Diff(oldName string, old []byte, newName string, new []byte) []byte {
-	if bytes.Equal(old, new) {
+func Diff(oldName string, old []byte, newName string, newText []byte) []byte {
+	if bytes.Equal(old, newText) {
 		return nil
 	}
 
 	x := lines(old)
-	y := lines(new)
+	y := lines(newText)
 
 	// Print diff header.
 	var out bytes.Buffer

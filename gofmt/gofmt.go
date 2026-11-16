@@ -719,7 +719,6 @@ func gofmtMain(s *sequencer) {
 			s.AddReport(fmt.Errorf("error: cannot use -w with -stdin-filepath"))
 			return
 		}
-
 		s.Add(0, func(r *reporter) error {
 			return processFile(*stdinFilepath, nil, os.Stdin, r)
 		})

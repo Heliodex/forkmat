@@ -250,6 +250,14 @@ func TestRewrite(t *testing.T) {
 		name := filepath.Base(in)
 
 		t.Run(name, func(t *testing.T) {
+			if name == "import.input" {
+				// the golden keeps imports that nothing uses, to test their order, so -imports is off for it
+				defer func(old bool) {
+					*importsFlag = old
+				}(*importsFlag)
+				*importsFlag = false
+			}
+
 			out := in // for files where input and output are identical
 			if strings.HasSuffix(in, ".input") {
 				out = in[:len(in)-len(".input")] + ".golden"

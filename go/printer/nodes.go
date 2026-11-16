@@ -1254,7 +1254,7 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 			p.expr1(x.X, prec, depth)
 		}
 	case *ast.BasicLit:
-		if p.Config.Mode&normalizeNumbers != 0 {
+		if p.Mode&normalizeNumbers != 0 {
 			x = normalizedNumber(x)
 		}
 

@@ -453,7 +453,7 @@ func (p *printer) setPos(pos token.Pos) {
 // writeIndent writes indentation.
 func (p *printer) writeIndent() {
 	// use "hard" htabs - indentation columns must not be discarded by the tabwriter
-	n := p.Config.Indent + p.indent // include base indentation
+	n := p.Indent + p.indent // include base indentation
 
 	for range n {
 		p.output = append(p.output, '\t')
@@ -529,7 +529,7 @@ func (p *printer) writeString(pos token.Position, s string, isLit bool) {
 	p.lineEnded = false
 
 	if p.out.Column == 1 {
-		if p.Config.Mode&SourcePos != 0 {
+		if p.Mode&SourcePos != 0 {
 			p.writeLineDirective(pos)
 		}
 
@@ -1165,7 +1165,7 @@ func (p *printer) print(args ...any) {
 		wroteNewline, droppedFF := p.flush(next, p.lastTok)
 
 		// intersperse extra newlines if present in the source and if they don't cause extra semicolons (don't do this in flush as it will cause extra newlines at the end of a file) Under StrictLayout a closing brace gets no blank lines from the source after a comment: the block's own line break is the only one. Nor does a statement, after a comment whose line end was just written, since the layout's line breaks come after it.
-		if !p.impliedSemi && !(p.strict() && (data == "}" || head && wroteNewline)) {
+		if !p.impliedSemi && (!p.strict() || data != "}" && !(head && wroteNewline)) {
 			n := nlimit(next.Line - p.pos.Line)
 			// don't exceed maxNewlines if we already wrote one
 			if wroteNewline && n == maxNewlines {

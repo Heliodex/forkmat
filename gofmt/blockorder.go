@@ -171,7 +171,7 @@ func safeExpr(e ast.Expr) bool {
 
 		return safeExpr(x.X) && safeExpr(x.Y)
 	case *ast.CallExpr:
-		if id, ok := x.Fun.(*ast.Ident); !ok || x.Ellipsis.IsValid() || len(x.Args) != 1 || !(predeclaredPure[id.Name] || id.Name == "len" || id.Name == "cap") {
+		if id, ok := x.Fun.(*ast.Ident); !ok || x.Ellipsis.IsValid() || len(x.Args) != 1 || !predeclaredPure[id.Name] && id.Name != "len" && id.Name != "cap" {
 			return false
 		}
 

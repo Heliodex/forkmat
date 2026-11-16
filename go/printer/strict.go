@@ -573,7 +573,7 @@ func onlyUsedIn(list []ast.Stmt, i int, scope ast.Node) bool {
 		var outside bool
 
 		ast.Inspect(s, func(n ast.Node) bool {
-			if id, ok := n.(*ast.Ident); ok && names[id.Name] && !(id.Pos() >= scope.Pos() && id.Pos() < scope.End()) {
+			if id, ok := n.(*ast.Ident); ok && names[id.Name] && (id.Pos() < scope.Pos() || id.Pos() >= scope.End()) {
 				outside = true
 			}
 
@@ -792,7 +792,7 @@ func (p *printer) blankStmt(s ast.Stmt) bool {
 func (p *printer) blankLineBetween(prev, next ast.Stmt) bool {
 	// A run of go and defer statements is set off from the statements around it, but its members are not separated from each other.
 	if isGoOrDefer(prev) || isGoOrDefer(next) {
-		return !(isGoOrDefer(prev) && isGoOrDefer(next))
+		return !isGoOrDefer(prev) || !isGoOrDefer(next)
 	}
 
 	// An if statement whose condition uses a name that the statement before it declares stays with that declaration.
@@ -1053,7 +1053,7 @@ func pureValue(e ast.Expr) bool {
 	ast.Inspect(e, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CallExpr:
-			if id, ok := x.Fun.(*ast.Ident); !ok || !(pureTypeNames[id.Name] || id.Name == "make" || id.Name == "new") {
+			if id, ok := x.Fun.(*ast.Ident); !ok || !pureTypeNames[id.Name] && id.Name != "make" && id.Name != "new" {
 				pure = false
 			}
 		case *ast.FuncLit:

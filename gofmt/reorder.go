@@ -818,7 +818,7 @@ func pureExpr(n ast.Node, funcLitOK bool) bool {
 	ast.Inspect(n, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CallExpr:
-			if id, ok := x.Fun.(*ast.Ident); !ok || !(predeclaredPure[id.Name] || id.Name == "make" || id.Name == "new") {
+			if id, ok := x.Fun.(*ast.Ident); !ok || !predeclaredPure[id.Name] && id.Name != "make" && id.Name != "new" {
 				pure = false
 			}
 		case *ast.FuncLit:

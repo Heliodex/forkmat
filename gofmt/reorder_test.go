@@ -155,11 +155,11 @@ func TestHoistTypesAfterImports(t *testing.T) {
 
 	got := reorderText(t, src)
 
-	if i, j := strings.Index(got, "import"), strings.Index(got, "type T"); !(i >= 0 && j > i) {
+	if i, j := strings.Index(got, "import"), strings.Index(got, "type T"); i < 0 || j <= i {
 		t.Errorf("type T not after the import:\n%s", got)
 	}
 
-	if i, j := strings.Index(got, "type T"), strings.Index(got, "func f"); !(i >= 0 && i < j) {
+	if i, j := strings.Index(got, "type T"), strings.Index(got, "func f"); i < 0 || i >= j {
 		t.Errorf("type T not above func f:\n%s", got)
 	}
 }
@@ -425,11 +425,11 @@ func TestReorderAssignRuns(t *testing.T) {
 			got := reorderText(t, tt.src)
 
 			i, j := stmtPos(t, got, tt.first), stmtPos(t, got, tt.then)
-			if tt.sorted && !(i < j) {
+			if tt.sorted && i >= j {
 				t.Errorf("not sorted:\n%s", got)
 			}
 
-			if !tt.sorted && !(i < j) {
+			if !tt.sorted && i >= j {
 				t.Errorf("order changed:\n%s", got)
 			}
 		})

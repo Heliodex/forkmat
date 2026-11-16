@@ -395,7 +395,7 @@ It is enabled by `-all`. The rewrite can make more variables constant, so it rep
 
 `gofmt -stdin-filepath PATH` reads the source from standard input and treats it as the file at `PATH`. The file on disk is not read, so an unsaved buffer is formatted as it is. The path still gives the package and module: the siblings of the file are read from disk, so the fixes that need the package (see `-modernise`) apply as they do when the file is formatted on its own. The result goes to standard output, and no paths or `-w` may be given with it.
 
-An editor that sends the buffer on standard input should pass the path this way, rather than as an argument, so that an edit that is not saved is not lost. For Zed, the external formatter would take `"arguments": ["-all", "-stdin-filepath", "{buffer_path}"]`.
+An editor that sends the buffer on standard input should pass the path this way, rather than as an argument, so that an edit that is not saved is not lost. The constants of the file are numbered from the buffer too, so a constant that is only in the buffer orders the cases of a switch like any other. For Zed, the external formatter would take `"arguments": ["-all", "-stdin-filepath", "{buffer_path}"]`.
 
 ## What differs from upstream
 

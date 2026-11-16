@@ -11,13 +11,82 @@ import (
 	"golang.org/x/tools/go/analysis/passes/modernize"
 )
 
+func TestApplyFixEdits(t *testing.T) {
+	tests := []struct {
+		name string
+		edits []textEdit
+		want string
+	}{
+		{
+			name: "insertions at one place keep their order",
+			edits: []textEdit{
+				{
+					start: 2,
+					end: 2,
+					text: []byte("X"),
+				},
+				{
+					start: 2,
+					end: 2,
+					text: []byte("Y"),
+				},
+			},
+			want: "abXYcdef",
+		},
+		{
+			name: "a deletion and an insertion at its start",
+			edits: []textEdit{
+				{
+					start: 2,
+					end: 4,
+				},
+				{
+					start: 2,
+					end: 2,
+					text: []byte("X"),
+				},
+			},
+			want: "abXef",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := string(applyFixEdits([]byte("abcdef"), tt.edits)); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGoDirective(t *testing.T) {
+	tests := []struct {
+		name, gomod, want string
+	}{
+		{"patch version", "module m\n\ngo 1.27.2\n", "go1.27"},
+		{"minor version", "module m\n\ngo 1.21\n", "go1.21"},
+		{"no go directive", "module m\n", ""},
+		{"invalid version", "module m\n\ngo 1\n", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := goDirective([]byte(tt.gomod)); got != tt.want {
+				t.Errorf("goDirective = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // fixIn returns src with the fixes of suite applied, as a file of a module whose go.mod names goVersion, or as a file outside any module when goVersion is "".
 func fixIn(t *testing.T, suite []*analysis.Analyzer, goVersion, src string) string {
 	t.Helper()
 
 	dir := t.TempDir()
+
 	if goVersion != "" {
 		gomod := "module example.com/m\n\ngo " + goVersion + "\n"
+
 		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(gomod), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -76,47 +145,35 @@ func TestModernise(t *testing.T) {
 	}
 }
 
-func TestGoDirective(t *testing.T) {
-	tests := []struct {
-		name, gomod, want string
-	}{
-		{"patch version", "module m\n\ngo 1.27.2\n", "go1.27"},
-		{"minor version", "module m\n\ngo 1.21\n", "go1.21"},
-		{"no go directive", "module m\n", ""},
-		{"invalid version", "module m\n\ngo 1\n", ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := goDirective([]byte(tt.gomod)); got != tt.want {
-				t.Errorf("goDirective = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestApplyFixEdits(t *testing.T) {
+func TestOptInFixes(t *testing.T) {
 	tests := []struct {
 		name string
-		edits []textEdit
-		want string
+		suite []*analysis.Analyzer
+		src, want string
 	}{
 		{
-			name: "insertions at one place keep their order",
-			edits: []textEdit{{start: 2, end: 2, text: []byte("X")}, {start: 2, end: 2, text: []byte("Y")}},
-			want: "abXYcdef",
+			name: "inline replaces a call to a function marked //go:fix inline",
+			suite: []*analysis.Analyzer{inline.Analyzer},
+			src: "package p\n\n//go:fix inline\nfunc double(x int) int { return x + x }\n\nfunc f() int {\n\treturn double(3)\n}\n",
+			want: "package p\n\n//go:fix inline\nfunc double(x int) int { return x + x }\n\nfunc f() int {\n\treturn 3 + 3\n}\n",
 		},
 		{
-			name: "a deletion and an insertion at its start",
-			edits: []textEdit{{start: 2, end: 4}, {start: 2, end: 2, text: []byte("X")}},
-			want: "abXef",
+			name: "composite keys an unkeyed literal of an imported struct",
+			suite: []*analysis.Analyzer{composite.Analyzer},
+			src: "package p\n\nimport \"net/url\"\n\nfunc f() *url.URL {\n\treturn &url.URL{\"https\", \"\", nil, \"example.com\", \"\", \"\", \"\", \"\", \"\", false, false}\n}\n",
+			want: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := string(applyFixEdits([]byte("abcdef"), tt.edits)); got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
+			got := fixIn(t, tt.suite, "1.27", tt.src)
+			if tt.want != "" && got != tt.want {
+				t.Errorf("got:\n%s\nwant:\n%s", got, tt.want)
+			}
+
+			if tt.want == "" && got == tt.src {
+				t.Errorf("composite made no fix")
 			}
 		})
 	}
@@ -163,40 +220,6 @@ func TestVetFix(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := fixIn(t, vetFixSuite, tt.goVersion, tt.src); got != tt.want {
 				t.Errorf("got:\n%s\nwant:\n%s", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestOptInFixes(t *testing.T) {
-	tests := []struct {
-		name string
-		suite []*analysis.Analyzer
-		src string
-		want string
-	}{
-		{
-			name: "inline replaces a call to a function marked //go:fix inline",
-			suite: []*analysis.Analyzer{inline.Analyzer},
-			src: "package p\n\n//go:fix inline\nfunc double(x int) int { return x + x }\n\nfunc f() int {\n\treturn double(3)\n}\n",
-			want: "package p\n\n//go:fix inline\nfunc double(x int) int { return x + x }\n\nfunc f() int {\n\treturn 3 + 3\n}\n",
-		},
-		{
-			name: "composite keys an unkeyed literal of an imported struct",
-			suite: []*analysis.Analyzer{composite.Analyzer},
-			src: "package p\n\nimport \"net/url\"\n\nfunc f() *url.URL {\n\treturn &url.URL{\"https\", \"\", nil, \"example.com\", \"\", \"\", \"\", \"\", \"\", false, false}\n}\n",
-			want: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := fixIn(t, tt.suite, "1.27", tt.src)
-			if tt.want != "" && got != tt.want {
-				t.Errorf("got:\n%s\nwant:\n%s", got, tt.want)
-			}
-			if tt.want == "" && got == tt.src {
-				t.Errorf("composite made no fix")
 			}
 		})
 	}

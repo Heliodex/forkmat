@@ -5,10 +5,48 @@ import (
 	"go/token"
 )
 
+// unusedBlank returns the blank identifier at the position of id.
+func unusedBlank(id *ast.Ident) *ast.Ident {
+	return &ast.Ident{
+		NamePos: id.Pos(),
+		Name: "_",
+	}
+}
+
+// unusedIndex reports whether i is in list.
+func unusedIndex(list []int, i int) bool {
+	for _, j := range list {
+		if j == i {
+			return true
+		}
+	}
+
+	return false
+}
+
+// unusedName reports whether id declares a local variable that is never referenced.
+func unusedName(id *ast.Ident, refs map[*ast.Object]int) bool {
+	return id.Name != "_" && id.Obj != nil && refs[id.Obj] == 1
+}
+
+// unusedNearComment reports whether a comment lies within n or on the line before or after it, so that removing n would leave it behind.
+func unusedNearComment(fset *token.FileSet, comments []*ast.CommentGroup, n ast.Node) bool {
+	start := fset.Position(n.Pos()).Line
+	end := fset.Position(n.End()).Line
+
+	for _, cg := range comments {
+		if fset.Position(cg.End()).Line >= start-1 && fset.Position(cg.Pos()).Line <= end {
+			return true
+		}
+	}
+
+	return false
+}
+
 // unusedPure reports whether evaluating e has no side effects and cannot panic, so that removing a declaration whose value is e cannot be observed. It is deliberately conservative: a call other than a conversion to a predeclared or local type, or new(T), a receive, a dereference, an index or a selector may have an effect or panic, and so may a division.
 func unusedPure(e ast.Expr) bool {
 	switch x := e.(type) {
-	case *ast.BasicLit, *ast.Ident, *ast.FuncLit:
+	case *ast.BasicLit, *ast.FuncLit, *ast.Ident:
 		return true
 	case *ast.ParenExpr:
 		return unusedPure(x.X)
@@ -65,6 +103,17 @@ func unusedPure(e ast.Expr) bool {
 	return false
 }
 
+// unusedPureList reports whether none of the expressions has an effect.
+func unusedPureList(list []ast.Expr) bool {
+	for _, e := range list {
+		if !unusedPure(e) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // unusedQualified reports whether n holds a selector, such as pkg.T, whose package reference would be lost with n.
 func unusedQualified(n ast.Node) bool {
 	var found bool
@@ -79,55 +128,6 @@ func unusedQualified(n ast.Node) bool {
 	return found
 }
 
-// unusedPureList reports whether none of the expressions has an effect.
-func unusedPureList(list []ast.Expr) bool {
-	for _, e := range list {
-		if !unusedPure(e) {
-			return false
-		}
-	}
-
-	return true
-}
-
-// unusedBlank returns the blank identifier at the position of id.
-func unusedBlank(id *ast.Ident) *ast.Ident {
-	return &ast.Ident{NamePos: id.Pos(), Name: "_"}
-}
-
-// unusedRefs counts the identifiers of file that are bound to each object. A local variable that appears once, at its declaration, is never referenced.
-func unusedRefs(file *ast.File) map[*ast.Object]int {
-	refs := map[*ast.Object]int{}
-
-	ast.Inspect(file, func(n ast.Node) bool {
-		if id, ok := n.(*ast.Ident); ok && id.Obj != nil {
-			refs[id.Obj]++
-		}
-
-		return true
-	})
-	return refs
-}
-
-// unusedName reports whether id declares a local variable that is never referenced.
-func unusedName(id *ast.Ident, refs map[*ast.Object]int) bool {
-	return id.Name != "_" && id.Obj != nil && refs[id.Obj] == 1
-}
-
-// unusedNearComment reports whether a comment lies within n or on the line before or after it, so that removing n would leave it behind.
-func unusedNearComment(fset *token.FileSet, comments []*ast.CommentGroup, n ast.Node) bool {
-	start := fset.Position(n.Pos()).Line
-	end := fset.Position(n.End()).Line
-
-	for _, cg := range comments {
-		if fset.Position(cg.End()).Line >= start-1 && fset.Position(cg.Pos()).Line <= end {
-			return true
-		}
-	}
-
-	return false
-}
-
 // unusedDiscard returns what is left of a := statement whose names are all unused: nothing when the values have no effects and use no package, and an assignment to the blank identifiers otherwise. A call is written as an assignment too, since a conversion to an imported type cannot be told from a call without types, and a conversion is not a valid statement.
 func unusedDiscard(s *ast.AssignStmt) []ast.Stmt {
 	lhs := make([]ast.Expr, len(s.Lhs))
@@ -140,7 +140,13 @@ func unusedDiscard(s *ast.AssignStmt) []ast.Stmt {
 		return nil
 	}
 
-	return []ast.Stmt{&ast.AssignStmt{Lhs: lhs, Tok: token.ASSIGN, Rhs: s.Rhs}}
+	return []ast.Stmt{
+		&ast.AssignStmt{
+			Lhs: lhs,
+			Tok: token.ASSIGN,
+			Rhs: s.Rhs,
+		},
+	}
 }
 
 // unusedAssign removes or blanks the unused names a := statement declares.
@@ -193,7 +199,6 @@ func unusedAssign(fset *token.FileSet, s *ast.AssignStmt, refs map[*ast.Object]i
 	for _, l := range s.Lhs {
 		if id, ok := l.(*ast.Ident); ok && id.Obj != nil && id.Obj.Decl == s {
 			declares = true
-
 			break
 		}
 	}
@@ -205,15 +210,18 @@ func unusedAssign(fset *token.FileSet, s *ast.AssignStmt, refs map[*ast.Object]i
 	return []ast.Stmt{s}
 }
 
-// unusedIndex reports whether i is in list.
-func unusedIndex(list []int, i int) bool {
-	for _, j := range list {
-		if j == i {
-			return true
-		}
-	}
+// unusedRefs counts the identifiers of file that are bound to each object. A local variable that appears once, at its declaration, is never referenced.
+func unusedRefs(file *ast.File) map[*ast.Object]int {
+	refs := map[*ast.Object]int{}
 
-	return false
+	ast.Inspect(file, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && id.Obj != nil {
+			refs[id.Obj]++
+		}
+
+		return true
+	})
+	return refs
 }
 
 // unusedSpecNames returns the indices of the names of a var spec that are never referenced.
@@ -243,11 +251,9 @@ func unusedDecl(fset *token.FileSet, s *ast.DeclStmt, refs map[*ast.Object]int, 
 
 	for _, sp := range g.Specs {
 		vs := sp.(*ast.ValueSpec)
-
 		unused := unusedSpecNames(vs, refs)
 		if len(unused) == 0 || unusedNearComment(fset, comments, vs) {
 			specs = append(specs, vs)
-
 			continue
 		}
 
@@ -261,7 +267,6 @@ func unusedDecl(fset *token.FileSet, s *ast.DeclStmt, refs map[*ast.Object]int, 
 				}
 
 				specs = append(specs, vs)
-
 				continue
 			}
 
@@ -351,7 +356,6 @@ func unusedVars(fset *token.FileSet, file *ast.File, comments []*ast.CommentGrou
 
 		return true
 	})
-
 	for _, list := range lists {
 		out := make([]ast.Stmt, 0, len(*list))
 

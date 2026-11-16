@@ -267,6 +267,7 @@ func formatSource(filename string, src []byte, fragmentOk, fromDisk bool, r *rep
 		if out := modernise(filename, src, suite); !bytes.Equal(out, src) {
 			src = out
 			fileSet = token.NewFileSet()
+
 			if file, err = parser.ParseFile(fileSet, filename, src, parserMode); err != nil {
 				return nil, err
 			}
@@ -646,7 +647,6 @@ func gofmtMain(s *sequencer) {
 		*vetFixFlag = true
 		*inlineFlag = true
 		*compositeFlag = true
-
 		*unusedFlag = true
 		*unconvertFlag = true
 		*flattenFlag = true

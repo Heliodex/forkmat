@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -59,6 +60,11 @@ var (
 // The source importer runs the cgo tool for a package with cgo files, such as net, which costs about a second for each. The pure Go files of those packages declare the same API, so the checks read those instead. Set before the importer reads build.Default.
 func init() {
 	build.Default.CgoEnabled = false
+
+	// The standard library is read from the source of the toolchain that runs gofmt, and the go command that lists its packages must not switch to the toolchain that a module names, since the types of one do not check against the other. A GOTOOLCHAIN that the user set is kept.
+	if os.Getenv("GOTOOLCHAIN") == "" {
+		_ = os.Setenv("GOTOOLCHAIN", "local")
+	}
 }
 
 // checkPackageDir type-checks the package with import path path, in pdir, from its source. Only its declarations are needed to import it, so the function bodies are skipped, which is much faster. Its own imports are loaded the same way, for code in ctx: the directory of the code that first imported it, since the packages of that module are the ones listed. The result is false, and nothing is checked, for a package with cgo files: those need the cgo tool, which the source importer runs.

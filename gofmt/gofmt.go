@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"golang.org/x/sync/semaphore"
+	"golang.org/x/tools/go/analysis/passes/modernize"
 )
 
 type (
@@ -261,7 +262,7 @@ func formatSource(filename string, src []byte, fragmentOk, fromDisk bool, r *rep
 	rewritable := sourceAdj == nil && !generated
 	if *moderniseFlag && rewritable {
 		// -modernise applies the fixes of the modernize analyzers to the source, and the file is parsed again from the result (see modernise.go)
-		if out := modernise(filename, src); !bytes.Equal(out, src) {
+		if out := modernise(filename, src, modernize.Suite); !bytes.Equal(out, src) {
 			src = out
 			fileSet = token.NewFileSet()
 			if file, err = parser.ParseFile(fileSet, filename, src, parserMode); err != nil {

@@ -16,7 +16,6 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/modernize"
 )
 
 // This file implements -modernise: the fixes that the analyzers of golang.org/x/tools/go/analysis/passes/modernize suggest are applied to the source text, the way go fix applies them. Each analyzer runs over the file alone, with its types from checkModernise, and the fixes of a round are applied together. The file is then parsed again, and the analyzers run again, until no fix applies, since a fix can expose another one.
@@ -51,6 +50,7 @@ type moderniseRun struct {
 	file *ast.File
 	pkg *types.Package
 	info *types.Info
+	suite []*analysis.Analyzer
 	results map[*analysis.Analyzer]analysisResult
 	facts map[factKey]analysis.Fact
 	diags []analysis.Diagnostic
@@ -202,7 +202,7 @@ func (r *moderniseRun) editsOf(fix analysis.SuggestedFix) []textEdit {
 
 // fixes runs the modernize suite over the file, and returns the edits of the first suggested fix of each diagnostic, in the order the analyzers report them.
 func (r *moderniseRun) fixes() [][]textEdit {
-	for _, a := range modernize.Suite {
+	for _, a := range r.suite {
 		r.analyze(a)
 	}
 
@@ -298,7 +298,7 @@ func checkModernise(fset *token.FileSet, file *ast.File, goVersion string) (*typ
 }
 
 // moderniseOnce applies one round of fixes to src, and reports whether any applied. The result must still parse, or the round does not apply.
-func moderniseOnce(filename string, src []byte, goVersion string) ([]byte, bool) {
+func moderniseOnce(filename string, src []byte, goVersion string, suite []*analysis.Analyzer) ([]byte, bool) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
 	if err != nil {
@@ -313,6 +313,7 @@ func moderniseOnce(filename string, src []byte, goVersion string) ([]byte, bool)
 		file: file,
 		pkg: pkg,
 		info: info,
+		suite: suite,
 		results: map[*analysis.Analyzer]analysisResult{},
 		facts: map[factKey]analysis.Fact{},
 	}
@@ -331,14 +332,14 @@ func moderniseOnce(filename string, src []byte, goVersion string) ([]byte, bool)
 }
 
 // modernise returns src with the fixes of the modernize analyzers applied, round after round, until none apply. The fixes are held to the Go version of the module that governs filename, so a file outside any module is left alone.
-func modernise(filename string, src []byte) []byte {
+func modernise(filename string, src []byte, suite []*analysis.Analyzer) []byte {
 	goVersion := moduleGoVersion(filename)
 	if goVersion == "" {
 		return src
 	}
 
 	for range maxModeniseRounds {
-		out, applied := moderniseOnce(filename, src, goVersion)
+		out, applied := moderniseOnce(filename, src, goVersion, suite)
 		if !applied {
 			break
 		}

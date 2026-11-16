@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"golang.org/x/tools/go/analysis/passes/modernize"
 )
 
 // moderniseIn returns src modernised as a file of a module whose go.mod names goVersion, or as a file outside any module when goVersion is "".
@@ -18,7 +20,7 @@ func moderniseIn(t *testing.T, goVersion, src string) string {
 		}
 	}
 
-	return string(modernise(filepath.Join(dir, "x.go"), []byte(src)))
+	return string(modernise(filepath.Join(dir, "x.go"), []byte(src), modernize.Suite))
 }
 
 func TestModernise(t *testing.T) {

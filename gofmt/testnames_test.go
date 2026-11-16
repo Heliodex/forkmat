@@ -19,6 +19,7 @@ func testNamesText(t *testing.T, src string) string {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+
 	testNames(fset, file)
 
 	var buf bytes.Buffer

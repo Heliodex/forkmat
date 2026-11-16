@@ -11,6 +11,7 @@ type (
 	blockItem struct {
 		stage int
 		movable, // a declaration that may move: a type, a constant, or a variable with a safe value
+		helper bool // a call of Helper() with no arguments, which a declaration does not move above, so that the thelper linter still finds it first
 		inert bool // a statement that a variable may pass: no control flow, calls or panics, and no assignment to anything but a name
 		decls, // the names it declares or assigns
 		refs map[string]bool // the names it mentions
@@ -58,6 +59,11 @@ func conflicts(x, y blockItem) bool {
 
 // crosses reports whether item x may move up past the item y, which is just above it.
 func crosses(x, y blockItem) bool {
+	// a t.Helper() call stays where it is, so that a test helper still starts with it
+	if y.helper {
+		return false
+	}
+
 	// a declaration that is not moved yet keeps the kinds in order: nothing passes it that belongs to a later kind
 	if y.stage < x.stage {
 		return false
@@ -264,8 +270,26 @@ func itemOf(s ast.Stmt) blockItem {
 	}
 
 	it.inert = inertStmt(s)
+	it.helper = isHelperCall(s)
 
 	return it
+}
+
+// isHelperCall reports whether s is a statement that calls Helper() on a value, such as t.Helper().
+func isHelperCall(s ast.Stmt) bool {
+	es, ok := s.(*ast.ExprStmt)
+	if !ok {
+		return false
+	}
+
+	call, ok := es.X.(*ast.CallExpr)
+	if !ok || len(call.Args) != 0 {
+		return false
+	}
+
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+
+	return ok && sel.Sel.Name == "Helper"
 }
 
 // blockOrder returns the order in which the statements of a block are to be printed: the indices of list, in their new order. prefix counts the statements at the top that are placed; each kind of declaration is placed after the one before it.

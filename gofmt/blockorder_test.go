@@ -59,6 +59,11 @@ func TestBlockOrder(t *testing.T) {
 			src: "package p\n\nfunc l() {\n\tx := 1\n\ttype T int\n\t_ = x\n\t_ = T(0)\nL:\n\tgoto L\n}\n",
 			want: "package p\n\nfunc l() {\n\tx := 1\n\ttype T int\n\t_ = x\n\t_ = T(0)\nL:\n\tgoto L\n}\n",
 		},
+		{
+			name: "a constant stays below a Helper call, which starts a test helper",
+			src: "package p\n\nfunc q(t *testing.T) {\n\tt.Helper()\n\tx := 1\n\tconst c = 2\n\t_ = x + c\n}\n",
+			want: "package p\n\nfunc q(t *testing.T) {\n\tt.Helper()\n\tconst c = 2\n\tx := 1\n\t_ = x + c\n}\n",
+		},
 	}
 
 	for _, tt := range tests {

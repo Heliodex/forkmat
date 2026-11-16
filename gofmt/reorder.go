@@ -1557,6 +1557,7 @@ func reorderSource(fset *token.FileSet, filename string, src []byte) ([]byte, *a
 		reorderSpecRuns,
 		reorderFuncSlots,
 		reorderAssignRuns,
+		reorderBlockDecls,
 	}
 	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
 	if err != nil {

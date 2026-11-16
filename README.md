@@ -40,7 +40,7 @@ go test ./gofmt            # upstream tests + golden files
 
 Checked against the installed `gofmt` (go1.27.2): identical output on the same input. `cmd/gofmt` is byte-identical between go1.27.2 and go1.27.4.
 
-`gofmt -all` enables `-strict`, `-modernise`, `-unconvert`, `-flatten`, `-mergecases` and `-omitcases` together. Each of them is described below.
+`gofmt -all` enables `-strict`, `-modernise`, `-unused`, `-unconvert`, `-flatten`, `-mergecases` and `-omitcases` together. Each of them is described below.
 
 ## Local changes
 
@@ -330,6 +330,35 @@ The fixes are held to the Go version of the module that governs the file, from i
 
 It is off by default, and runs on complete files only, not on fragments or generated files, like `-unconvert`.
 
+### `-unused`: remove local variables that are never referenced
+
+`gofmt -unused` removes a local variable that is declared but never referenced, such as one left behind when the code that read it was deleted:
+
+```go
+func f() {
+	x := 5
+	y := 6
+	_ = y
+}
+```
+
+becomes:
+
+```go
+func f() {
+	y := 6
+	_ = y
+}
+```
+
+A variable that is assigned to but never read, as in `x := 5` followed by `x = 6`, is referenced, and is kept: removing its declaration would leave the assignment without a variable. Package-level vars, parameters, results, struct fields, and the names declared by the header of a range, `if`, `for`, `switch` or `select` are kept too, since removing one of those changes a signature or a header.
+
+The value is kept when evaluating it has an effect, or when it names an imported package, so `x := f()` becomes `_ = f()`, `x := <-ch` becomes `_ = <-ch`, and `x := pkg.T{}` becomes `_ = pkg.T{}`. A pure value goes with the declaration, so `x := 5` and `var x int` disappear, and `x := int64(5)` disappears as a conversion. In a declaration with several names, `x, y := f()` becomes `_, y := f()` when only `y` is used, and `_, _ = f()` when neither is; a `:=` that would be left with no new name becomes `=`. A call is written as an assignment to the blank identifier rather than as a statement, since without types a conversion to a type of an imported package looks the same as a call, and a conversion is not a valid statement.
+
+A declaration is not removed when a comment lies in it or on the line before or after it, so that no comment is left behind. A `var` group keeps its other specs, and a spec whose value has effects stays in its place with its names blanked, which keeps the evaluation order of a group.
+
+The pass needs the object links the parser writes, so it parses the file without `parser.SkipObjectResolution`. It is off by default. Without `-strict`, the printer keeps the source's line breaks, so a removed line may leave a blank line behind; `-strict` lays the block out from the AST and drops it.
+
 ## What differs from upstream
 
 Only import paths, so that code outside the Go tree can reach packages that used to be resolved as `std`/`cmd` internals:
@@ -354,7 +383,7 @@ The rules you are probably after are now mostly in this tree:
 Still in your GOROOT (`go env GOROOT`):
 
 - `src/go/ast` – `SortImports`, used to keep import blocks grouped and sorted.
-- `src/go/parser` – parser modes; `initParserMode()` turns on comments and skips object resolution.
+- `src/go/parser` – parser modes; `initParserMode()` turns on comments and skips object resolution, except for `-r` and `-unused`, which need the object links.
 - `src/go/format` – the library version of the same pipeline.
 
 The pipeline in `gofmt/internal.go`:

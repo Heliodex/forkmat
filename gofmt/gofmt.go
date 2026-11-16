@@ -78,6 +78,7 @@ var (
 	unusedFlag = flag.Bool("unused", false, "remove local variables that are declared and never referenced (see unused.go)")
 	vetFixFlag = flag.Bool("vetfix", false, "apply the fixes of the vet analyzers assign, hostport, timeformat and unreachable (see modernise.go)")
 	constantsFlag = flag.Bool("constants", false, "declare local variables that are never assigned and hold a constant with const, moving those out of if, for and switch initialisers where nothing conflicts (see constants.go)")
+	stdinFilepath = flag.String("stdin-filepath", "", "read the source from standard input, as the file at this path: its package and module are found from the path, so the fixes that need the package still apply, and the result goes to standard output. No paths may be given with it.")
 	importsFlag = flag.Bool("imports", true, "remove imports that the file does not use; -imports=false keeps them (see unusedimports.go)")
 	inlineFlag = flag.Bool("inline", false, "apply the fixes of the inline analyzer, which inlines calls to functions marked //go:fix inline (see modernise.go)")
 	compositeFlag = flag.Bool("composite", false, "apply the fixes of the composite analyzer, which keys unkeyed composite literals of imported struct types (see modernise.go)")
@@ -707,6 +708,24 @@ func gofmtMain(s *sequencer) {
 	initRewrite()
 
 	args := flag.Args()
+
+	if *stdinFilepath != "" {
+		if len(args) != 0 {
+			s.AddReport(fmt.Errorf("error: cannot give paths with -stdin-filepath"))
+			return
+		}
+
+		if *write {
+			s.AddReport(fmt.Errorf("error: cannot use -w with -stdin-filepath"))
+			return
+		}
+
+		s.Add(0, func(r *reporter) error {
+			return processFile(*stdinFilepath, nil, os.Stdin, r)
+		})
+		return
+	}
+
 	if len(args) == 0 {
 		if *write {
 			s.AddReport(fmt.Errorf("error: cannot use -w with standard input"))

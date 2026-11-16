@@ -1498,6 +1498,9 @@ func (p *printer) stmtList(list []ast.Stmt, head token.Pos, nindent int, nextIsR
 	for _, s := range list {
 		// ignore empty statements (was issue 3466)
 		if _, isEmpty := s.(*ast.EmptyStmt); !isEmpty {
+			k := p.stmtCount
+			p.stmtCount++
+
 			// nindent == 0 only for lists of switch/select case clauses; in those cases each clause is a new section
 			if len(p.output) > 0 {
 				// only print line break if we are not at the beginning of the output (i.e., we are not printing only a partial program)
@@ -1507,7 +1510,7 @@ func (p *printer) stmtList(list []ast.Stmt, head token.Pos, nindent int, nextIsR
 					// one blank line before a statement that calls for one (see blankLineBetween), and no blank otherwise
 					gap := 1
 
-					if i > 0 && p.wantsBlank(prev, s) {
+					if i > 0 && p.wantsBlank(k, prev, s) {
 						gap = 2
 					}
 					p.linebreak(p.pos.Line+gap, 1, ignore, newSection)
@@ -1522,7 +1525,9 @@ func (p *printer) stmtList(list []ast.Stmt, head token.Pos, nindent int, nextIsR
 				}
 			}
 			p.recordLine(&line)
+			p.stmtHead = true
 			p.stmt(s, nextIsRBrace && i == len(list)-1)
+			p.stmtHead = false
 
 			p.blankBefore = token.NoPos
 			prev = s

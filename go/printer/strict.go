@@ -782,9 +782,9 @@ func (p *printer) blankStmt(s ast.Stmt) bool {
 	return false
 }
 
-// wantsBlank reports whether StrictLayout puts a blank line before next, which follows prev: the blank line that Config.StmtBlank gives it, if any, and otherwise the one blankLineBetween gives.
-func (p *printer) wantsBlank(prev, next ast.Stmt) bool {
-	if blank, ok := p.StmtBlank[next]; ok {
+// wantsBlank reports whether StrictLayout puts a blank line before next, the statement numbered k, which follows prev: the blank line that Config.StmtBlank gives it, if any, and otherwise the one blankLineBetween gives.
+func (p *printer) wantsBlank(k int, prev, next ast.Stmt) bool {
+	if blank, ok := p.StmtBlank[k]; ok {
 		return blank
 	}
 

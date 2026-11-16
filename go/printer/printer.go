@@ -32,8 +32,8 @@ type (
 		Tabwidth, // default: 8
 		Indent int // default: 0 (all code is indented at least by this much)
 
-		// StmtBlank, if set, decides the blank line before a statement of a block under StrictLayout, in place of the layout's own rule: a statement it maps to true has a blank line before it, and one it maps to false has none. The keys are the statements of the file being printed.
-		StmtBlank map[ast.Stmt]bool
+		// StmtBlank, if set, decides the blank line before a statement of a block under StrictLayout, in place of the layout's own rule: a statement it maps to true has a blank line before it, and one it maps to false has none. The keys number the statements in the order they are printed, from 0, which is the order of their positions in the output. The printer may build statements of its own, so the keys are not the statements of the file.
+		StmtBlank map[int]bool
 	}
 
 	commentInfo struct {
@@ -105,6 +105,15 @@ type (
 
 		// under StrictLayout, a blank line goes after the comment being printed, which trails the statement before the one a blank sets off
 		blankAfterComment bool
+
+		// the number of statements printed so far, which StmtBlank keys its statements by
+		stmtCount int
+
+		// under StrictLayout, the line after a comment has been written, so the first line break that is still pending is already there
+		lineEnded bool
+
+		// set while the first token of a statement is printed, so that the line break after a comment before it is the layout's
+		stmtHead bool
 	}
 )
 
@@ -429,6 +438,8 @@ func (p *printer) writeIndent() {
 
 // writeByte writes ch n times to p.output and updates p.pos. Only used to write formatting (white space) characters.
 func (p *printer) writeByte(ch byte, n int) {
+	p.lineEnded = false
+
 	if p.endAlignment {
 		// Ignore any alignment control character; and at the end of the line, break with a formfeed to indicate termination of existing columns.
 		switch ch {
@@ -488,7 +499,27 @@ func (p *printer) writeLineDirective(pos token.Position) {
 // writeString writes the string s to p.output and updates p.pos, p.out, and p.last. If isLit is set, s is escaped w/ tabwriter.Escape characters to protect s from being interpreted by the tabwriter.
 //
 // Note: writeString is only used to write Go tokens, literals, and comments, all of which must be written literally. Thus, it is correct to always set isLit = true. However, setting it explicitly only when needed (i.e., when we don't know that s contains no tabs or line breaks) avoids processing extra escape characters and reduces run time of the printer benchmark by up to 10%.
+// dropPendingBreak ignores the first line break among the first n pending white spaces, which follow a comment whose line end is written. Other white space before it is kept.
+func (p *printer) dropPendingBreak(n int) {
+	p.lineEnded = false
+
+	for i := range n {
+		switch p.wsbuf[i] {
+		case formfeed, newline:
+			p.wsbuf[i] = ignore
+
+			return
+		case blank, vtab, ignore, indent, unindent:
+			continue
+		}
+
+		return
+	}
+}
+
 func (p *printer) writeString(pos token.Position, s string, isLit bool) {
+	p.lineEnded = false
+
 	if p.out.Column == 1 {
 		if p.Config.Mode&SourcePos != 0 {
 			p.writeLineDirective(pos)
@@ -552,6 +583,11 @@ func (p *printer) writeString(pos token.Position, s string, isLit bool) {
 
 // writeWhitespace writes the first n whitespace entries.
 func (p *printer) writeWhitespace(n int) {
+	// a line break that is still pending after a comment has already been written as the comment's line end, so it is dropped
+	if p.lineEnded {
+		p.dropPendingBreak(n)
+	}
+
 	// write entries
 	for i := 0; i < n; i++ {
 		switch ch := p.wsbuf[i]; ch {
@@ -754,6 +790,8 @@ func (p *printer) writeCommentSuffix(needsLinebreak bool) (wroteNewline, dropped
 
 		wroteNewline = true
 	}
+
+	p.lineEnded = p.strict() && wroteNewline
 
 	return
 }
@@ -1103,10 +1141,12 @@ func (p *printer) print(args ...any) {
 		// data != ""
 
 		next := p.pos // estimated/accurate position of next item
+		head := p.stmtHead
+		p.stmtHead = false
 		wroteNewline, droppedFF := p.flush(next, p.lastTok)
 
-		// intersperse extra newlines if present in the source and if they don't cause extra semicolons (don't do this in flush as it will cause extra newlines at the end of a file) Under StrictLayout a closing brace gets no blank lines from the source after a comment: the block's own line break is the only one.
-		if !p.impliedSemi && !(p.strict() && data == "}") {
+		// intersperse extra newlines if present in the source and if they don't cause extra semicolons (don't do this in flush as it will cause extra newlines at the end of a file) Under StrictLayout a closing brace gets no blank lines from the source after a comment: the block's own line break is the only one. Nor does a statement, after a comment whose line end was just written, since the layout's line breaks come after it.
+		if !p.impliedSemi && !(p.strict() && (data == "}" || head && wroteNewline)) {
 			n := nlimit(next.Line - p.pos.Line)
 			// don't exceed maxNewlines if we already wrote one
 			if wroteNewline && n == maxNewlines {

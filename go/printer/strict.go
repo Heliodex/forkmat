@@ -782,6 +782,15 @@ func (p *printer) blankStmt(s ast.Stmt) bool {
 	return false
 }
 
+// wantsBlank reports whether StrictLayout puts a blank line before next, which follows prev: the blank line that Config.StmtBlank gives it, if any, and otherwise the one blankLineBetween gives.
+func (p *printer) wantsBlank(prev, next ast.Stmt) bool {
+	if blank, ok := p.StmtBlank[next]; ok {
+		return blank
+	}
+
+	return p.blankLineBetween(prev, next)
+}
+
 // blankLineBetween reports whether StrictLayout puts a blank line between two adjacent statements.
 func (p *printer) blankLineBetween(prev, next ast.Stmt) bool {
 	// A run of go and defer statements is set off from the statements around it, but its members are not separated from each other.

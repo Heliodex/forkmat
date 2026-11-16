@@ -31,6 +31,9 @@ type (
 		Mode Mode // default: 0
 		Tabwidth, // default: 8
 		Indent int // default: 0 (all code is indented at least by this much)
+
+		// StmtBlank, if set, decides the blank line before a statement of a block under StrictLayout, in place of the layout's own rule: a statement it maps to true has a blank line before it, and one it maps to false has none. The keys are the statements of the file being printed.
+		StmtBlank map[ast.Stmt]bool
 	}
 
 	commentInfo struct {

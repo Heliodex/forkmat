@@ -1507,7 +1507,7 @@ func (p *printer) stmtList(list []ast.Stmt, head token.Pos, nindent int, nextIsR
 					// one blank line before a statement that calls for one (see blankLineBetween), and no blank otherwise
 					gap := 1
 
-					if i > 0 && p.blankLineBetween(prev, s) {
+					if i > 0 && p.wantsBlank(prev, s) {
 						gap = 2
 					}
 					p.linebreak(p.pos.Line+gap, 1, ignore, newSection)

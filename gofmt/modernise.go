@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -44,7 +45,7 @@ type (
 		fset *token.FileSet
 		filename string
 		src []byte
-		file *ast.File
+		files []*ast.File
 		pkg *types.Package
 		info *types.Info
 		suite []*analysis.Analyzer
@@ -63,7 +64,7 @@ type (
 // maxModeniseRounds bounds how many rounds of fixes are applied to one file. Fixes that overlap are left for the next round, so a file with many fixes can need several rounds.
 const maxModeniseRounds = 50
 
-// This file implements -modernise: the fixes that the analyzers of golang.org/x/tools/go/analysis/passes/modernize suggest are applied to the source text, the way go fix applies them. Each analyzer runs over the file alone, with its types from checkModernise, and the fixes of a round are applied together. The file is then parsed again, and the analyzers run again, until no fix applies, since a fix can expose another one.
+// This file implements -modernise: the fixes that the analyzers of golang.org/x/tools/go/analysis/passes/modernize suggest are applied to the source text, the way go fix applies them. The analyzers run over the package of the file, with its types from checkModerniseFiles, and only the fixes that edit the file are applied. The fixes of a round are applied together. The file is then parsed again, and the analyzers run again, until no fix applies, since a fix can expose another one.
 
 // vetFixSuite lists the vet analyzers whose fixes -vetfix applies: assign removes self-assignments, hostport uses net.JoinHostPort, timeformat corrects time layouts, and unreachable removes code that cannot run.
 var vetFixSuite = []*analysis.Analyzer{assign.Analyzer, hostport.Analyzer, timeformat.Analyzer, unreachable.Analyzer}
@@ -88,8 +89,44 @@ func bytesOverlap(a, b textEdit) bool {
 	return a.start < b.end && b.start < a.end
 }
 
-// checkModernise type-checks the file on its own, under the Go version of its module. Errors are expected for names declared in other files, and are ignored: an expression whose type cannot be found has no entry, and the analyzers leave it alone.
+// packageFiles parses the package of the file being fixed into fset: the file itself, as src gives it, and its siblings as they are on disk. It reports false when the package cannot be taken as a whole, such as a file read from standard input, a directory that does not build as one package, or a package that uses cgo. Types declared in another file of a package are otherwise undefined, and the analyzers can then take two different types for the same one (see moderniseRun).
+func packageFiles(fset *token.FileSet, filename string, file *ast.File) ([]*ast.File, bool) {
+	if !onDisk(filename) {
+		return nil, false
+	}
+
+	dir := filepath.Dir(filename)
+
+	bp, err := build.Default.ImportDir(dir, 0)
+	if err != nil || bp.Name != file.Name.Name || len(bp.CgoFiles) > 0 {
+		return nil, false
+	}
+
+	files := []*ast.File{file}
+
+	for _, name := range bp.GoFiles {
+		if name == filepath.Base(filename) {
+			continue
+		}
+
+		f, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, parser.ParseComments)
+		if err != nil {
+			return nil, false
+		}
+
+		files = append(files, f)
+	}
+
+	return files, true
+}
+
+// checkModernise type-checks the file on its own, under the Go version of its module. Errors are expected for names declared in other files, and are ignored: an expression whose type cannot be found has no entry, and the analyzers leave it alone. The import pass uses it, which needs only the names of the imports.
 func checkModernise(fset *token.FileSet, file *ast.File, goVersion string) (*types.Package, *types.Info) {
+	return checkModerniseFiles(fset, []*ast.File{file}, goVersion)
+}
+
+// checkModerniseFiles type-checks the files of one package under the Go version of its module, the first file among them. Errors are ignored: an expression whose type cannot be found has no entry.
+func checkModerniseFiles(fset *token.FileSet, files []*ast.File, goVersion string) (*types.Package, *types.Info) {
 	info := &types.Info{
 		Types: map[ast.Expr]types.TypeAndValue{},
 		Instances: map[*ast.Ident]types.Instance{},
@@ -107,7 +144,7 @@ func checkModernise(fset *token.FileSet, file *ast.File, goVersion string) (*typ
 	}
 
 	// the path has a dot, so that the analyzers do not take the package for a standard one
-	pkg, _ := conf.Check("gofmt.invalid/"+file.Name.Name, fset, []*ast.File{file}, info)
+	pkg, _ := conf.Check("gofmt.invalid/"+files[0].Name.Name, fset, files, info)
 
 	return pkg, info
 }
@@ -161,10 +198,14 @@ func goDirective(gomod []byte) string {
 }
 
 // editsOf returns the edits of a suggested fix, as offsets into the source.
-func (r *moderniseRun) editsOf(fix analysis.SuggestedFix) []textEdit {
+func (r *moderniseRun) editsOf(fix analysis.SuggestedFix) ([]textEdit, bool) {
 	var edits []textEdit
 
 	for _, te := range fix.TextEdits {
+		if !r.inFile(te.Pos) || te.End.IsValid() && !r.inFile(te.End) {
+			return nil, false
+		}
+
 		start := r.fset.Position(te.Pos).Offset
 		end := start
 
@@ -179,7 +220,14 @@ func (r *moderniseRun) editsOf(fix analysis.SuggestedFix) []textEdit {
 		})
 	}
 
-	return edits
+	return edits, true
+}
+
+// inFile reports whether pos is in the file being fixed. The analyzers run over the whole package, so a fix may edit a sibling file; that fix is not applied.
+func (r *moderniseRun) inFile(pos token.Pos) bool {
+	f := r.fset.File(pos)
+
+	return f != nil && f.Name() == r.filename
 }
 
 // importFact copies the fact that analyzer a exported for obj into fact, and reports whether there was one.
@@ -206,7 +254,7 @@ func (r *moderniseRun) pass(a *analysis.Analyzer, resultOf map[*analysis.Analyze
 	return &analysis.Pass{
 		Analyzer: a,
 		Fset: r.fset,
-		Files: []*ast.File{r.file},
+		Files: r.files,
 		Pkg: r.pkg,
 		TypesInfo: r.info,
 		TypesSizes: types.SizesFor("gc", runtime.GOARCH),
@@ -289,7 +337,9 @@ func (r *moderniseRun) fixes() [][]textEdit {
 			continue
 		}
 
-		fixes = append(fixes, r.editsOf(d.SuggestedFixes[0]))
+		if edits, ok := r.editsOf(d.SuggestedFixes[0]); ok {
+			fixes = append(fixes, edits)
+		}
 	}
 
 	return fixes
@@ -361,12 +411,17 @@ func moderniseOnce(filename string, src []byte, goVersion string, suite []*analy
 		return src, false
 	}
 
-	pkg, info := checkModernise(fset, file, goVersion)
+	files, ok := packageFiles(fset, filename, file)
+	if !ok {
+		return src, false
+	}
+
+	pkg, info := checkModerniseFiles(fset, files, goVersion)
 	run := &moderniseRun{
 		fset: fset,
 		filename: filename,
 		src: src,
-		file: file,
+		files: files,
 		pkg: pkg,
 		info: info,
 		suite: suite,

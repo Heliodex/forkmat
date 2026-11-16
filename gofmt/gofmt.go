@@ -77,6 +77,7 @@ var (
 	moderniseFlag = flag.Bool("modernise", false, "apply the fixes of the analyzers in golang.org/x/tools/go/analysis/passes/modernize (see modernise.go)")
 	unusedFlag = flag.Bool("unused", false, "remove local variables that are declared and never referenced (see unused.go)")
 	vetFixFlag = flag.Bool("vetfix", false, "apply the fixes of the vet analyzers assign, hostport, timeformat and unreachable (see modernise.go)")
+	importsFlag = flag.Bool("imports", true, "remove imports that the file does not use; -imports=false keeps them (see unusedimports.go)")
 	inlineFlag = flag.Bool("inline", false, "apply the fixes of the inline analyzer, which inlines calls to functions marked //go:fix inline (see modernise.go)")
 	compositeFlag = flag.Bool("composite", false, "apply the fixes of the composite analyzer, which keys unkeyed composite literals of imported struct types (see modernise.go)")
 	allFlag = flag.Bool("all", false, "enable -strict, -modernise, -vetfix, -inline, -composite, -unused, -unconvert, -flatten, -mergecases and -omitcases")
@@ -265,6 +266,18 @@ func formatSource(filename string, src []byte, fragmentOk, fromDisk bool, r *rep
 	if suite := enabledSuite(); len(suite) > 0 && rewritable {
 		// -modernise and -vetfix apply the fixes of their analyzers to the source, and the file is parsed again from the result (see modernise.go)
 		if out := modernise(filename, src, suite); !bytes.Equal(out, src) {
+			src = out
+			fileSet = token.NewFileSet()
+
+			if file, err = parser.ParseFile(fileSet, filename, src, parserMode); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if *importsFlag && rewritable {
+		// -imports removes the imports that the file does not use, after the fixes, which can leave some unused (see unusedimports.go)
+		if out := removeUnusedImports(filename, src); !bytes.Equal(out, src) {
 			src = out
 			fileSet = token.NewFileSet()
 

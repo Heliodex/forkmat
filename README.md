@@ -324,9 +324,9 @@ The removal is made only when it cannot change which code runs. A value that the
 
 ### `-modernise`: apply the modernize analyzers
 
-`gofmt -modernise` applies the fixes of the analyzers in `golang.org/x/tools/go/analysis/passes/modernize`, the suite that `go fix` runs: `interface{}` becomes `any`, a counting loop becomes a range over an int, a search loop becomes `slices.Contains`, and so on, with the import each fix needs added. The analyzers run over the file alone, with its types from `go/types` as `-unconvert` uses them. Their fixes are applied to the source text, which is then parsed again and checked again, since one fix can expose another. Fixes that overlap wait for the next round (`modernise.go`).
+`gofmt -modernise` applies the fixes of the analyzers in `golang.org/x/tools/go/analysis/passes/modernize`, the suite that `go fix` runs: `interface{}` becomes `any`, a counting loop becomes a range over an int, a search loop becomes `slices.Contains`, and so on, with the import each fix needs added. The analyzers run over the package of the file, checked with `go/types` from the other files of its directory as they are on disk, so a type declared in a sibling file is known to them. Only the fixes that edit the file itself are applied. Their fixes are applied to the source text, which is then parsed again and checked again, since one fix can expose another. Fixes that overlap wait for the next round (`modernise.go`).
 
-The fixes are held to the Go version of the module that governs the file, from its go.mod, so `any` is only written where the module is go 1.18 or later. A file outside any module is left alone.
+The fixes are held to the Go version of the module that governs the file, from its go.mod, so `any` is only written where the module is go 1.18 or later. A file outside any module is left alone. A file read from standard input gets no fixes, and neither does a file whose package cannot be taken as a whole, such as one that uses cgo or whose directory does not build as one package, or a file that its build constraints exclude from the package.
 
 It is off by default, and runs on complete files only, not on fragments or generated files, like `-unconvert`.
 
@@ -372,6 +372,14 @@ The pass needs the object links the parser writes, so it parses the file without
 `gofmt -composite` applies the fixes of the `composite` analyzer, which adds field names to an unkeyed literal of an imported struct type, such as `&url.URL{"https", …}`. The analyzer leaves alone a short list of frozen stdlib types, such as `image.Point`, where unkeyed literals are safe.
 
 Both run through the same fix runner as `-modernise`, and `-all` enables both. Each can also be turned on alone.
+
+### `-imports`: remove unused imports
+
+`gofmt` removes an import that the file does not use, on by default. An import is unused when nothing in the file selects from its name, so `"os"` goes when `os.Exit` appears nowhere. A named import goes when its name is unused, and a grouped import goes with its line, or with its whole declaration when the group empties. Blank and dot imports are kept, since they are used by their side effects or by their names.
+
+An import without a name needs its package's name, which the package supplies, so it is only removed when the package can be imported. An import that cannot be resolved, such as one from a module that is not present, is kept. An import that shares its line with other code is kept too, so that no code is lost with it.
+
+The pass runs after the other fixes, since a fix such as `-modernise` can leave an import unused. `-imports=false` keeps unused imports.
 
 ## What differs from upstream
 

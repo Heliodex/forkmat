@@ -1021,7 +1021,18 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 
 		for i, f := range list {
 			if i > 0 {
-				p.linebreak(p.layoutLine(f.Pos(), 1), 1, ignore, p.linesFrom(line) > 0)
+				gap := 1
+				if p.strict() && embeddedThen(list[i-1], f) {
+					gap = 2
+				}
+
+				p.linebreak(p.layoutLine(f.Pos(), gap), gap, ignore, p.linesFrom(line) > 0)
+			}
+
+			// the blank line that sets off a field goes before the comments that lead into it, as it does before a statement
+			p.blankBefore = token.NoPos
+			if p.strict() && i > 0 && embeddedThen(list[i-1], f) {
+				p.blankBefore = f.Pos()
 			}
 
 			p.setComment(f.Doc)
@@ -1043,6 +1054,7 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 			}
 
 			p.setComment(f.Comment)
+			p.blankBefore = token.NoPos
 		}
 
 		if isIncomplete {

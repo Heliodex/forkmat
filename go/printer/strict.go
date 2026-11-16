@@ -1037,6 +1037,11 @@ func (p *printer) typeBlockPos(before token.Pos, first *ast.GenDecl) token.Pos {
 	return token.Pos(int(anchor) - col) // the newline that ends the line above
 }
 
+// embeddedThen reports whether StrictLayout puts a blank line between the embedded field prev and the named field cur that follows it, as embeddedstructfieldcheck asks for an empty line between the two groups. The fields are not reordered, since their order is the layout of the struct.
+func embeddedThen(prev, cur *ast.Field) bool {
+	return len(prev.Names) == 0 && len(cur.Names) > 0
+}
+
 // wantsBlank reports whether StrictLayout puts a blank line before next, the statement numbered k, which follows prev: the blank line that Config.StmtBlank gives it, if any, and otherwise the one blankLineBetween gives.
 func (p *printer) wantsBlank(k int, prev, next ast.Stmt) bool {
 	if blank, ok := p.StmtBlank[k]; ok {

@@ -11,6 +11,7 @@ package main
 // In every run, a declaration comes after the declarations it refers to, and otherwise in alphabetical order. A cycle keeps its source order. Declarations and statements move with the comments that lead into them. A var whose value calls a function is not moved above another var, only above functions and the declarations that do not take part in initialisation (see pureExpr).
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"go/ast"
 	"go/build"
@@ -396,15 +397,6 @@ func (l layout) lineEnd(o int) int {
 	return len(l.src)
 }
 
-// lineStart returns the offset of the start of the line containing offset o.
-func (l layout) lineStart(o int) int {
-	for o > 0 && l.src[o-1] != '\n' {
-		o--
-	}
-
-	return o
-}
-
 func (l layout) off(p token.Pos) int {
 	return l.tf.Offset(p)
 }
@@ -505,7 +497,7 @@ func (l layout) commentIn(from, to int) bool {
 func moduleDeps(root string) map[string]string {
 	return moduleDepDirs.get(root, func() map[string]string {
 		dirs := map[string]string{}
-		cmd := exec.Command("go", "list", "-e", "-deps", "-f", "{{.ImportPath}}\t{{.Dir}}", "./...")
+		cmd := exec.CommandContext(context.Background(), "go", "list", "-e", "-deps", "-f", "{{.ImportPath}}\t{{.Dir}}", "./...")
 		cmd.Dir = root
 
 		// a module that cannot be listed has no dependencies found this way; go/build still works
@@ -660,10 +652,10 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 
 	for i := range cand {
 		seen := map[int]bool{}
-		visit := func(n ast.Node) bool {
+		visit := func(n ast.Node) {
 			id, ok := n.(*ast.Ident)
 			if !ok {
-				return true
+				return
 			}
 
 			if id.Obj == nil {
@@ -671,7 +663,7 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 					bad[i] = true
 				}
 
-				return true
+				return
 			}
 
 			switch d := id.Obj.Decl.(type) {
@@ -685,8 +677,6 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 			default:
 				bad[i] = true
 			}
-
-			return true
 		}
 
 		var walk func(ast.Node) bool
@@ -706,7 +696,9 @@ func hoistTypes(fset *token.FileSet, file *ast.File, src []byte, external map[st
 				return false
 			}
 
-			return visit(n)
+			visit(n)
+
+			return true
 		}
 
 		ast.Inspect(decls[i], walk)
@@ -1000,44 +992,6 @@ func dependencyOrder(run []unit) []int {
 	return alphabeticalOrder(run, deps, components(deps))
 }
 
-// reorderItems returns the edit that reorders run, the units between lo and hi in the source, or reports false if the run is already in order. Unit t occupies the lines from the line after unit t-1 ends, so the comments before it travel with it.
-func (l layout) reorderItems(run []unit, lo, hi int) (edit, bool) {
-	k := len(run)
-	starts := make([]int, k+1)
-	starts[0] = lo
-
-	for t := 1; t < k; t++ {
-		starts[t] = l.lineEnd(l.off(run[t-1].end))
-	}
-
-	starts[k] = hi
-	order := dependencyOrder(run)
-	identity := true
-
-	for t, o := range order {
-		if t != o {
-			identity = false
-			break
-		}
-	}
-
-	if identity {
-		return edit{}, false
-	}
-
-	var text []byte
-
-	for _, t := range order {
-		text = append(text, l.src[starts[t]:starts[t+1]]...)
-	}
-
-	return edit{
-		start: lo,
-		end: hi,
-		text: text,
-	}, true
-}
-
 // reorderAssignRuns is the pass over the runs of := statements. A run is a sequence of consecutive := statements with pure values (see pureExpr), each on a line of its own. Within a run, statements that do not depend on each other are sorted by the names they declare, and a statement stays after an earlier one it could interact with (see assignDeps). It runs over every block of the file, and over the clauses of switch and select statements.
 func reorderAssignRuns(fset *token.FileSet, file *ast.File, src []byte) []byte {
 	tf := fset.File(file.Pos())
@@ -1131,6 +1085,8 @@ func specUnit(tok token.Token, sp ast.Spec) unit {
 			start = sp.Doc.Pos()
 		}
 	case *ast.ValueSpec:
+		names = make([]string, 0, len(sp.Names))
+
 		for _, id := range sp.Names {
 			names = append(names, id.Name)
 		}
@@ -1351,8 +1307,7 @@ func hoistVars(fset *token.FileSet, file *ast.File, src []byte) []byte {
 
 // unitOf returns d as a unit, or false if the reordering does not move d.
 func unitOf(d ast.Decl) (unit, bool) {
-	switch d := d.(type) {
-	case *ast.FuncDecl:
+	if d, ok := d.(*ast.FuncDecl); ok {
 		if d.Body == nil || d.Recv == nil && d.Name.Name == "init" {
 			return unit{}, false
 		}

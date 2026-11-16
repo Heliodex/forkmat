@@ -24,7 +24,6 @@ func checkTypes(fset *token.FileSet, file *ast.File) *types.Info {
 		Importer: sharedImporter,
 		Error: func(error) {},
 	}
-
 	_, _ = conf.Check(file.Name.Name, fset, []*ast.File{file}, info)
 
 	return info
@@ -149,8 +148,8 @@ func unconvert(_ *token.FileSet, file *ast.File, info *types.Info) *ast.File {
 		}
 
 		arg := call.Args[0]
-
 		av := info.Types[arg]
+
 		if target := info.Types[call.Fun].Type; av.Type == nil || av.Value != nil || isUntyped(av.Type) || !types.Identical(target, av.Type) {
 			return true
 		}

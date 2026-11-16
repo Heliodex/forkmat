@@ -423,8 +423,8 @@ func TestReorderAssignRuns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := reorderText(t, tt.src)
-
 			i, j := stmtPos(t, got, tt.first), stmtPos(t, got, tt.then)
+
 			if tt.sorted && i >= j {
 				t.Errorf("not sorted:\n%s", got)
 			}

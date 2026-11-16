@@ -43,8 +43,8 @@ func TestSwitchNumbersTheBufferConstants(t *testing.T) {
 	must(os.WriteFile(filepath.Join(dir, "x.go"), []byte("package p\n\nconst A = 1\n\nconst B = 2\n"), 0o644))
 
 	got := formatStdinAs(t, filepath.Join(dir, "x.go"), buffer)
-
 	ai := indexOf(got, "case A:")
+
 	if zi := indexOf(got, "case Z:"); ai < 0 || zi < 0 || ai > zi {
 		t.Errorf("cases not ordered by the buffer's constants:\n%s", got)
 	}

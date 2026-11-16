@@ -364,8 +364,8 @@ func packageFiles(fset *token.FileSet, filename string, file *ast.File) ([]*ast.
 	}
 
 	dir := filepath.Dir(filename)
-
 	bp, err := build.Default.ImportDir(dir, 0)
+
 	if err != nil || bp.Name != file.Name.Name || len(bp.CgoFiles) > 0 {
 		return nil, false
 	}
@@ -425,8 +425,8 @@ func moderniseOnce(filename string, src []byte, goVersion string, suite []*analy
 		results: map[*analysis.Analyzer]analysisResult{},
 		facts: map[factKey]analysis.Fact{},
 	}
-
 	edits := selectFixes(run.fixes())
+
 	if len(edits) == 0 {
 		return src, false
 	}

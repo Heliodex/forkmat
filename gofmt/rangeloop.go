@@ -168,8 +168,8 @@ func moduleRangeOver22(dir string) bool {
 					}
 
 					ma, err1 := strconv.Atoi(major)
-
 					mi, err2 := strconv.Atoi(strings.TrimRight(minor, "abcdefghijklmnopqrstuvwxyz"))
+
 					if err1 != nil || err2 != nil {
 						return true
 					}

@@ -14,6 +14,12 @@ import (
 )
 
 type (
+	// wslBlanks sets the blank lines that wsl asks for, from its diagnostics of the output out, which was parsed into file, and whose statements are in fset. The statements are numbered as StmtBlank numbers them, in source order. It returns the blank lines to print with next, and whether they changed.
+	// blankTrial records what the blank line before a statement was before -wsl tried a blank there, so that the trial can be undone.
+	blankTrial struct {
+		had, before bool
+	}
+
 	// listedStmt is a statement of a statement list, with the list that holds it and its index in that list.
 	listedStmt struct {
 		stmt ast.Stmt
@@ -71,10 +77,28 @@ func listedStmts(file *ast.File) (out []listedStmt) {
 	return
 }
 
-// wslBlanks sets the blank lines that wsl asks for, from its diagnostics of the output out, which was parsed into file, and whose statements are in fset. The statements are numbered as StmtBlank numbers them, in source order. It returns the blank lines to print with next, and whether they changed.
-// blankTrial records what the blank line before a statement was before -wsl tried a blank there, so that the trial can be undone.
-type blankTrial struct {
-	had, before bool
+// setAbove sets the blank line that wsl asks for above the statement s, numbered i, which wsl reports as missing a blank above. When it reports too many statements above s, its own fix puts the blank above s's predecessor, which splits the statements that belong together. A blank above s itself also separates them, and reads better, so that is tried first. If wsl still reports s in the next round, the trial is undone and the blank goes above s.
+func setAbove(i int, s listedStmt, message string, next, blank map[int]bool, number map[ast.Stmt]int, trials map[int]blankTrial) {
+	if strings.Contains(message, "too many statements above") && s.index+1 < len(s.list) {
+		y := number[s.list[s.index+1]]
+
+		if t, tried := trials[y]; !tried {
+			_, had := blank[y]
+			trials[y] = blankTrial{
+				had: had,
+				before: blank[y],
+			}
+			next[y] = true
+
+			return
+		} else if t.had {
+			next[y] = t.before
+		} else {
+			delete(next, y)
+		}
+	}
+
+	next[i] = true
 }
 
 func wslBlanks(out []byte, fset *token.FileSet, diags []wslDiag, file *ast.File, blank map[int]bool, trials map[int]blankTrial) (map[int]bool, bool) {
@@ -155,7 +179,6 @@ func wslTypes(fset *token.FileSet, filename string, file *ast.File) *types.Info 
 		Importer: sharedImporter,
 		Error: func(error) {},
 	}
-
 	_, _ = conf.Check(file.Name.Name, fset, files, info)
 
 	return info
@@ -183,27 +206,6 @@ func wslDiagnostics(fset *token.FileSet, filename string, file *ast.File) []wslD
 	}
 
 	return diags
-}
-
-// setAbove sets the blank line that wsl asks for above the statement s, numbered i, which wsl reports as missing a blank above. When it reports too many statements above s, its own fix puts the blank above s's predecessor, which splits the statements that belong together. A blank above s itself also separates them, and reads better, so that is tried first. If wsl still reports s in the next round, the trial is undone and the blank goes above s.
-func setAbove(i int, s listedStmt, message string, next, blank map[int]bool, number map[ast.Stmt]int, trials map[int]blankTrial) {
-	if strings.Contains(message, "too many statements above") && s.index+1 < len(s.list) {
-		y := number[s.list[s.index+1]]
-
-		if t, tried := trials[y]; !tried {
-			_, had := blank[y]
-			trials[y] = blankTrial{had: had, before: blank[y]}
-			next[y] = true
-
-			return
-		} else if t.had {
-			next[y] = t.before
-		} else {
-			delete(next, y)
-		}
-	}
-
-	next[i] = true
 }
 
 // wslLayout prints the file with printFile, which takes the blank lines to give each statement, numbered as StmtBlank numbers them. It runs wsl on the result, and sets the blank lines that wsl asks for, until wsl reports nothing. The result is the output of the last print. filename is the file's name.

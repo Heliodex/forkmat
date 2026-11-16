@@ -244,8 +244,8 @@ func flattenSwitch(list *[]ast.Stmt, s ast.Stmt, body *ast.BlockStmt, names map[
 // flattenList moves the final branch out of the last statement of list, if it can. It reports whether it did, so that the statement now moved out may be flattened in turn.
 func flattenList(list *[]ast.Stmt, comments []*ast.CommentGroup) bool {
 	l := *list
-
 	n := len(l)
+
 	if n == 0 {
 		return false
 	}

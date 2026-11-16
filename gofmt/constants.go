@@ -135,7 +135,6 @@ func packageErrors(filename string, src []byte) (map[string]int, bool) {
 			}
 		},
 	}
-
 	_, _ = conf.Check("gofmt.invalid/"+files[0].Name.Name, fset, files, nil)
 
 	return counts, true
@@ -303,8 +302,8 @@ func constHoistCandidate(fset *token.FileSet, info *types.Info, scope ast.Node, 
 	}
 
 	name := identOf(a.Lhs[0])
-
 	typ, ok := constVar(fset, info, scope, name, a.Rhs[0], false, true)
+
 	if !ok {
 		return constCandidate{}, false
 	}
@@ -337,8 +336,8 @@ func constCandidateOf(fset *token.FileSet, info *types.Info, scope ast.Node, lis
 		}
 
 		name := identOf(a.Lhs[0])
-
 		typ, ok := constVar(fset, info, scope, name, a.Rhs[0], false, false)
+
 		if !ok {
 			return constCandidate{}, false
 		}

@@ -74,8 +74,8 @@ func structNew(c *ast.CallExpr, info *types.Info) (ast.Expr, bool) {
 	}
 
 	arg := c.Args[0]
-
 	tv, ok := info.Types[arg]
+
 	if !ok || !tv.IsType() {
 		return nil, false
 	}

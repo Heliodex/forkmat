@@ -42,6 +42,18 @@ func wslText(t *testing.T, src string) string {
 	return string(out)
 }
 
+// TestWSLBlankBeforeIf checks that a blank line sets off an if statement that cuddles two assignments, rather than splitting the assignments, when the second one is used again after the if.
+func TestWSLBlankBeforeIf(t *testing.T) {
+	const (
+		src string = "package p\n\nfunc f(p1, p2 int, dx float32) int {\n\ttotal := 0\n\tfor y := range 3 {\n\t\tex := int(float32(p1) + float32(y)*dx)\n\t\tsx := int(float32(p2) + float32(y)*dx)\n\t\tif sx > ex {\n\t\t\tsx, ex = ex, sx\n\t\t}\n\n\t\ttotal += sx\n\t}\n\treturn total\n}\n"
+		want string = "\t\tex := int(float32(p1) + float32(y)*dx)\n\t\tsx := int(float32(p2) + float32(y)*dx)\n\n\t\tif sx > ex {"
+	)
+
+	if out := wslText(t, src); !strings.Contains(out, want) {
+		t.Errorf("want the blank line above the if:\n%s\ngot:\n%s", want, out)
+	}
+}
+
 func TestWSLLayout(t *testing.T) {
 	tests := []struct {
 		name, src string
@@ -82,17 +94,5 @@ func TestWSLLayout(t *testing.T) {
 				t.Errorf("wsl reports %d issues in:\n%s", len(diags), out)
 			}
 		})
-	}
-}
-
-// TestWSLBlankBeforeIf checks that a blank line sets off an if statement that cuddles two assignments, rather than splitting the assignments, when the second one is used again after the if.
-func TestWSLBlankBeforeIf(t *testing.T) {
-	src := "package p\n\nfunc f(p1, p2 int, dx float32) int {\n\ttotal := 0\n\tfor y := range 3 {\n\t\tex := int(float32(p1) + float32(y)*dx)\n\t\tsx := int(float32(p2) + float32(y)*dx)\n\t\tif sx > ex {\n\t\t\tsx, ex = ex, sx\n\t\t}\n\n\t\ttotal += sx\n\t}\n\treturn total\n}\n"
-
-	out := wslText(t, src)
-
-	want := "\t\tex := int(float32(p1) + float32(y)*dx)\n\t\tsx := int(float32(p2) + float32(y)*dx)\n\n\t\tif sx > ex {"
-	if !strings.Contains(out, want) {
-		t.Errorf("want the blank line above the if:\n%s\ngot:\n%s", want, out)
 	}
 }

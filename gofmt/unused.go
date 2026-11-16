@@ -244,8 +244,8 @@ func unusedDecl(fset *token.FileSet, s *ast.DeclStmt, refs map[*ast.Object]int, 
 
 	for _, sp := range g.Specs {
 		vs := sp.(*ast.ValueSpec)
-
 		unused := unusedSpecNames(vs, refs)
+
 		if len(unused) == 0 || unusedNearComment(fset, comments, vs) {
 			specs = append(specs, vs)
 			continue

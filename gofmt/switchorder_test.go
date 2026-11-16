@@ -126,8 +126,8 @@ func TestSwitchCaseOrderStableAcrossSiblings(t *testing.T) {
 
 		return strings.Join(names, " ")
 	}
-
 	first := order()
+
 	if first != want {
 		t.Errorf("order = %q, want %q", first, want)
 	}

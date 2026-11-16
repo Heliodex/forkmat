@@ -150,8 +150,8 @@ func isGoFilename(name string) bool {
 // newSequencer returns a sequencer that allows concurrent tasks up to maxWeight and writes tasks' output to out and err.
 func newSequencer(maxWeight int64, out, err io.Writer) *sequencer {
 	sem := semaphore.NewWeighted(maxWeight)
-
 	prev := make(chan *reporterState, 1)
+
 	prev <- &reporterState{
 		out: out,
 		err: err,
@@ -271,8 +271,8 @@ func formatSource(filename string, src []byte, fragmentOk, fromDisk bool, r *rep
 
 	// a generated file keeps the layout its generator wrote, so the fork's passes and the strict layout leave it alone (see generated.go)
 	generated := sourceAdj == nil && isGenerated(file)
-
 	rewritable := sourceAdj == nil && !generated
+
 	if suite := enabledSuite(); len(suite) > 0 && rewritable {
 		// -modernise and -vetfix apply the fixes of their analyzers to the source, and the file is parsed again from the result (see modernise.go)
 		if out := modernise(filename, src, suite); !bytes.Equal(out, src) {
@@ -683,7 +683,6 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 		if *doDiff {
 			newName := filepath.ToSlash(filename)
 			oldName := newName + ".orig"
-
 			_, _ = r.Write(diff.Diff(oldName, src, newName, res))
 
 			return errFormattingDiffers

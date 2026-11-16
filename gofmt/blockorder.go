@@ -11,7 +11,7 @@ type (
 	blockItem struct {
 		stage int
 		movable, // a declaration that may move: a type, a constant, or a variable with a safe value
-		helper bool // a call of Helper() with no arguments, which a declaration does not move above, so that the thelper linter still finds it first
+		helper, // a call of Helper() with no arguments, which a declaration does not move above, so that the thelper linter still finds it first
 		inert bool // a statement that a variable may pass: no control flow, calls or panics, and no assignment to anything but a name
 		decls, // the names it declares or assigns
 		refs map[string]bool // the names it mentions
@@ -141,6 +141,23 @@ func hasLabelOrGoto(list []ast.Stmt) (found bool) {
 	}
 
 	return
+}
+
+// isHelperCall reports whether s is a statement that calls Helper() on a value, such as t.Helper().
+func isHelperCall(s ast.Stmt) bool {
+	es, ok := s.(*ast.ExprStmt)
+	if !ok {
+		return false
+	}
+
+	call, ok := es.X.(*ast.CallExpr)
+	if !ok || len(call.Args) != 0 {
+		return false
+	}
+
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+
+	return ok && sel.Sel.Name == "Helper"
 }
 
 // mentioned returns the names of every identifier in n.
@@ -273,23 +290,6 @@ func itemOf(s ast.Stmt) blockItem {
 	it.helper = isHelperCall(s)
 
 	return it
-}
-
-// isHelperCall reports whether s is a statement that calls Helper() on a value, such as t.Helper().
-func isHelperCall(s ast.Stmt) bool {
-	es, ok := s.(*ast.ExprStmt)
-	if !ok {
-		return false
-	}
-
-	call, ok := es.X.(*ast.CallExpr)
-	if !ok || len(call.Args) != 0 {
-		return false
-	}
-
-	sel, ok := call.Fun.(*ast.SelectorExpr)
-
-	return ok && sel.Sel.Name == "Helper"
 }
 
 // blockOrder returns the order in which the statements of a block are to be printed: the indices of list, in their new order. prefix counts the statements at the top that are placed; each kind of declaration is placed after the one before it.

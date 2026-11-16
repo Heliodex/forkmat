@@ -45,8 +45,8 @@ func importedName(spec *ast.ImportSpec, importPath, dir string, info *types.Info
 func lineEdit(src []byte, fset *token.FileSet, from, to token.Pos) (textEdit, bool) {
 	start := fset.Position(from).Offset
 	end := fset.Position(to).Offset
-
 	lineStart := bytes.LastIndexByte(src[:start], '\n') + 1
+
 	if len(bytes.TrimSpace(src[lineStart:start])) != 0 {
 		return textEdit{}, false
 	}

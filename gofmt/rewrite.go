@@ -89,8 +89,8 @@ func match(m map[string]reflect.Value, pattern, val reflect.Value) bool {
 	}
 
 	p := reflect.Indirect(pattern)
-
 	v := reflect.Indirect(val)
+
 	if !p.IsValid() || !v.IsValid() {
 		return !p.IsValid() && !v.IsValid()
 	}

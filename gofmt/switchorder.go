@@ -237,8 +237,8 @@ func indexConsts(files []*ast.File) map[string]int {
 // likelyName reports whether a package imported as path is probably referred to as name, when the import has no name of its own: its last element, skipping a major version such as v2.
 func likelyName(path, name string) bool {
 	elems := strings.Split(path, "/")
-
 	last := elems[len(elems)-1]
+
 	if len(elems) > 1 && len(last) > 1 && last[0] == 'v' && strings.Trim(last[1:], "0123456789") == "" {
 		last = elems[len(elems)-2]
 	}

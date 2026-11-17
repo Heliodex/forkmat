@@ -269,6 +269,7 @@ func mayCombine(prev token.Token, next byte) (b bool) {
 func newPrinter(cfg *Config, fset *token.FileSet, nodeSizes map[ast.Node]int) *printer {
 	p := printerPool.Get().(*printer)
 	*p = printer{
+		Config: *cfg,
 		fset: fset,
 		nodeSizes: nodeSizes,
 		output: p.output[:0],
@@ -281,7 +282,6 @@ func newPrinter(cfg *Config, fset *token.FileSet, nodeSizes map[ast.Node]int) *p
 			Line: 1,
 			Column: 1,
 		},
-		Config: *cfg,
 		cachedPos: -1,
 	}
 
@@ -896,8 +896,8 @@ func stripCommonPrefix(lines []string) {
 	// Handle last line: If it only contains a closing */, align it with the opening /*, otherwise align the text with the other lines.
 	last := lines[len(lines)-1]
 	closing := "*/"
-
 	before, _, _ := strings.Cut(last, closing) // closing always present
+
 	if isBlank(before) {
 		// last line only contains closing */
 		if lineOfStars {
@@ -927,8 +927,8 @@ func (p *printer) writeComment(comment *ast.Comment) {
 	const linePrefix = "//line "
 
 	text := comment.Text
-
 	pos := p.posFor(comment.Pos())
+
 	if strings.HasPrefix(text, linePrefix) && (!pos.IsValid() || pos.Column == 1) {
 		// Possibly a //-style line directive. Suspend indentation temporarily to keep line directive valid.
 		defer func(indent int) {

@@ -11,13 +11,6 @@ import (
 	"testing"
 )
 
-// wslText returns src laid out under -strict and -wsl, and fails the test if the result is not parsable.
-func wslText(t *testing.T, src string) string {
-	t.Helper()
-
-	return wslTextFile(t, "x.go", src)
-}
-
 // wslTextFile returns src, the file filename, laid out under -strict and -wsl, and fails the test if the result is not parsable.
 func wslTextFile(t *testing.T, filename, src string) string {
 	t.Helper()
@@ -49,18 +42,6 @@ func wslTextFile(t *testing.T, filename, src string) string {
 	}
 
 	return string(out)
-}
-
-// TestWSLBlankBeforeIf checks that a blank line sets off an if statement that cuddles two assignments, rather than splitting the assignments, when the second one is used again after the if.
-func TestWSLBlankBeforeIf(t *testing.T) {
-	const (
-		src string = "package p\n\nfunc f(p1, p2 int, dx float32) int {\n\ttotal := 0\n\tfor y := range 3 {\n\t\tex := int(float32(p1) + float32(y)*dx)\n\t\tsx := int(float32(p2) + float32(y)*dx)\n\t\tif sx > ex {\n\t\t\tsx, ex = ex, sx\n\t\t}\n\n\t\ttotal += sx\n\t}\n\treturn total\n}\n"
-		want string = "\t\tex := int(float32(p1) + float32(y)*dx)\n\t\tsx := int(float32(p2) + float32(y)*dx)\n\n\t\tif sx > ex {"
-	)
-
-	if out := wslText(t, src); !strings.Contains(out, want) {
-		t.Errorf("want the blank line above the if:\n%s\ngot:\n%s", want, out)
-	}
 }
 
 // TestWSLTestFileHelpers checks that wsl reads the types of a test file with the other test files of its package, so an err check after a call to a helper that a sibling test file declares keeps its assignment.
@@ -96,6 +77,24 @@ func TestWSLTestFileHelpers(t *testing.T) {
 
 	if diags := wslDiagnostics(fset, name, file); len(diags) > 0 {
 		t.Errorf("wsl reports %d issues in:\n%s", len(diags), out)
+	}
+}
+
+// wslText returns src laid out under -strict and -wsl, and fails the test if the result is not parsable.
+func wslText(t *testing.T, src string) string {
+	t.Helper()
+	return wslTextFile(t, "x.go", src)
+}
+
+// TestWSLBlankBeforeIf checks that a blank line sets off an if statement that cuddles two assignments, rather than splitting the assignments, when the second one is used again after the if.
+func TestWSLBlankBeforeIf(t *testing.T) {
+	const (
+		src string = "package p\n\nfunc f(p1, p2 int, dx float32) int {\n\ttotal := 0\n\tfor y := range 3 {\n\t\tex := int(float32(p1) + float32(y)*dx)\n\t\tsx := int(float32(p2) + float32(y)*dx)\n\t\tif sx > ex {\n\t\t\tsx, ex = ex, sx\n\t\t}\n\n\t\ttotal += sx\n\t}\n\treturn total\n}\n"
+		want string = "\t\tex := int(float32(p1) + float32(y)*dx)\n\t\tsx := int(float32(p2) + float32(y)*dx)\n\n\t\tif sx > ex {"
+	)
+
+	if out := wslText(t, src); !strings.Contains(out, want) {
+		t.Errorf("want the blank line above the if:\n%s\ngot:\n%s", want, out)
 	}
 }
 

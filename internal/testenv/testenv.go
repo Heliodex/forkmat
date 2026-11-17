@@ -22,13 +22,13 @@ import (
 	"testing"
 )
 
-// newFileMode is the permission of the files that the tests write.
-const newFileMode = 0o666
-
 // SpecialBuildTypes are interesting build types that may affect linking.
 type SpecialBuildTypes struct {
 	Cgo, Asan, Msan, Race bool
 }
+
+// newFileMode is the permission of the files that the tests write.
+const newFileMode = 0o666
 
 var (
 	// Save the original environment during init for use in checks. A test binary may modify its environment before calling HasExec to change its behavior (such as mimicking a command-line tool), and that modified environment might cause environment checks to behave erratically.
@@ -133,8 +133,8 @@ var (
 				var line string
 
 				line, goMod, _ = strings.Cut(goMod, "\n")
-
 				fields := strings.Fields(line)
+
 				if len(fields) >= 2 && fields[0] == "module" && fields[1] == "std" {
 					// Found "module std", which is the module declaration in GOROOT/src!
 					return parent, nil

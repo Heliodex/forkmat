@@ -11,8 +11,8 @@ import (
 	"go/token"
 	"io"
 	"os"
-	"strconv"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1314,8 +1314,8 @@ func fibo(n int) {
 	}
 
 	comment := f.Comments[0].List[0]
-
 	pos := comment.Pos()
+
 	if fset.PositionFor(
 		pos,
 		false, /* absolute position */

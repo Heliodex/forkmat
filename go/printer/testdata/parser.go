@@ -17,6 +17,7 @@ type (
 	parser struct {
 		file *token.File
 		scanner.ErrorVector
+
 		scanner scanner.Scanner
 
 		// Tracing/debugging

@@ -371,8 +371,8 @@ func packageFiles(fset *token.FileSet, filename string, file *ast.File, tests bo
 	}
 
 	files := []*ast.File{file}
-
 	names := bp.GoFiles
+
 	if tests {
 		names = slices.Concat(bp.GoFiles, bp.TestGoFiles)
 	}

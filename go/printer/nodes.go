@@ -280,8 +280,8 @@ func (p *printer) nodeSize(n ast.Node, maxSize int) (size int) {
 // bodySize is like nodeSize but it is specialized for *ast.BlockStmt's.
 func (p *printer) bodySize(b *ast.BlockStmt, maxSize int) int {
 	pos1 := b.Pos()
-
 	pos2 := b.Rbrace
+
 	if p.strict() && p.commentIn(pos1, pos2) {
 		// a comment inside the braces needs lines of its own
 		return maxSize + 1
@@ -514,8 +514,8 @@ func (p *printer) indentList(list []ast.Expr) bool {
 
 	if len(list) >= 2 {
 		b := p.lineFor(list[0].Pos())
-
 		e := p.lineFor(list[len(list)-1].End())
+
 		if 0 < b && b < e {
 			line := b
 
@@ -671,8 +671,8 @@ func (p *printer) exprList(prev0 token.Pos, list []ast.Expr, depth int, mode exp
 	prev := p.posFor(prev0)
 	next := p.posFor(next0)
 	line := p.lineFor(list[0].Pos())
-
 	endLine := p.lineFor(list[len(list)-1].End())
+
 	if prev.IsValid() && prev.Line == line && line == endLine {
 		// all list entries on a single line
 		for i, x := range list {
@@ -924,8 +924,8 @@ func (p *printer) signature(sig *ast.FuncType) {
 	}
 
 	res := sig.Results
-
 	n := res.NumFields()
+
 	if n > 0 {
 		// res != nil
 		p.print(blank)
@@ -1022,6 +1022,7 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 		for i, f := range list {
 			if i > 0 {
 				gap := 1
+
 				if p.strict() && embeddedThen(list[i-1], f) {
 					gap = 2
 				}
@@ -1031,6 +1032,7 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 
 			// the blank line that sets off a field goes before the comments that lead into it, as it does before a statement
 			p.blankBefore = token.NoPos
+
 			if p.strict() && i > 0 && embeddedThen(list[i-1], f) {
 				p.blankBefore = f.Pos()
 			}
@@ -1054,6 +1056,7 @@ func (p *printer) fieldList(fields *ast.FieldList, isStruct, isIncomplete bool) 
 			}
 
 			p.setComment(f.Comment)
+
 			p.blankBefore = token.NoPos
 		}
 

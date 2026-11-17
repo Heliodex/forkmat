@@ -5,6 +5,8 @@ import (
 	"forkmat/go/printer"
 	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -13,10 +15,17 @@ import (
 func wslText(t *testing.T, src string) string {
 	t.Helper()
 
-	out, err := wslLayout("x.go", func(blank map[int]bool) ([]byte, error) {
+	return wslTextFile(t, "x.go", src)
+}
+
+// wslTextFile returns src, the file filename, laid out under -strict and -wsl, and fails the test if the result is not parsable.
+func wslTextFile(t *testing.T, filename, src string) string {
+	t.Helper()
+
+	out, err := wslLayout(filename, func(blank map[int]bool) ([]byte, error) {
 		fset := token.NewFileSet()
 
-		file, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments)
+		file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
 		if err != nil {
 			t.Fatalf("parse: %v", err)
 		}
@@ -54,6 +63,42 @@ func TestWSLBlankBeforeIf(t *testing.T) {
 	}
 }
 
+// TestWSLTestFileHelpers checks that wsl reads the types of a test file with the other test files of its package, so an err check after a call to a helper that a sibling test file declares keeps its assignment.
+func TestWSLTestFileHelpers(t *testing.T) {
+	const (
+		helpers string = "package p\n\ntype srv struct{}\n\nfunc (srv) call() ([]int, error) {\n\treturn nil, nil\n}\n"
+		src string = "package p\n\nimport \"testing\"\n\nfunc TestCall(t *testing.T) {\n\ts := srv{}\n\tvals, err := s.call()\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\n\t_ = vals\n}\n"
+		want string = "\tvals, err := s.call()\n\tif err != nil {"
+	)
+
+	dir := t.TempDir()
+	name := filepath.Join(dir, "call_test.go")
+
+	if err := os.WriteFile(filepath.Join(dir, "helpers_test.go"), []byte(helpers), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(name, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out := wslTextFile(t, name, src)
+	if !strings.Contains(out, want) {
+		t.Errorf("want no blank line between the assignment of err and its check:\n%s\ngot:\n%s", want, out)
+	}
+
+	fset := token.NewFileSet()
+
+	file, err := parser.ParseFile(fset, name, out, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if diags := wslDiagnostics(fset, name, file); len(diags) > 0 {
+		t.Errorf("wsl reports %d issues in:\n%s", len(diags), out)
+	}
+}
+
 func TestWSLLayout(t *testing.T) {
 	tests := []struct {
 		name, src string
@@ -69,6 +114,10 @@ func TestWSLLayout(t *testing.T) {
 		{
 			name: "a statement after a trailing comment",
 			src: "package p\n\nfunc f() {\n\tconst c = 3 // the count\n\tif c > 0 {\n\t\tg()\n\t}\n}\n",
+		},
+		{
+			name: "an err check after two assignments, the last of which assigns err",
+			src: "package p\n\ntype app struct {\n\tname string\n}\n\nfunc g(a *app) ([]int, []int, error) {\n\treturn nil, nil, nil\n}\n\nfunc use(a, b []int) error {\n\treturn nil\n}\n\nfunc f() error {\n\ta := &app{\n\t\tname: \"frontend\",\n\t}\n\targs, env, err := g(a)\n\tif err != nil {\n\t\treturn err\n\t}\n\n\treturn use(args, env)\n}\n",
 		},
 		{
 			name: "a grouped var after a call",

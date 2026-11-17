@@ -120,7 +120,7 @@ func packageErrors(filename string, src []byte) (map[string]int, bool) {
 		return nil, false
 	}
 
-	files, ok := packageFiles(fset, filename, file)
+	files, ok := packageFiles(fset, filename, file, false)
 	if !ok {
 		return nil, false
 	}
@@ -415,7 +415,7 @@ func analyseConstants(filename string, src []byte) (*token.FileSet, *ast.File, [
 		return nil, nil, nil, false
 	}
 
-	files, ok := packageFiles(fset, filename, file)
+	files, ok := packageFiles(fset, filename, file, false)
 	if !ok {
 		return nil, nil, nil, false
 	}

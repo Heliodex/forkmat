@@ -357,8 +357,8 @@ func fixOverlaps(fix, accepted []textEdit) bool {
 	return false
 }
 
-// packageFiles parses the package of the file being fixed into fset: the file itself, as src gives it, and its siblings as they are on disk. It reports false when the package cannot be taken as a whole, such as a file read from standard input, a directory that does not build as one package, or a package that uses cgo. Types declared in another file of a package are otherwise undefined, and the analyzers can then take two different types for the same one (see moderniseRun).
-func packageFiles(fset *token.FileSet, filename string, file *ast.File) ([]*ast.File, bool) {
+// packageFiles parses the package of the file being fixed into fset: the file itself, as src gives it, and its siblings as they are on disk. With tests, the siblings also include the test files of the package, which declare the helpers that a test file calls. It reports false when the package cannot be taken as a whole, such as a file read from standard input, a directory that does not build as one package, or a package that uses cgo. Types declared in another file of a package are otherwise undefined, and the analyzers can then take two different types for the same one (see moderniseRun).
+func packageFiles(fset *token.FileSet, filename string, file *ast.File, tests bool) ([]*ast.File, bool) {
 	if !onDisk(filename) {
 		return nil, false
 	}
@@ -372,7 +372,12 @@ func packageFiles(fset *token.FileSet, filename string, file *ast.File) ([]*ast.
 
 	files := []*ast.File{file}
 
-	for _, name := range bp.GoFiles {
+	names := bp.GoFiles
+	if tests {
+		names = slices.Concat(bp.GoFiles, bp.TestGoFiles)
+	}
+
+	for _, name := range names {
 		if name == filepath.Base(filename) {
 			continue
 		}
@@ -408,7 +413,7 @@ func moderniseOnce(filename string, src []byte, goVersion string, suite []*analy
 		return src, false
 	}
 
-	files, ok := packageFiles(fset, filename, file)
+	files, ok := packageFiles(fset, filename, file, false)
 	if !ok {
 		return src, false
 	}

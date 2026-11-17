@@ -162,11 +162,11 @@ func wslBlanks(out []byte, fset *token.FileSet, diags []wslDiag, file *ast.File,
 	return next, !maps.Equal(next, blank)
 }
 
-// wslTypes returns the types of the package of file, with file as one of its files, for wsl to read.
+// wslTypes returns the types of the package of file, with file as one of its files, for wsl to read. A test file is checked with the other test files of its package, since the helpers it calls are declared there, and without their types wsl cannot tell that an err is an error.
 func wslTypes(fset *token.FileSet, filename string, file *ast.File) *types.Info {
 	files := []*ast.File{file}
 
-	if pkgFiles, ok := packageFiles(fset, filename, file); ok {
+	if pkgFiles, ok := packageFiles(fset, filename, file, strings.HasSuffix(filename, "_test.go")); ok {
 		files = pkgFiles
 	}
 
